@@ -1,0 +1,8 @@
+[package]
+name = "qmers"
+version = "0.0.0"
+edition = "2021"
+
+[dependencies]
+kseq = "0.5.3"
+

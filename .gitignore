@@ -1,0 +1,9 @@
+*.txt
+*.kmc_pre
+*.kmc_suf
+*.fastq.gz
+*.html
+*.json
+/target
+/workflow/scripts/qmers/target/
+
