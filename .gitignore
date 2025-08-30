@@ -4,6 +4,11 @@
 *.fastq.gz
 *.html
 *.json
+*.fa
+*.tsv
+*.vcf.gz
+*.vcf
+*.vcf.gz.tbi
 /target
 /workflow/scripts/qmers/target/
 

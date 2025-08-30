@@ -1,0 +1,21 @@
+# load packages
+
+import pandas as pd
+import os
+from snakemake.utils import validate
+from snakemake.utils import min_version
+
+min_version("9.5.1")
+
+# configuration
+configfile: "../config/config.yaml"
+
+rule all:
+    input:
+        expand("fastp_results/trimmed_paired_R1_{ID}.fastq.gz", ID = config["samples"]),
+        "multiqc_report.html"
+
+include: "rules/fastp.smk"
+include: "rules/kmc_contam_db.smk"
+include: "rules/kmc_rm_contam.smk"
+include: "rules/multiqc.smk"

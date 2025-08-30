@@ -4,5 +4,7 @@ version = "0.0.0"
 edition = "2021"
 
 [dependencies]
-kseq = "0.5.3"
+paraseq = "0.3"
+dashmap = "5.0"
+rayon = "1.10"
 
