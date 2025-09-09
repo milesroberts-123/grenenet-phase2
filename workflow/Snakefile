@@ -12,10 +12,16 @@ configfile: "../config/config.yaml"
 
 rule all:
     input:
-        expand("fastp_results/trimmed_paired_R1_{ID}.fastq.gz", ID = config["samples"]),
-        "multiqc_report.html"
+        #expand("fastp_results/trimmed_paired_R1_{ID}.fastq.gz", ID = config["samples"]),
+        "multiqc_report.html",
+        expand("samtools_results/{ID}.txt", ID = config["samples"]),
+        expand("varscan_results/{ID}.tsv", ID = config["samples"])
 
 include: "rules/fastp.smk"
 include: "rules/kmc_contam_db.smk"
 include: "rules/kmc_rm_contam.smk"
 include: "rules/multiqc.smk"
+include: "rules/bwa_index.smk"
+include: "rules/bwa_mem.smk"
+include: "rules/samtools.smk"
+include: "rules/varscan.smk"

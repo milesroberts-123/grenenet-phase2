@@ -1,6 +1,6 @@
 rule kmc_contam_db:
     input:
-        expand("../config/screen_genomes/{contam}_{hap}.fa" , contam = config["custom_contams"], hap = [1,2]),
+        expand("../config/screen_genomes/{contam}.fa", contam = config["custom_contams"]),
     output:
         list="contam.list",
         pre="contam.kmc_pre",
@@ -19,7 +19,7 @@ rule kmc_contam_db:
         echo {input} | tr ' ' '\n' > {output.list}
 
         # build kmc db
-        kmc -k{params.k} -m16 -t{threads} -ci1 -cs2 -fm @{output.list} contam kmc_tmp_dir/
+        kmc -k{params.k} -m36 -t{threads} -ci1 -cs2 -fm @{output.list} contam kmc_tmp_dir/
 
         # clean up
         rm -r kmc_tmp_dir/
