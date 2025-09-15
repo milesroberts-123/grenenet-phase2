@@ -1,7 +1,6 @@
 rule multiqc:
     input:
-        expand("fastp_results/{ID}_R1R2.json", ID = config["samples"]),
-        expand("fastp_results/no_contam_{ID}.json", ID = config["samples"])
+        expand("fastp_results/{ID}_R1R2.json", ID = parameters["sample"]),
     output:
         "multiqc_report.html"
     conda:

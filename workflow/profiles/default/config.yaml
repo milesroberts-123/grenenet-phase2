@@ -23,6 +23,8 @@ set-resources:
         cpus_per_task: 4
     kmc_rm_contam:
         cpus_per_task: 4
+    kmc: 
+        cpus_per_task: 2
     bwa_mem:
         cpus_per_task: 4
 
@@ -30,6 +32,7 @@ set-resources:
 # threads and cpus_per_task are supposed to be synonymous for this plugin, but for some reason I need to specify them separately
 set-threads:
     fastp: 4
+    kmc: 2
     kmc_contam_db: 4
     kmc_rm_contam: 4
     bwa_mem: 4

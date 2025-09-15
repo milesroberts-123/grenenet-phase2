@@ -10,18 +10,25 @@ min_version("9.5.1")
 # configuration
 configfile: "../config/config.yaml"
 
+# load samples
+parameters = pd.read_table(
+    "../config/parameters.tsv", sep="\t", dtype={"sample": str}
+).set_index(["sample"], drop=False)
+
 rule all:
     input:
         #expand("fastp_results/trimmed_paired_R1_{ID}.fastq.gz", ID = config["samples"]),
         "multiqc_report.html",
-        expand("samtools_results/{ID}.txt", ID = config["samples"]),
-        expand("varscan_results/{ID}.tsv", ID = config["samples"])
+        expand("kmc_results/after_{sample}.txt", sample = parameters.loc[parameters["experiment"] == "adaptest", "sample"])        
+        #expand("samtools_results/{ID}.txt", ID = config["samples"]),
+        #expand("varscan_results/{ID}.tsv", ID = config["samples"])
 
 include: "rules/fastp.smk"
+include: "rules/kmc.smk"
 include: "rules/kmc_contam_db.smk"
 include: "rules/kmc_rm_contam.smk"
 include: "rules/multiqc.smk"
-include: "rules/bwa_index.smk"
-include: "rules/bwa_mem.smk"
-include: "rules/samtools.smk"
-include: "rules/varscan.smk"
+#include: "rules/bwa_index.smk"
+#include: "rules/bwa_mem.smk"
+#include: "rules/samtools.smk"
+#include: "rules/varscan.smk"

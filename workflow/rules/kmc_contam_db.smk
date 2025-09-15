@@ -1,6 +1,7 @@
 rule kmc_contam_db:
     input:
-        expand("../config/screen_genomes/{contam}.fa", contam = config["custom_contams"]),
+        read1 = expand("{read1}", read1 = parameters.loc[parameters["experiment"] == "seedmix", "read1"]),
+        read2 = expand("{read2}", read2 = parameters.loc[parameters["experiment"] == "seedmix", "read2"]),
     output:
         list="contam.list",
         pre="contam.kmc_pre",
@@ -16,10 +17,10 @@ rule kmc_contam_db:
         fi
 
         # create file list
-        echo {input} | tr ' ' '\n' > {output.list}
+        echo {input.read1} {input.read2} | tr ' ' '\n' > {output.list}
 
         # build kmc db
-        kmc -k{params.k} -m36 -t{threads} -ci1 -cs2 -fm @{output.list} contam kmc_tmp_dir/
+        kmc -k{params.k} -m36 -t{threads} -ci1 -cs2 -fq @{output.list} contam kmc_tmp_dir/
 
         # clean up
         rm -r kmc_tmp_dir/
