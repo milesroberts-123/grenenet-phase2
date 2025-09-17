@@ -1291,14 +1291,15 @@ pool_samples:
 k: 31
 
 ## minimum k-mer count for kmc3
-mincount: 5
+contam_mincount: 2
+sample_mincount: 4
 
 ## maximum k-mer count for kmc3
 maxcount: 100000
 
 ## number of k-mer hits that a read needs to have to determine contamination
-contam_match_limit_count: 1
-contam_match_limit_percent: 1.0
+contam_match_limit_count: 3
+contam_match_limit_percent: 0.9
 
 # fastp parameters ==========================================================================
 

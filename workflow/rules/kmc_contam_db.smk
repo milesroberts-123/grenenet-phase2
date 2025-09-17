@@ -9,7 +9,9 @@ rule kmc_contam_db:
     conda:
         "../envs/kmc.yaml"
     params:
-        k = config["k"]
+        k = config["k"],
+        mincount = config["contam_mincount"],
+        maxcount = config["maxcount"]
     shell:
         """
         if [ ! -d "kmc_tmp_dir" ]; then
@@ -20,7 +22,7 @@ rule kmc_contam_db:
         echo {input.read1} {input.read2} | tr ' ' '\n' > {output.list}
 
         # build kmc db
-        kmc -k{params.k} -m36 -t{threads} -ci1 -cs2 -fq @{output.list} contam kmc_tmp_dir/
+        kmc -k{params.k} -m36 -t{threads} -ci{params.mincount} -cs{params.maxcount} -cx{params.maxcount} -fq @{output.list} contam kmc_tmp_dir/
 
         # clean up
         rm -r kmc_tmp_dir/

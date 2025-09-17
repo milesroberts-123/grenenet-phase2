@@ -790,8 +790,37 @@ head(adaptest_data)
 
 head(seed_mix_data)
 
-all_data = rbind(adaptest_data, seed_mix_data)
+# benchmark data
+benchmark_pos_root = "/global/home/users/xingwu/moi_lab/projects/grenenet-phase1/kmer_contamination/true_positive/"
 
-head(all_data)
+benchmark_pos_samples = c("SRR1945438",
+"SRR1945770",
+"SRR1945842",
+"SRR1945887",
+"SRR1945967",
+"SRR1945994",
+"SRR1946007",
+"SRR1946101",
+"SRR1946133",
+"SRR1946188",
+"SRR1946320")
 
+benchmark_pos_data = data.frame(sample = benchmark_pos_samples, experiment = "benchmark", read1 = paste(benchmark_pos_root, benchmark_pos_samples, "_1_P.fq.gz",sep = ""), read2 = paste(benchmark_pos_root, benchmark_pos_samples, "_2_P.fq.gz",sep = ""))
+
+benchmark_neg_root = "/global/home/users/xingwu/moi_lab/projects/grenenet-phase1/kmer_contamination/true_negative/"
+
+benchmark_neg_samples = c("SRR1945503",
+"SRR1945534",
+"SRR1945563",
+"SRR1945571",
+"SRR1945586",
+"SRR1945789",
+"SRR1945819",
+"SRR1945831",
+"SRR1945858",
+"SRR1945930")
+
+benchmark_neg_data = data.frame(sample = benchmark_neg_samples, experiment = "benchmark", read1 = paste(benchmark_neg_root, benchmark_neg_samples, "_1_P.fq.gz",sep = ""), read2 = paste(benchmark_neg_root, benchmark_neg_samples, "_2_P.fq.gz",sep = ""))
+
+all_data = rbind(adaptest_data, seed_mix_data, benchmark_pos_data, benchmark_neg_data)
 write.table(all_data, "parameters.tsv", sep = "\t", quote = F, row.names = F)

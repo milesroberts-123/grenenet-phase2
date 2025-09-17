@@ -6,17 +6,17 @@ rule bwa_mem:
         bwt=config["reference"] + ".bwt",
         pac=config["reference"] + ".pac",
         sa=config["reference"] + ".sa", 
-        reads="no_contam_reads/{ID}.fastq",
+        reads="filter_results/{sample}.fastq.gz",
     output:
-        final="bwa_results/{ID}.bam",
-        bai="bwa_results/{ID}.bam.bai"
+        final="bwa_results/{sample}.bam",
+        bai="bwa_results/{sample}.bam.bai"
     conda:
         "../envs/bwa.yaml"
     shell:
         """
         # align reads to reference
         echo Aligning reads...
-        bwa mem -R '@RG\\tID:{wildcards.ID}\\tSM:{wildcards.ID}' -t {threads} {input.ref} {input.reads} | samtools sort -O bam > {output.final}
+        bwa mem -R '@RG\\tID:{wildcards.sample}\\tSM:{wildcards.sample}' -t {threads} {input.ref} {input.reads} | samtools sort -O bam > {output.final}
         
         # index final output
         echo Indexing final output...

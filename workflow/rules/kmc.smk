@@ -11,7 +11,7 @@ rule kmc:
     conda:
         "../envs/kmc.yaml"
     params:
-        mincount=config["mincount"],
+        mincount=config["sample_mincount"],
         maxcount=config["maxcount"],
         k=config["k"],
     shell:
@@ -26,7 +26,7 @@ rule kmc:
         echo {input.pread1} {input.pread2} {input.uread1} {input.uread2} | tr ' ' '\n' > {output.list}
 
         # count k-mers
-        kmc -m15 -t{threads} -ci{params.mincount} -cs{params.maxcount} -k{params.k} @{output.list} before_{wildcards.ID} tmp_kmc_{wildcards.ID}
+        kmc -m15 -t{threads} -ci{params.mincount} -cs{params.maxcount} -cx{params.maxcount} -k{params.k} @{output.list} before_{wildcards.ID} tmp_kmc_{wildcards.ID}
 
         # delete tmp directories
         rm -r tmp_kmc_{wildcards.ID}
