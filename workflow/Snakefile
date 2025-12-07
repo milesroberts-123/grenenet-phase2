@@ -11,25 +11,30 @@ min_version("9.5.1")
 configfile: "../config/config.yaml"
 
 # load samples
-parameters = pd.read_table(
-    "../config/parameters.tsv", sep="\t", dtype={"sample": str}
-).set_index(["sample"], drop=False)
+#parameters = pd.read_table(
+#    "../config/parameters.tsv", sep="\t", dtype={"sample": str}
+#).set_index(["sample"], drop=False)
 
 rule all:
     input:
+        expand("freqk_call_results/{sample}.txt", sample=config["phase1_poolseq_samples"])
+
+#rule all:
+#    input:
         #expand("fastp_results/trimmed_paired_R1_{ID}.fastq.gz", ID = config["samples"]),
-        "multiqc_report.html",
+#        "multiqc_report.html",
         #expand("kmc_results/after_{sample}.txt", sample = parameters.loc[parameters["experiment"] == "adaptest", "sample"])        
-        expand("samtools_results/{sample}.txt", sample = parameters.loc[parameters["experiment"] == "benchmark", "sample"]),
+#        expand("samtools_results/{sample}.txt", sample = parameters.loc[parameters["experiment"] == "benchmark", "sample"]),
         #expand("varscan_results/{ID}.tsv", ID = config["samples"])
 
-include: "rules/fastp.smk"
-include: "rules/kmc.smk"
-include: "rules/kmc_contam_db.smk"
-include: "rules/kmc_rm_contam.smk"
-include: "rules/kmc_filter.smk"
-include: "rules/multiqc.smk"
-include: "rules/bwa_index.smk"
-include: "rules/bwa_mem.smk"
-include: "rules/samtools.smk"
+include: "rules/freqk.smk"
+#include: "rules/fastp.smk"
+#include: "rules/kmc.smk"
+#include: "rules/kmc_contam_db.smk"
+#include: "rules/kmc_rm_contam.smk"
+#include: "rules/kmc_filter.smk"
+#include: "rules/multiqc.smk"
+#include: "rules/bwa_index.smk"
+#include: "rules/bwa_mem.smk"
+#include: "rules/samtools.smk"
 #include: "rules/varscan.smk"
