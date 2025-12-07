@@ -9,7 +9,8 @@ cores: 1000
 default-resources:
     slurm_account: "co_moilab"
     slurm_partition: "savio3_htc"
-    slurm_extra: "--qos=savio_lowprio"
+    slurm_qos: "savio_lowprio"
+    #slurm_extra: "--qos=savio_lowprio"
     ntasks: 1
     cpus_per_task: 1
     runtime: "180m"
@@ -17,6 +18,8 @@ default-resources:
 
 # here only rules, which require different (more) resources:
 set-resources:
+    freqk_count:
+        cpus_per_task: 4
     fastp:
         cpus_per_task: 4
     kmc_contam_db:
@@ -31,6 +34,7 @@ set-resources:
 # parallelization with threads needs to be defined separately:
 # threads and cpus_per_task are supposed to be synonymous for this plugin, but for some reason I need to specify them separately
 set-threads:
+    freqk_count: 4
     fastp: 4
     kmc: 2
     kmc_contam_db: 4
