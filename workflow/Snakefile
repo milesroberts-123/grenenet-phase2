@@ -17,7 +17,7 @@ configfile: "../config/config.yaml"
 
 rule all:
     input:
-        expand("freqk_call_results/{sample}.txt", sample=config["phase1_poolseq_samples"])
+        expand("freqk_call_results/{sample}.txt", sample=config["seed_samples"])
 
 #rule all:
 #    input:

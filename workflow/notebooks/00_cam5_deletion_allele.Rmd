@@ -1,0 +1,111 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(ggplot2)
+library(ggpubr)
+
+wd = "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/"
+
+today = Sys.Date()
+```
+
+```{r}
+
+# allele frequency calls
+calls <- list.files(path = paste(wd, "freqk_call_results/", sep = ""), full.names = T)
+
+calls <- lapply(calls, read.table, header = F, sep = "|")
+
+calls <- do.call("rbind", calls)
+
+# k-mer counts
+counts <- list.files(path = paste(wd, "freqk_count_results", sep = ""), pattern = "counts_by_allele", full.names = T)
+
+counts <- lapply(counts, read.table, header = F, sep = "|")
+
+counts <- do.call("rbind", counts)
+
+# distribution of allele frequencies
+# ggplot(calls, aes(x = V2)) +
+#   geom_density() +
+#   theme_minimal() +
+#   theme(text = element_text(size = 16, family = "Helvetica", color = "black"),
+#         axis.text.y = element_text(color = "black"),
+#         axis.text.x = element_text(color = "black")) +
+#   labs(x = "Relative frequency estimate of deletion allele")
+
+ggdensity(calls, x = "V2", add = "median", rug = TRUE) +
+  theme_minimal() +
+  theme(text = element_text(size = 16, family = "Helvetica", color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.text.x = element_text(color = "black")) +
+  labs(x = "Relative frequency estimate of deletion allele")
+
+ggsave(paste("../results/", today, "/density_cam5del_frequency.pdf", sep = ""), height = 5, width = 5)
+
+# distribution of k-mer counts frequencies
+# ggplot(counts, aes(x = V1+V2)) +
+#   geom_density() +
+#   theme_minimal() +
+#   theme(text = element_text(size = 16, family = "Helvetica", color = "black"),
+#         axis.text.y = element_text(color = "black"),
+#         axis.text.x = element_text(color = "black")) +
+#   labs(x = "Total k-mer coverage of deletion variant")
+
+ggdensity(counts, x = "V2", add = "median", rug = TRUE) +
+  theme_minimal() +
+  theme(text = element_text(size = 16, family = "Helvetica", color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.text.x = element_text(color = "black")) +
+  labs(x = "Total k-mer coverage of deletion variant")
+
+ggsave(paste("../results/", today, "/density_cam5del_coverage.pdf", sep = ""), height = 5, width = 5)
+
+```
+
+
+## seed mix k-mers
+```{r}
+
+seed_counts <- list.files(path = paste(wd, "freqk_count_results", sep = ""), pattern = "counts_by_allele_S", full.names = T)
+
+seed_counts <- lapply(seed_counts, read.table, header = F, sep = "|")
+
+seed_counts <- do.call("rbind", seed_counts)
+
+#
+ggpaired(seed_counts, cond1 = "V1", cond2 = "V2") +
+  scale_x_discrete(labels = c(V1 = "REF", V2 = "cam5del (Can-0, Cvi-0, Zin-9)")) +
+    theme_minimal() +
+  theme(text = element_text(size = 16, family = "Helvetica", color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.text.x = element_text(color = "black"),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(x = "Allele", y = "K-mer count", title = "Seed mix pool-seq")
+
+ggsave(paste("../results/", today, "/paired_ref_cam5del_coverage.pdf", sep = ""), height = 5, width = 6)
+
+# frequencies
+seed_calls <- list.files(path = paste(wd, "freqk_call_results", sep = ""), pattern = "^S", full.names = T)
+
+seed_calls <- lapply(seed_calls, read.table, header = F, sep = "|")
+
+seed_calls <- do.call("rbind", seed_calls)
+
+#
+seed_calls$name = paste("S", 1:8, sep = "")
+
+ggbarplot(seed_calls, y = "V2", x = "name", sort.val = "desc") +
+      theme_minimal() +
+  theme(text = element_text(size = 16, family = "Helvetica", color = "black"),
+        axis.text.y = element_text(color = "black"),
+        axis.text.x = element_text(color = "black"),
+        plot.title = element_text(hjust = 0.5)) +
+  labs(x = "Seed mix", y = "cam5del allele relative frequency")
+
+ggsave(paste("../results/", today, "/barplot_seedmix_cam5del_frequency.pdf", sep = ""), height = 5, width = 6)
+```

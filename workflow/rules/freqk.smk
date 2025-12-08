@@ -1,6 +1,6 @@
 rule cat:
     input:
-        expand(config["phase1_poolseq_root"] + "{{sample}}_{mate}.fq.gz", mate=["1","2"]),
+        expand(config["seed_root"] + "{{sample}}{mate}", mate=config["seed_suffix"]),
     output:
         temp("cat_results/{sample}.fq"),
     shell:
