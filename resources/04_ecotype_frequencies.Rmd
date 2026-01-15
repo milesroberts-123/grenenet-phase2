@@ -1,0 +1,54 @@
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+```{r}
+library(ggplot2)
+library(dplyr)
+```
+
+```{r}
+
+load("ecotypes_frequencies.rda")
+
+load("samples_data.rda")
+
+names(samples_data)[1] = "sample"
+
+# look at an ecotype
+ecotypes_frequencies[(ecotypes_frequencies$ecotype == "6911"),]
+
+samples_ecotypes <- merge(samples_data, ecotypes_frequencies, by = "sample", all.x = T, all.y = T)
+
+table(samples_data$generation)
+
+samples_ecotypes$date = as.Date(samples_ecotypes$date, format = "%Y%m%d")
+
+ggplot(samples_ecotypes[(samples_ecotypes$site == 6),], aes(x = date, y = freq, color = ecotype)) +
+  geom_point() +
+  scale_x_date(date_breaks = "1 month", date_labels =  "%b %Y") +
+  ylim(0,1) +
+  theme(axis.text.x=element_text(angle=60, hjust=1), legend.position = "None")
+
+#
+
+sum(ecotypes_frequencies[(ecotypes_frequencies$sample == "MLFH601220180420"),"freq"])
+
+# for a given ecotype, site, plot, and pair of generations
+for(e in unique(samples_ecotypes$ecotype)){
+  for(s in unique(samples_ecotypes$site)){
+    for(p in unique(samples_ecotypes$plot)){
+      for(g in 1:5){
+        samples_ecotypes_sub <- samples_ecotypes[(samples_ecotypes$ecotype == e) & (samples_ecotypes$site == s) & (samples_ecotypes$plot == p) & (samples_ecotypes$generation %in% c(g, g+1)),]
+        
+        # average across replicates
+        
+        # compare the pair of generations 
+      }
+    }
+  }
+}
+```
+

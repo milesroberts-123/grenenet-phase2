@@ -2,7 +2,8 @@
 reference: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/Athaliana_447_TAIR10.fa"
 
 # Phase 1 pool-seq
-freqk_index: "/global/home/users/milesroberts/tmp/tati_cam5_alignments/index.txt"
+# freqk_index: "/global/home/users/milesroberts/tmp/tati_cam5_alignments/index.txt"
+freqk_index: "/global/scratch/users/milesroberts/tmp/tati_cam5_alignments/var_index.txt"
 
 phase1_poolseq_root: "/global/home/users/xingwu/moi_lab/projects/grenenet-phase1/fastq/pool_sequencing/" 
 
@@ -3751,6 +3752,10 @@ phase1_poolseq_samples:
  - "MLFH601120180420"
  - "MLFH601220180216"
  - "MLFH601220180420"
+
+phase1_poolseq_suffix:
+ - "_1.fq.gz"
+ - "_2.fq.gz"
 
 # phase 2 poolseq ==========================================
 phase2_poolseq_root: "/global/scratch/projects/fc_moilab/projects/grenenet_phase2_poolseq/"

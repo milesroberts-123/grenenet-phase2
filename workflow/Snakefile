@@ -11,11 +11,15 @@ min_version("9.5.1")
 configfile: "../config/config.yaml"
 
 # load samples
-#parameters = pd.read_table(
-#    "../config/parameters.tsv", sep="\t", dtype={"sample": str}
-#).set_index(["sample"], drop=False)
+parameters = pd.read_table(
+    "../config/parameters.tsv", sep="\t", dtype={"sample": str}
+).set_index(["sample"], drop=False)
 
-rule all:
+rule all_poolseq:
+    input:
+        expand("freqk_call_results/{sample}.txt", sample=parameters["sample"])
+
+rule all_seed_mix:
     input:
         expand("freqk_call_results/{sample}.txt", sample=config["seed_samples"])
 
@@ -28,7 +32,7 @@ rule all:
         #expand("varscan_results/{ID}.tsv", ID = config["samples"])
 
 include: "rules/freqk.smk"
-#include: "rules/fastp.smk"
+include: "rules/fastp.smk"
 #include: "rules/kmc.smk"
 #include: "rules/kmc_contam_db.smk"
 #include: "rules/kmc_rm_contam.smk"

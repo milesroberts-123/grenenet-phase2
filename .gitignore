@@ -1,3 +1,4 @@
+*.rda
 *.txt
 *.kmc_pre
 *.kmc_suf
@@ -39,5 +40,6 @@ qmers/
 .snakemake/
 multiqc_data/
 /target
+data/
 /workflow/scripts/qmers/target/
 
