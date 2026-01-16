@@ -13,15 +13,15 @@ default-resources:
     #slurm_extra: "--qos=savio_lowprio"
     ntasks: 1
     cpus_per_task: 1
-    runtime: "60m"
+    runtime: "30m"
     mem_mb: 0
 
 # here only rules, which require different (more) resources:
 set-resources:
     freqk_count:
-        cpus_per_task: 4
+        cpus_per_task: 2
     fastp:
-        cpus_per_task: 4
+        cpus_per_task: 2
     kmc_contam_db:
         cpus_per_task: 4
     kmc_rm_contam:
@@ -34,8 +34,8 @@ set-resources:
 # parallelization with threads needs to be defined separately:
 # threads and cpus_per_task are supposed to be synonymous for this plugin, but for some reason I need to specify them separately
 set-threads:
-    freqk_count: 4
-    fastp: 4
+    freqk_count: 2
+    fastp: 2
     kmc: 2
     kmc_contam_db: 4
     kmc_rm_contam: 4
