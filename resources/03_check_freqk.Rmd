@@ -4,15 +4,62 @@ output: html_notebook
 ---
 
 
+## set-up
 
 ```{r}
 library(ggplot2)
 
 library(scico)
 
-today = Sys.Date()
+library(reshape2)
+
+library(plyr)
+
+today <- Sys.Date()
+
+# global ggplot2 theme
+theme_set(
+  theme_minimal() +
+    theme(
+      text = element_text(
+        size = 16,
+        family = "Helvetica",
+        colour = "black"
+      ),
+      axis.text = element_text(colour = "black"),
+      plot.title = element_text(hjust = 0.5),
+      strip.text = element_text(colour = "black")
+    )
+)
 ```
 
+## Manhattan plots of sweep statistics in founders
+
+```{r}
+
+sweeps <- read.table("../data/sweeps.txt", header = T, sep = "\t")
+
+sweeps <- melt(sweeps, id = c("Contig", "Var_Start", "Var_Stop", "Pos_Start", "Pos_Stop"))
+
+sweeps <- sweeps[!(sweeps$variable %in% c("Theta_W", "Theta_Pi")),]
+
+# manhattan plots of 
+sweeps$variable <- gsub("_", " ", sweeps$variable)
+
+sweeps$Contig <- as.factor(sweeps$Contig)
+
+sweeps$Contig <- revalue(sweeps$Contig, c("0" = "1", "1" = "2", "2" = "3", "3" = "4", "4" = "5"))
+
+ggplot(sweeps, aes(x = (Pos_Start + Pos_Stop)/2, y = value)) +
+  geom_point(shape = 16) +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
+  facet_wrap(variable~Contig, ncol = 5, nrow = 5, scales = "free") +
+  labs(x = "Position", y = "Statistic")
+
+ggsave(paste("../results/", today, "/sweep_stats.pdf", sep = ""), height = 11, width = 13)
+```
+
+## seed mix: compare freqk estimated allele frequencies to vcf snp calls
 
 ```{r}
 

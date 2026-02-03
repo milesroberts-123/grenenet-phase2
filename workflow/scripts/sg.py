@@ -463,8 +463,8 @@ def main(vcz_file, test, window_length, skip_length, output):
     #print("Calculating Zeng's E...")
     #ds = zengs_e(ds)
 
-    print("Calculating Messer's Hscan...")
-    ds = hscan(ds)
+    #print("Calculating Messer's Hscan...")
+    #ds = hscan(ds)
 
     #print(ds.data_vars)
     #print(ds.variant_allele_count.values)
@@ -473,27 +473,27 @@ def main(vcz_file, test, window_length, skip_length, output):
     #print(sg.count_call_alleles(ds)["call_allele_count"].values[:, :, 1])
     #ds["call_dosage"] = (["variants", "samples"], sg.count_call_alleles(ds, merge = False)["call_allele_count"].values[:, :, 1])
     # Calculate dosage
-    print("Calculating dosage...")
-    ds["call_dosage"] = ds["call_genotype"].sum(dim="ploidy")
+    #print("Calculating dosage...")
+    #ds["call_dosage"] = ds["call_genotype"].sum(dim="ploidy")
     
-    print("Calculating LD...")
-    ld_by_win = sg.ld_matrix(ds, dosage = 'call_dosage', threshold = 0.001)
+    #print("Calculating LD...")
+    #ld_by_win = sg.ld_matrix(ds, dosage = 'call_dosage', threshold = 0.001)
     #print(ld_by_win)
     #print(ld_by_win.compute())
     #print(ld_by_win.loc[(ld_by_win["i"] > 1) & (ld_by_win["i"] < 10) & (ld_by_win["j"] > 1) & (ld_by_win["j"] < 10)])
 
-    print("Averaging LD by window...")
-    ds["kellys_zns"] = kellys_zns(ld_by_win, ds.window_start.values, ds.window_stop.values)
+    #print("Averaging LD by window...")
+    #ds["kellys_zns"] = kellys_zns(ld_by_win, ds.window_start.values, ds.window_stop.values)
     #ds["kellys_zns"] = kellys_zns(ld_by_win)
 
-    print("Calculating Kim's omega...")
-    ds["kims_omega"] = kims_omega(ld_by_win, ds.window_start.values, ds.window_stop.values)
+    #print("Calculating Kim's omega...")
+    #ds["kims_omega"] = kims_omega(ld_by_win, ds.window_start.values, ds.window_stop.values)
 
     print("Column binding statistics...")
-    final_table = np.column_stack((ds.window_contig.values, ds.window_start.values, ds.window_stop.values, window_pos_start, window_pos_stop ,ds.stat_diversity.values, ds.Wattersons_Theta.values, ds.stat_Tajimas_D.values, ds.stat_Garud_h1.values, ds.stat_Garud_h12.values, ds.stat_Garud_h123.values, ds.stat_Garud_h2_h1.values, ds.kellys_zns.values, ds.kims_omega.values, ds.messers_hscan.values))
+    final_table = np.column_stack((ds.window_contig.values, ds.window_start.values, ds.window_stop.values, window_pos_start, window_pos_stop ,ds.stat_diversity.values, ds.Wattersons_Theta.values, ds.stat_Tajimas_D.values, ds.stat_Garud_h1.values, ds.stat_Garud_h12.values, ds.stat_Garud_h123.values, ds.stat_Garud_h2_h1.values))
 
     print("Saving table...")
-    np.savetxt(output, final_table, delimiter='\t', header="Contig\tVar_Start\tVar_Stop\tPos_Start\tPos_Stop\tTheta_Pi\tTheta_W\tTajimas_D\tGarud_H1\tGarud_H12\tGarud_H123\tGarud_H2_H1\tKellys_Zns\tKims_Omega\tMessers_Hscan", comments="")
+    np.savetxt(output, final_table, delimiter='\t', header="Contig\tVar_Start\tVar_Stop\tPos_Start\tPos_Stop\tTheta_Pi\tTheta_W\tTajimas_D\tGarud_H1\tGarud_H12\tGarud_H123\tGarud_H2_H1", comments="")
     print("Done! :D")
 
 if __name__ == '__main__':
