@@ -31,9 +31,7 @@
 *.fa.pac
 *.fa.sa
 *.hapcount
-freqk_call_results/
-freqk_count_results/
-fastp_results/
+**results/
 screen_genomes/
 logs/
 qmers/
@@ -42,4 +40,5 @@ multiqc_data/
 /target
 data/
 /workflow/scripts/qmers/target/
-
+**.vcz/
+**.icf/
