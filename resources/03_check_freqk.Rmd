@@ -7,13 +7,17 @@ output: html_notebook
 ## set-up
 
 ```{r}
+rm(list = ls())
+
 library(ggplot2)
 
 library(scico)
 
 library(reshape2)
 
-library(plyr)
+library(dplyr)
+
+library(purrr)
 
 today <- Sys.Date()
 
@@ -31,6 +35,26 @@ theme_set(
       strip.text = element_text(colour = "black")
     )
 )
+```
+
+## functions
+
+```{r}
+
+plot_manhattan_by_site <- function(data, site, today, height, width){
+
+print(site)
+  
+ggplot(subset(data, SITE == site), aes(x = POS, y = -log10(pvalue))) +
+  geom_point(shape = 16) +
+  facet_wrap(~CHROM, ncol = 5, labeller = "label_both", scales = "free_x") +
+  theme(axis.text.x = element_text(angle = 45, hjust=1)) +
+  labs(x = "Position", y = "-log10(p-value)")
+  
+ggsave(paste("../results/", today, "/manhattan_feder_", site, ".pdf", sep = ""), height = height, width = width)
+
+}
+
 ```
 
 ## Manhattan plots of sweep statistics in founders
@@ -103,5 +127,108 @@ ggplot(real_vs_freqk, aes(x = RF_real, y = RF_freqk)) +
 ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
 ```
 
+## find allele frequency data
 
+```{r}
+
+gen0 <- read.table("../data/average_seedmix_p0_LDpruned.txt", sep = "\t")
+
+hapfire <- read.table("../data/merged_hapFIRE_allele_frequency_LDpruned.txt", sep = "\t", header = T)
+
+gen1 <- hapfire[,grepl("_1_", names(hapfire))] 
+
+gen2 <- hapfire[,grepl("_2_", names(hapfire))] 
+
+gen3 <- hapfire[,grepl("_3_", names(hapfire))] 
+
+#
+shared_gen1 <- (gsub("_1_","_",names(gen1)) %in% gsub("_2_","_",names(gen2))) & (gsub("_1_","_",names(gen1)) %in% gsub("_3_","_",names(gen3)))
+
+shared_gen2 <- (gsub("_2_","_",names(gen2)) %in% gsub("_3_","_",names(gen3))) & (gsub("_2_","_",names(gen2)) %in% gsub("_1_","_",names(gen1)))
+
+shared_gen3 <- (gsub("_3_","_",names(gen3)) %in% gsub("_2_","_",names(gen2))) & (gsub("_3_","_",names(gen3)) %in% gsub("_1_","_",names(gen1)))
+
+gen1_sub <- gen1[,shared_gen1]
+
+gen2_sub <- gen2[,shared_gen2]
+
+gen3_sub <- gen3[,shared_gen3]
+
+# calculate statistic
+y1 <- (gen1_sub - gen0$V3)/sqrt(2*gen0$V3*(1-gen0$V3)*(1-0))
+y1$gen <- 1
+y1$CHROM <- gen0$V1
+y1$POS <- gen0$V2
+y1 <- melt(y1, id = c("gen", "CHROM", "POS"))
+
+
+y2 <- (gen2_sub - gen1_sub)/sqrt(2*gen1_sub*(1-gen1_sub)*(2-1))
+y2$gen <- 2
+y2$CHROM <- gen0$V1
+y2$POS <- gen0$V2
+y2 <- melt(y2, id = c("gen", "CHROM", "POS"))
+
+y3 <- (gen3_sub - gen2_sub)/sqrt(2*gen2_sub*(1-gen2_sub)*(2-1))
+y3$gen <- 3
+y3$CHROM <- gen0$V1
+y3$POS <- gen0$V2
+y3 <- melt(y3, id = c("gen", "CHROM", "POS"))
+
+yvalues <- rbind(y1, y2, y3)
+yvalues$SITE <- gsub("X", "", gsub("_.*", "", yvalues$variable))
+yvalues$REP <- gsub(".*_", "", yvalues$variable)
+
+t_test_stat <- yvalues %>% group_by(CHROM, POS, SITE) %>% summarize(ybar = mean(value, na.rm = T), s2 = var(value, na.rm = T), n = n())
+
+t_test_stat$tvalue <- t_test_stat$ybar/sqrt(t_test_stat$s2/t_test_stat$n)
+
+t_test_stat$pvalue <- dt(t_test_stat$tvalue, df = t_test_stat$n)
+
+# Manhattan plot
+map(unique(t_test_stat$SITE), ~plot_manhattan_by_site(data = t_test_stat, site = .x, today, height = 4, width = 10))
+
+#load("../data/allele_allyears_frequencies_long_raw_climate.rda")
+# calculate mean and average
+
+# ybar <- (y1 + y2 + y3)/3
+# 
+# s2 <- (1/(3-1))*( (y1 - ybar)^2 + (y2 - ybar)^2 + (y3 - ybar)^2 )
+# 
+# t_test_stat <- ybar/sqrt(s2/3)
+# 
+# # 
+# t_test_stat$CHROM <- gen0$V1
+# 
+# t_test_stat$POS <- gen0$V2
+# 
+# t_test_stat <- melt(t_test_stat, id = c("CHROM", "POS"))
+# 
+# t_test_stat$SITE <- gsub("X", "", gsub("_.*", "", t_test_stat$variable))
+# 
+# t_test_stat$REP <- gsub(".*_", "", t_test_stat$variable)
+# 
+# # average across reps of each pos at each site
+# mean_t_stat <- t_test_stat %>% 
+#   group_by(CHROM, POS, SITE) %>% 
+#   summarize(MEANT = mean(value, na.rm = T), SDT = sd(value, na.rm = T))
+# 
+# # calculate p-values
+# #
+# mean_t_stat$PVALUE <- dt(mean_t_stat$MEANT, df = 2)
+# 
+# # adjust p-values
+# mean_t_stat$ADJPVALUE <- p.adjust(mean_t_stat$PVALUE, method = "bonferroni")
+# 
+# # plot distribution of stats across positions and sites
+# ggplot(mean_t_stat, aes(x = MEANT)) +
+#   geom_density()
+#   xlim(c(-10, 10))
+#   
+# # Manhattan plot
+# map(unique(mean_t_stat$SITE), ~manhattan_by_site(data = mean_t_stat, site = .x, today, height = 4, width = 10))
+
+#
+#summary(unlist(as.vector(t_test_stat)))
+
+```
 

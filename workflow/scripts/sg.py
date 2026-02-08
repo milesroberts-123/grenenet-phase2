@@ -398,13 +398,14 @@ def hscan(ds):
 # define click options
 @click.command(context_settings={'show_default': True})
 @click.option("-v", "--vcz-file", default=None, help="Path to VCZ file", multiple=False)
-@click.option("-t", "--test", is_flag=True, help="Simulate a testing dataset")
+@click.option("-u", "--test", is_flag=True, help="Simulate a testing dataset")
+@click.option("-t", "--window-type", default="variant", help="Window type: position/variant", multiple=False)
 @click.option("-w","--window-length", default=129, help="number of snps to include in window", type = click.INT)
 @click.option("-s","--skip-length", default=1, help="number of snps to skip between windows", type = click.INT)
 @click.option("-o", "--output", default="sweeps.txt", help="Prefix for output files")
 
 # Main function that combines all other functions
-def main(vcz_file, test, window_length, skip_length, output):
+def main(vcz_file, test, window_type, window_length, skip_length, output):
 
     if test:
         print("Generating test dataset...")
@@ -418,7 +419,15 @@ def main(vcz_file, test, window_length, skip_length, output):
 
     # create windows
     print("Creating windows...")
-    ds = sg.window_by_variant(ds, size=window_length, step=skip_length)
+    if window_type == "variant":
+        print("Windowing by variant...")
+        ds = sg.window_by_variant(ds, size=window_length, step=skip_length)
+    elif window_type == "position":
+        print("Windowing by position...")
+        ds = sg.window_by_position(ds, size=window_length)
+    else:
+        print("No valid window type specified")
+
     #print(ds)
     #print(ds.window_start.values)
     #print(ds.window_stop.values)
@@ -439,8 +448,8 @@ def main(vcz_file, test, window_length, skip_length, output):
     ds = sg.sample_stats(ds)
     #print(ds.sample_n_called.values)
 
-    print("Calculating diversity...")
-    ds = sg.diversity(ds)
+    #print("Calculating diversity...")
+    #ds = sg.diversity(ds)
     #print(ds.stat_diversity.values)
 
     print("Calculating Tajima's D...")
@@ -449,8 +458,8 @@ def main(vcz_file, test, window_length, skip_length, output):
     print("Calculating Garud's H statistics...")
     ds = sg.Garud_H(ds)
     
-    print("Calculating Watterson's theta...")
-    ds = wattersons_theta(ds)
+    #print("Calculating Watterson's theta...")
+    #ds = wattersons_theta(ds)
     #print(ds.Wattersons_Theta.values)
     
     #print("Calculating Theta L...")
@@ -490,10 +499,10 @@ def main(vcz_file, test, window_length, skip_length, output):
     #ds["kims_omega"] = kims_omega(ld_by_win, ds.window_start.values, ds.window_stop.values)
 
     print("Column binding statistics...")
-    final_table = np.column_stack((ds.window_contig.values, ds.window_start.values, ds.window_stop.values, window_pos_start, window_pos_stop ,ds.stat_diversity.values, ds.Wattersons_Theta.values, ds.stat_Tajimas_D.values, ds.stat_Garud_h1.values, ds.stat_Garud_h12.values, ds.stat_Garud_h123.values, ds.stat_Garud_h2_h1.values))
+    final_table = np.column_stack((ds.window_contig.values, ds.window_start.values, ds.window_stop.values, window_pos_start, window_pos_stop, ds.stat_Tajimas_D.values, ds.stat_Garud_h1.values, ds.stat_Garud_h12.values, ds.stat_Garud_h123.values, ds.stat_Garud_h2_h1.values))
 
     print("Saving table...")
-    np.savetxt(output, final_table, delimiter='\t', header="Contig\tVar_Start\tVar_Stop\tPos_Start\tPos_Stop\tTheta_Pi\tTheta_W\tTajimas_D\tGarud_H1\tGarud_H12\tGarud_H123\tGarud_H2_H1", comments="")
+    np.savetxt(output, final_table, delimiter='\t', header="Contig\tVar_Start\tVar_Stop\tPos_Start\tPos_Stop\tTajimas_D\tGarud_H1\tGarud_H12\tGarud_H123\tGarud_H2_H1", comments="")
     print("Done! :D")
 
 if __name__ == '__main__':
