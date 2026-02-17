@@ -1,3 +1,161 @@
+<<<<<<< HEAD
+---
+title: "R Notebook"
+output: html_notebook
+---
+
+
+
+```{r}
+library(ggplot2)
+
+library(scico)
+
+library(tidyverse)
+
+library(rjson)
+
+today = Sys.Date()
+
+# global ggplot2 theme
+theme_set(
+  theme_minimal() +
+    theme(
+      text = element_text(
+        size = 16,
+        family = "Helvetica",
+        colour = "black"
+      ),
+      axis.text = element_text(colour = "black"),
+      plot.title = element_text(hjust = 0.5),
+      strip.text = element_text(colour = "black")
+    )
+)
+```
+
+## flower pool-seq: do frequency estimates correlate with coverage?
+
+```{r}
+
+freqk_files <- list.files(path = "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/freqk_call_results", pattern = ".txt", full.names = T)
+
+cov_files <- list.files(path = "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/fastp_results", pattern = ".json", full.names = T)
+
+extract_num_bases = function(x){
+  json_ob <- fromJSON(file = x)
+  json_ob$read2_after_filtering$total_reads
+}
+
+extract_sample_id = function(x){
+  gsub("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/fastp_results/", "", gsub("_R1R2.json", "", x))
+}
+
+extract_freqk = function(x){
+  read.table(x, sep = "|")$V1[1]
+}
+
+extract_freqk_id = function(x){
+  gsub(".*/", "", gsub(".txt", "", x))
+}
+
+coverages <- data.frame(
+  ID = unlist(lapply(cov_files, extract_sample_id)),
+  num_bases = unlist(lapply(cov_files, extract_num_bases))
+)
+
+freqs <- data.frame(
+  ID = unlist(lapply(freqk_files, extract_freqk_id)),
+  freq = unlist(lapply(freqk_files, extract_freqk))
+)
+
+freq_cov <- merge(freqs, coverages, by = "ID")
+
+# distribution of REF frequencies across samples
+ggplot(freq_cov, aes(x = freq)) +
+  geom_density()
+
+ggplot(freq_cov[(freq_cov$freq > 0),], aes(x = freq)) +
+  geom_density()
+
+# do frequencies correlate with coverage
+# ideally, no!
+sub_freq_cov <- subset(freq_cov, (freq > 0) & (freq < 1))
+
+ggplot(sub_freq_cov, aes(x = num_bases, y = freq)) +
+  geom_point() +
+  scale_x_log10() +
+  labs(x = "Number of bases (post-fastp)", y = "REF frequency", title = paste("\u03c1 =", signif(cor.test(sub_freq_cov$num_bases, sub_freq_cov$freq, method = "spearman")$estimate, 2)))
+
+ggplot(freq_cov, aes(x = num_bases, y = freq)) +
+  geom_point() +
+  scale_x_log10() +
+  labs(x = "Number of bases (post-fastp)", y = "REF frequency", title = paste("r =", signif(cor.test(freq_cov$num_bases, freq_cov$freq, method = "pearson")$estimate, 2)))
+
+ggsave(paste("../results/", today, "/coverage_vs_freqk_estimates.pdf", sep = ""),height = 5, width = 5)
+```
+
+## seed mix pool-seq: do freqk estimates correlate with known SNP frequencies?
+
+```{r}
+# freqk estimates
+freqk_calls <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/calls.txt", sep = "|", header = F, col.names = c("RF_freqk", "AF_freqk"))
+
+freqk_index <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/ref_index_greneNet.txt", sep = ",", header = F)
+
+freqk_calls <- cbind(freqk_index, freqk_calls)
+
+freqk_calls$V3 = freqk_calls$V3 + 2
+
+# greneNet vcf
+real_calls <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/greneNet_allele_counts.tsv", sep = "\t", header = F, col.names = c("CHROM", "POS", "REF", "ALT", "AN", "AC"))
+
+# calculate reference allele frequency
+real_calls$RF_real = 1 - real_calls$AC/real_calls$AN
+
+# merge
+names(freqk_calls)[2:3] = c("CHROM", "POS")
+
+real_vs_freqk <- merge(real_calls, freqk_calls, by = c("CHROM", "POS"))
+
+# plot
+rho_estimate = signif(cor.test(real_vs_freqk$RF_real, real_vs_freqk$RF_freqk, method = "spearman")$estimate, 3)
+
+ggplot(real_vs_freqk, aes(x = RF_real, y = RF_freqk)) +
+  geom_bin2d() +
+  #geom_smooth() +
+  geom_abline(slope = 1, intercept = 0, color = "white", lwd = 2) +
+  #scale_fill_continuous(trans = "log10") +
+  scale_fill_scico(palette = "bilbao", trans = "log10") +
+  theme_minimal() +
+  theme(text = element_text(size = 16, family = "Helvetica", colour = "black"),
+        axis.text.x = element_text(color = "black"),
+        axis.text.y = element_text(color = "black"), 
+        plot.title = element_text(hjust = 0.5)) +
+  labs(x = "REF frequency in greneNet VCF", y = "REF frequency from\nk-mer counts", fill = "log10(count)", title = paste("\u03C1 = ", rho_estimate, sep = ""))
+
+ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
+```
+
+## Frequency trends in cam5indel
+```{r}
+names(freq_cov)[1] <- "sampleid"
+
+# merge sample information with frequency estimates
+freq_samples <- merge(freq_cov, samples_data, by = "sampleid")
+
+freq_summary <- freq_samples %>%
+  dplyr::group_by(site, generation) %>%
+  dplyr::summarise(mean_freq = mean(freq, na.rm = T))
+
+ggplot(freq_summary, aes(x = generation, y = mean_freq)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~site, ncol = 4, nrow = 8)
+
+ggsave(paste("../results/", today, "/temporal_freq_cam5indel.pdf", sep = ""), height = 9, width = 5, device = cairo_pdf)
+```
+
+=======
 ---
 title: "R Notebook"
 output: html_notebook
@@ -232,3 +390,4 @@ map(unique(t_test_stat$SITE), ~plot_manhattan_by_site(data = t_test_stat, site =
 
 ```
 
+>>>>>>> 0c13326536bc926a36e573bb65d6c2d03692229a
