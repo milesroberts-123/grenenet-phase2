@@ -3,7 +3,8 @@ reference: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/
 
 # Phase 1 pool-seq
 # freqk_index: "/global/home/users/milesroberts/tmp/tati_cam5_alignments/index.txt"
-freqk_index: "/global/scratch/users/milesroberts/tmp/tati_cam5_alignments/var_index.txt"
+# freqk_index: "/global/scratch/users/milesroberts/tmp/tati_cam5_alignments/var_index.txt"
+freqk_index: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/ref_index_greneNet.txt"
 
 phase1_poolseq_root: "/global/home/users/xingwu/moi_lab/projects/grenenet-phase1/fastq/pool_sequencing/" 
 

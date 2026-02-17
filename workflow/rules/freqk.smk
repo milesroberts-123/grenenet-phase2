@@ -5,6 +5,7 @@ rule cat:
         "fastp_results/trimmed_unpaired_R1_{sample}.fastq.gz",
         "fastp_results/trimmed_unpaired_R2_{sample}.fastq.gz",
         #expand(config["phase1_poolseq_root"] + "{{sample}}{mate}", mate=config["phase1_poolseq_suffix"]),
+    group: "freqk"
     output:
         temp("cat_results/{sample}.fq"),
     shell:
@@ -17,6 +18,7 @@ rule freqk_count:
     output:
         freqs="freqk_count_results/counts_by_allele_{sample}.txt",
         kmers="freqk_count_results/counts_by_kmer_{sample}.txt"
+    group: "freqk"
     shell:
         "scripts/freqk count -n {threads} -i {input.index} -r {input.read} -f {output.freqs} -c {output.kmers}"
 
@@ -26,5 +28,6 @@ rule freqk_call:
         index=config["freqk_index"]
     output:
         "freqk_call_results/{sample}.txt"
+    group: "freqk"
     shell:
         "scripts/freqk call -i {input.index} -c {input.freqs} -o {output}"

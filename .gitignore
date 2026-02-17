@@ -1,3 +1,6 @@
+*.csv
+*.hdf5
+*.fai
 *.rda
 *.txt
 *.kmc_pre
