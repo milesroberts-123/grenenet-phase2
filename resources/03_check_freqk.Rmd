@@ -1,161 +1,3 @@
-<<<<<<< HEAD
----
-title: "R Notebook"
-output: html_notebook
----
-
-
-
-```{r}
-library(ggplot2)
-
-library(scico)
-
-library(tidyverse)
-
-library(rjson)
-
-today = Sys.Date()
-
-# global ggplot2 theme
-theme_set(
-  theme_minimal() +
-    theme(
-      text = element_text(
-        size = 16,
-        family = "Helvetica",
-        colour = "black"
-      ),
-      axis.text = element_text(colour = "black"),
-      plot.title = element_text(hjust = 0.5),
-      strip.text = element_text(colour = "black")
-    )
-)
-```
-
-## flower pool-seq: do frequency estimates correlate with coverage?
-
-```{r}
-
-freqk_files <- list.files(path = "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/freqk_call_results", pattern = ".txt", full.names = T)
-
-cov_files <- list.files(path = "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/fastp_results", pattern = ".json", full.names = T)
-
-extract_num_bases = function(x){
-  json_ob <- fromJSON(file = x)
-  json_ob$read2_after_filtering$total_reads
-}
-
-extract_sample_id = function(x){
-  gsub("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/fastp_results/", "", gsub("_R1R2.json", "", x))
-}
-
-extract_freqk = function(x){
-  read.table(x, sep = "|")$V1[1]
-}
-
-extract_freqk_id = function(x){
-  gsub(".*/", "", gsub(".txt", "", x))
-}
-
-coverages <- data.frame(
-  ID = unlist(lapply(cov_files, extract_sample_id)),
-  num_bases = unlist(lapply(cov_files, extract_num_bases))
-)
-
-freqs <- data.frame(
-  ID = unlist(lapply(freqk_files, extract_freqk_id)),
-  freq = unlist(lapply(freqk_files, extract_freqk))
-)
-
-freq_cov <- merge(freqs, coverages, by = "ID")
-
-# distribution of REF frequencies across samples
-ggplot(freq_cov, aes(x = freq)) +
-  geom_density()
-
-ggplot(freq_cov[(freq_cov$freq > 0),], aes(x = freq)) +
-  geom_density()
-
-# do frequencies correlate with coverage
-# ideally, no!
-sub_freq_cov <- subset(freq_cov, (freq > 0) & (freq < 1))
-
-ggplot(sub_freq_cov, aes(x = num_bases, y = freq)) +
-  geom_point() +
-  scale_x_log10() +
-  labs(x = "Number of bases (post-fastp)", y = "REF frequency", title = paste("\u03c1 =", signif(cor.test(sub_freq_cov$num_bases, sub_freq_cov$freq, method = "spearman")$estimate, 2)))
-
-ggplot(freq_cov, aes(x = num_bases, y = freq)) +
-  geom_point() +
-  scale_x_log10() +
-  labs(x = "Number of bases (post-fastp)", y = "REF frequency", title = paste("r =", signif(cor.test(freq_cov$num_bases, freq_cov$freq, method = "pearson")$estimate, 2)))
-
-ggsave(paste("../results/", today, "/coverage_vs_freqk_estimates.pdf", sep = ""),height = 5, width = 5)
-```
-
-## seed mix pool-seq: do freqk estimates correlate with known SNP frequencies?
-
-```{r}
-# freqk estimates
-freqk_calls <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/calls.txt", sep = "|", header = F, col.names = c("RF_freqk", "AF_freqk"))
-
-freqk_index <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/ref_index_greneNet.txt", sep = ",", header = F)
-
-freqk_calls <- cbind(freqk_index, freqk_calls)
-
-freqk_calls$V3 = freqk_calls$V3 + 2
-
-# greneNet vcf
-real_calls <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/greneNet_allele_counts.tsv", sep = "\t", header = F, col.names = c("CHROM", "POS", "REF", "ALT", "AN", "AC"))
-
-# calculate reference allele frequency
-real_calls$RF_real = 1 - real_calls$AC/real_calls$AN
-
-# merge
-names(freqk_calls)[2:3] = c("CHROM", "POS")
-
-real_vs_freqk <- merge(real_calls, freqk_calls, by = c("CHROM", "POS"))
-
-# plot
-rho_estimate = signif(cor.test(real_vs_freqk$RF_real, real_vs_freqk$RF_freqk, method = "spearman")$estimate, 3)
-
-ggplot(real_vs_freqk, aes(x = RF_real, y = RF_freqk)) +
-  geom_bin2d() +
-  #geom_smooth() +
-  geom_abline(slope = 1, intercept = 0, color = "white", lwd = 2) +
-  #scale_fill_continuous(trans = "log10") +
-  scale_fill_scico(palette = "bilbao", trans = "log10") +
-  theme_minimal() +
-  theme(text = element_text(size = 16, family = "Helvetica", colour = "black"),
-        axis.text.x = element_text(color = "black"),
-        axis.text.y = element_text(color = "black"), 
-        plot.title = element_text(hjust = 0.5)) +
-  labs(x = "REF frequency in greneNet VCF", y = "REF frequency from\nk-mer counts", fill = "log10(count)", title = paste("\u03C1 = ", rho_estimate, sep = ""))
-
-ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
-```
-
-## Frequency trends in cam5indel
-```{r}
-names(freq_cov)[1] <- "sampleid"
-
-# merge sample information with frequency estimates
-freq_samples <- merge(freq_cov, samples_data, by = "sampleid")
-
-freq_summary <- freq_samples %>%
-  dplyr::group_by(site, generation) %>%
-  dplyr::summarise(mean_freq = mean(freq, na.rm = T))
-
-ggplot(freq_summary, aes(x = generation, y = mean_freq)) +
-  geom_point() +
-  geom_line() +
-  facet_wrap(~site, ncol = 4, nrow = 8)
-
-ggsave(paste("../results/", today, "/temporal_freq_cam5indel.pdf", sep = ""), height = 9, width = 5, device = cairo_pdf)
-```
-
-=======
 ---
 title: "R Notebook"
 output: html_notebook
@@ -215,6 +57,78 @@ ggsave(paste("../results/", today, "/manhattan_feder_", site, ".pdf", sep = ""),
 
 ```
 
+
+## Conceptual images
+
+```{r}
+# functions from: https://si.biostat.washington.edu/sites/default/files/modules/Day2_AM_part1.pdf
+fitfreq = function(q, h, s){
+  p=1-q;
+  return((q^2*(1+s) + p*q*(1+h*s))/( 1 + s*q*(2*h*p+q)))
+}
+
+WF.sel=function(N, q, h, s, G){
+  t=array(,dim=G)
+  t[1] = N*q
+  for(i in 2:G){
+    t[i] = rbinom(1,N,fitfreq(t[i-1]/N, h, s))
+  }
+  return(t)
+}
+
+gen = 100
+N = 100
+h = 0.5
+s = 0.05
+q0 = 0.5
+
+selection = WF.sel(N, q0, h, s, gen)
+
+neutral = WF.sel(N, q0, h, 0, gen)
+
+plotdata <- data.frame(
+  gen = 0:gen,
+  selection = c(q0*N, selection)/N,
+  neutral = c(q0*N, neutral)/N
+)
+
+plotdata <- melt(plotdata, id = "gen")
+
+ggplot(plotdata, aes(x = gen, y = value)) +
+  geom_abline(slope = 0, intercept = q0, lty = 2) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~variable) +
+  labs(x = "Generation", y = "Allele frequency")
+
+ggsave(paste("../results/", today, "/allele_frequency_changes.pdf", sep = ""), height = 4, width = 7)
+
+plotdata2 <- data.frame(
+  gen = 0:gen,
+  n1 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n2 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n3 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n4 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n5 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n6 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n7 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n8 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n9 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
+  n10=  c(q0, WF.sel(N, q0, h, 0, gen)/N)
+)
+
+plotdata2 <- melt(plotdata2, id = "gen")
+
+ggplot(plotdata2, aes(x = gen, y = value, group = variable)) +
+  #geom_abline(slope = 0, intercept = q0, lty = 2) +
+  geom_line(lwd = 2, color = "green") +
+  theme_void() +
+  labs(x = "Generation", y = "Allele frequency")
+
+ggsave(paste("../results/", today, "/neutral_examples.pdf", sep = ""), height = 4, width = 7)
+
+```
+
 ## Manhattan plots of sweep statistics in founders
 
 ```{r}
@@ -265,7 +179,6 @@ names(freqk_calls)[2:3] = c("CHROM", "POS")
 
 real_vs_freqk <- merge(real_calls, freqk_calls, by = c("CHROM", "POS"))
 
-
 # plot
 rho_estimate = signif(cor.test(real_vs_freqk$RF_real, real_vs_freqk$RF_freqk, method = "spearman")$estimate, 3)
 
@@ -285,7 +198,7 @@ ggplot(real_vs_freqk, aes(x = RF_real, y = RF_freqk)) +
 ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
 ```
 
-## find allele frequency data
+## feder test: average change in allele frequency > 0
 
 ```{r}
 
@@ -390,4 +303,142 @@ map(unique(t_test_stat$SITE), ~plot_manhattan_by_site(data = t_test_stat, site =
 
 ```
 
+<<<<<<< Updated upstream
 >>>>>>> 0c13326536bc926a36e573bb65d6c2d03692229a
+=======
+## modify feder test
+```{r}
+
+p0 = 0.5
+N0 = 500
+L = 1:30
+lambda = 100
+
+truth = c(p0)
+estims = c(p0)
+covs = c(lambda)
+
+# simulate 
+for(i in L){
+  # generate new generation
+  x1 <- rbinom(1, N0, prob = p0)
+  p1 <- x1/N0
+  # sequencing
+  coverage <- rpois(1, lambda = lambda)
+  x1_hat <- rbinom(1, size = coverage, prob = p1)
+  p1_hat <- x1_hat/coverage
+  # save results
+  truth = c(truth, p1)
+  estims = c(estims, p1_hat)
+  covs = c(covs, coverage)
+}
+
+results = data.frame(
+  p = truth,
+  p_hat = estims,
+  cov = covs,
+  i = c(0, L)
+)
+
+variance_table = data.frame(
+  dt = diff(results$i),
+  cov1 = results$cov[1:(nrow(results) - 1)],
+  cov2 = results$cov[2:nrow(results)],
+  dp = 2*results$p_hat[-1]*(1 - results$p_hat[-1])
+)
+
+
+variance_table$var = sqrt(variance_table$dt * variance_table$dp * (1/variance_table$cov1 + 1/variance_table$cov2))
+
+z_stats <- diff(results$p_hat)/variance_table$var
+
+hist(z_stats)
+
+shapiro.test(z_stats)
+```
+
+## site climatic data
+```{r}
+#load("../data/sites.clim.rda")
+load("../data/worldclim_sitesdata.rda")
+
+#sites.clim <- sites.clim[,c("SITE_CODE", paste("bio", 1:19, sep = ""))]
+```
+
+## temporal autocovariance
+
+```{r}
+
+# change in allele frequency between t = 0 and t = 1
+dp0 <- gen1_sub - gen0$V3
+#dp1 <- gen2[,(gsub("_2_","_",names(gen2)) %in% gsub("_1_","_",names(gen1)))] - gen1[,(gsub("_1_","_",names(gen1)) %in% gsub("_2_","_",names(gen2)))]
+dp1 <- gen2_sub - gen1_sub
+dp2 <- gen3_sub - gen2_sub
+
+results = NULL
+
+for(i in 1:ncol(dp0)){
+  tmat <- cov(data.frame(
+    dp0 = dp0[,i],
+    dp1 = dp1[,i],
+    dp2 = dp2[,i]
+  ))
+  
+  sampleid = names(dp0)[i]
+  site = gsub("X|_.*", "", sampleid)
+  replicate = gsub(".*_", "", sampleid)
+  
+  tmat[lower.tri(tmat)] <- NA
+  
+  gts = c()
+  stop = 1
+  for(j in 2:nrow(tmat)){
+    variances <- diag(tmat)[1:j]
+    covariances <- (tmat[upper.tri(tmat)])[1:((j-1)*(j))/2]
+    gts = c(gts, sum(abs(covariances), na.rm = T)/(sum(variances) + sum(abs(covariances), na.rm = T)))
+  }
+  
+  result = data.frame(
+    site = site,
+    replicate = replicate, 
+    gen = 1:nrow(tmat),
+    gts = c(0, gts)
+  )
+  
+  results = rbind(results, result)
+}
+
+
+# average across reps in a site
+mean_results = results %>% group_by(site, gen) %>% summarize(gts = mean(gts))
+
+# merge in climate data
+mean_results <- merge(mean_results, worldclim_sitesdata, by = "site")
+
+#
+ggplot(results, aes(x = gen, y = gts, group = interaction(site, replicate))) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.1) +
+  geom_line(data = mean_results, aes(x = gen, y = gts, group = site, color = bio1), lwd = 2, alpha = 1) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:3)) +
+  labs(x = "Generation", y = "Proportion of allele frequency\nchange due to linked selection", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
+
+# g0 <- abs(cov(dp0$X1_1_1, dp1$X1_2_1))/var(c(dp0$X1_1_1, dp1$X1_2_1))
+# 
+# g1 <- (abs(cov(dp0$X1_1_1, dp1$X1_2_1)) + abs(cov(dp1$X1_2_1, dp2$X1_3_1)) )/var(c(dp0$X1_1_1, dp1$X1_2_1, dp1$X1_3_1))
+# 
+# sum(abs(cov(unlist(as.vector(dp0)), unlist(as.vector(dp1)))))/
+# var(unlist(as.vector(gen3 - gen0$V3)))
+```
+
+## load scRNA-seq data
+
+```{r}
+
+flower <- readRDS("../data/GSE226097_flower_250805.rds")
+
+flower[["data"]]
+```
