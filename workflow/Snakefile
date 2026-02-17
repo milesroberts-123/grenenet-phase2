@@ -12,12 +12,20 @@ configfile: "../config/config.yaml"
 
 # load samples
 parameters = pd.read_table(
-    "../config/parameters.tsv", sep="\t", dtype={"sample": str}
+    "../config/parameters.tsv", sep="\t", dtype={"ID": str}
+).set_index(["ID"], drop=False)
+
+reads = pd.read_table(
+    "../config/reads.tsv", sep="\t", dtype={"sample": str}
 ).set_index(["sample"], drop=False)
+
+rule all_sims:
+    input:
+        expand("slim_results/{ID}_neutfreqs.tsv", ID=parameters["ID"])
 
 rule all_poolseq:
     input:
-        expand("freqk_call_results/{sample}.txt", sample=parameters["sample"])
+        expand("freqk_call_results/{sample}.txt", sample=reads["sample"])
 
 rule all_seed_mix:
     input:
@@ -33,6 +41,7 @@ rule all_seed_mix:
 
 include: "rules/freqk.smk"
 include: "rules/fastp.smk"
+include: "rules/msprime.smk"
 #include: "rules/kmc.smk"
 #include: "rules/kmc_contam_db.smk"
 #include: "rules/kmc_rm_contam.smk"

@@ -1,0 +1,116 @@
+// Started by borrowing code from Vince Buffalo and modifying/updating it to 
+// work with newest version of slim (v5.1 as of writing)
+// https://github.com/vsbuffalo/cvtk/blob/master/slim_sims/neutral_burnin.slim
+
+function (void)write_freqs(string file, object<Subpopulation> subpop,
+                     object<MutationType> mut_type, integer generation) {
+  // this access sim from scope -- is this efficient?
+  fmt_freqs='applyValue.id + ";" + applyValue.position + ";" + sim.mutationFrequencies(subpop, applyValue);';
+  line = paste(sapply(sim.mutationsOfType(mut_type), fmt_freqs), sep="\t");
+  writeFile(file, generation + "\t" + line, append=T);
+}
+
+initialize() {
+  defineConstant("seed", getSeed());
+  defineConstant("data_dir", 'slim_results');
+  defineConstant("neutfreqs_file", data_dir + "/" + ID + "_neutfreqs.tsv");
+
+  initializeMutationRate(nmu + tmu);
+  initializeMutationType("m1", 0.5, "s", "if (runif(1) < 0.5) -alpha; else alpha;");
+  initializeMutationType("m2", 0.5, "f", 0.0);
+  initializeGenomicElementType("g1", c(m1, m2), c(tmu, nmu));
+  initializeGenomicElement(g1, 0, L-1);
+  initializeRecombinationRate(R);
+  m1.convertToSubstitution = T;
+  m1.mutationStackPolicy = "f";
+  m2.convertToSubstitution = T;
+  m2.mutationStackPolicy = "f";
+
+  // initialize output file headers
+  bname = (ID + "_" + N + "N_" + R + "R_" + alpha + "alpha_" + nmu + "nmu_" + 
+            tmu + "tmu_" + L + "L");
+  defineConstant("basename", bname);
+  defineConstant("stats_file", data_dir + '/' + basename + '_stats.tsv');
+  // write header
+  param_string = "#seed=" + seed + ";alpha=" + alpha + ";N=" + N + 
+     	         ";L=" + R + ";L=" + L + 
+                 ";nmu=" + nmu + ";tmu=" + tmu;
+  writeFile(stats_file, param_string, append=F);
+  writeFile(stats_file, "gen\tzbar\tzbar_nofix\tzvar\tgenic_var\tneut_het\tS", append=T);
+}
+
+// --- fitness function definitions
+// even there there are sites with fitness effects, these during the burnin
+// have no effect on fitness (yet)
+
+//s1 mutationEffect(m1) {
+//  return 1.0;
+//}
+
+//s3 fitnessEffect() {
+//  return  exp(individual.tagF);
+//}
+
+// --- blocks
+1 early() {
+    sim.addSubpop("p1", N);
+    p1.setSelfingRate(sigma);
+    // --- block schedule --- 
+    // whole sims: calc phenotypes to propogate breeding value in tagF
+    burnin = 10*N;
+    end = burnin + gamma + tau;
+    // when recording begins
+    community.rescheduleScriptBlock(s1, start=2, end=burnin+gamma);
+    community.rescheduleScriptBlock(s2, start=2, end=end);
+    // when selection begins
+    community.rescheduleScriptBlock(s3, start=burnin+gamma, end=end);
+    // end point
+    community.rescheduleScriptBlock(s4, start=end);
+}
+
+s1 mutationEffect(m1) {
+  return 1.0;
+}
+
+//s3 mutationEffect(m1) {
+//  return effect;
+//}
+
+// report during burn-in
+early() {
+    if (sim.cycle % 1000 == 0) {
+        cat("Generation: " + sim.cycle + "; Num. m1: " + length(sim.mutationsOfType(m1)) + "; Num. m2: " + + length(sim.mutationsOfType(m2)) + "\n");
+    }
+}
+
+//
+s2 late() {
+    inds = sim.subpopulations.individuals;
+    phenotypes = inds.sumOfMutationsOfType(m1);
+    fixed_trait = sum(sim.substitutions.selectionCoeff);
+    inds.tagF = phenotypes;
+    // post-burnin: start recording
+    pheno_mean = mean(inds.tagF);
+    zbar = pheno_mean + fixed_trait;
+    x = sim.mutationFrequencies(p1, sim.mutationsOfType(m1));
+    genic_var = 2*sum(alpha^2 * x * (1-x));
+    y = sim.mutationFrequencies(p1, sim.mutationsOfType(m2));
+    ssh = 2*sum(y * (1-y));
+    // report to stdout
+    //cat("Generation: " + sim.cycle + "; zbar: "+ zbar + "; genic var:" + genic_var + "\n");
+    // write phenotypes
+    row = paste(c(sim.cycle, zbar, pheno_mean, 
+                  var(inds.tagF), genic_var, ssh, length(y)), sep="\t");
+    writeFile(stats_file, row, append=T);
+    // write neutral frequency trajectories
+    write_freqs(neutfreqs_file, p1, m2, sim.cycle);
+}
+
+s3 mutationEffect(m1) {
+  return effect;
+}
+
+s4 late() {
+  sim.simulationFinished();
+  //sim.outputFull(data_dir + '/' + basename + "_fullsims.bin", binary=T);
+}
