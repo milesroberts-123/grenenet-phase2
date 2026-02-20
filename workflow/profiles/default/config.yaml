@@ -10,14 +10,15 @@ default-resources:
     slurm_account: "co_moilab"
     slurm_partition: "savio3_htc"
     slurm_qos: "savio_lowprio"
-    slurm_extra: "--exclude n0184.savio3,n0191.savio3"
     ntasks: 1
     cpus_per_task: 1
-    runtime: "20m"
+    runtime: "30m"
     mem_mb: 0
 
 # here only rules, which require different (more) resources:
 set-resources:
+    slim:
+        runtime: "10m"
     freqk_count:
         cpus_per_task: 2
     fastp:

@@ -19,7 +19,7 @@ initialize() {
   initializeMutationType("m1", 0.5, "s", "if (runif(1) < 0.5) -alpha; else alpha;");
   initializeMutationType("m2", 0.5, "f", 0.0);
   initializeGenomicElementType("g1", c(m1, m2), c(tmu, nmu));
-  initializeGenomicElement(g1, 0, L-1);
+  initializeGenomicElement(g1, 0, asInteger(L-1));
   initializeRecombinationRate(R);
   m1.convertToSubstitution = T;
   m1.mutationStackPolicy = "f";
