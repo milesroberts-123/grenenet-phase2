@@ -303,9 +303,7 @@ map(unique(t_test_stat$SITE), ~plot_manhattan_by_site(data = t_test_stat, site =
 
 ```
 
-<<<<<<< Updated upstream
->>>>>>> 0c13326536bc926a36e573bb65d6c2d03692229a
-=======
+
 ## modify feder test
 ```{r}
 
@@ -432,6 +430,21 @@ ggsave(paste("../results/", today, "/linked_selection.pdf", sep = ""), height = 
 # 
 # sum(abs(cov(unlist(as.vector(dp0)), unlist(as.vector(dp1)))))/
 # var(unlist(as.vector(gen3 - gen0$V3)))
+```
+
+## check simulations of gt curves
+
+```{r}
+neutfreqs <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
+
+no_col <- lapply(neutfreqs[1:5], FUN = function(x) { max(count.fields(x, sep = "\t")) })
+
+neutfreqs <- mapply(function(x,y){ read.table(x, fill = T, col.names = 1:y)}, neutfreqs[1:5], no_col)
+
+tbl <-
+    list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T) %>% 
+  max(count.fields(., sep = "\t"))
+    #map_df(~read_table(.))
 ```
 
 ## load scRNA-seq data
