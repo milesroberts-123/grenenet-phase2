@@ -2,7 +2,7 @@ library("dplyr")
 
 params <- expand.grid(
     nmu=1e-8,
-    tmu=2e-9,
+    tmu=c(1e-9, 2e-9, 3e-9),
     R=1e-8,
     N=1000,
     L=5e6,

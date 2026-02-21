@@ -61,7 +61,7 @@ initialize() {
     end = burnin + gamma + tau;
     // when recording begins
     community.rescheduleScriptBlock(s1, start=2, end=burnin+gamma);
-    community.rescheduleScriptBlock(s2, start=2, end=end);
+    community.rescheduleScriptBlock(s2, start=burnin, end=end);
     // when selection begins
     community.rescheduleScriptBlock(s3, start=burnin+gamma, end=end);
     // end point
