@@ -19,6 +19,8 @@ library(dplyr)
 
 library(purrr)
 
+library(tidyverse)
+
 today <- Sys.Date()
 
 # global ggplot2 theme
@@ -41,6 +43,36 @@ theme_set(
 
 ```{r}
 
+## buffalo gt curves
+gt_curves <- function(covmat, calcabs = TRUE) {
+  covmat[lower.tri(covmat)] <- NA
+  
+  covariances <- covmat[upper.tri(covmat)]
+  variances <- diag(covmat)
+  
+  gts = c()
+  for(j in 2:nrow(covmat)){
+    var_sub <- variances[1:j]
+    cov_sub <- covariances[1:((j-1)*(j))/2]
+    
+    if (calcabs == TRUE) {
+	    sum_cov <- 2*sum(abs(cov_sub), na.rm = T)
+    } else {
+	    sum_cov <- 2*sum(cov_sub, na.rm = T)
+    }
+    
+    gts = c(gts, sum_cov/(sum(var_sub) + sum_cov))
+  }
+  
+  result = data.frame(
+    gen = 1:nrow(covmat),
+    gts = c(0, gts)
+  )
+  
+  return(result)
+}
+
+## manhattan plots
 plot_manhattan_by_site <- function(data, site, today, height, width){
 
 print(site)
@@ -84,12 +116,12 @@ q0 = 0.5
 
 selection = WF.sel(N, q0, h, s, gen)
 
-neutral = WF.sel(N, q0, h, 0, gen)
+drift = WF.sel(N, q0, h, 0, gen)
 
 plotdata <- data.frame(
   gen = 0:gen,
   selection = c(q0*N, selection)/N,
-  neutral = c(q0*N, neutral)/N
+  drift = c(q0*N, neutral)/N
 )
 
 plotdata <- melt(plotdata, id = "gen")
@@ -201,7 +233,6 @@ ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), he
 ## feder test: average change in allele frequency > 0
 
 ```{r}
-
 gen0 <- read.table("../data/average_seedmix_p0_LDpruned.txt", sep = "\t")
 
 hapfire <- read.table("../data/merged_hapFIRE_allele_frequency_LDpruned.txt", sep = "\t", header = T)
@@ -239,7 +270,7 @@ y2$CHROM <- gen0$V1
 y2$POS <- gen0$V2
 y2 <- melt(y2, id = c("gen", "CHROM", "POS"))
 
-y3 <- (gen3_sub - gen2_sub)/sqrt(2*gen2_sub*(1-gen2_sub)*(2-1))
+y3 <- (gen3_sub - gen2_sub)/sqrt(2*gen2_sub*(1-gen2_sub)*(3-2))
 y3$gen <- 3
 y3$CHROM <- gen0$V1
 y3$POS <- gen0$V2
@@ -366,7 +397,6 @@ load("../data/worldclim_sitesdata.rda")
 ## temporal autocovariance
 
 ```{r}
-
 # change in allele frequency between t = 0 and t = 1
 dp0 <- gen1_sub - gen0$V3
 #dp1 <- gen2[,(gsub("_2_","_",names(gen2)) %in% gsub("_1_","_",names(gen1)))] - gen1[,(gsub("_1_","_",names(gen1)) %in% gsub("_2_","_",names(gen2)))]
@@ -393,7 +423,7 @@ for(i in 1:ncol(dp0)){
   for(j in 2:nrow(tmat)){
     variances <- diag(tmat)[1:j]
     covariances <- (tmat[upper.tri(tmat)])[1:((j-1)*(j))/2]
-    gts = c(gts, sum(abs(covariances), na.rm = T)/(sum(variances) + sum(abs(covariances), na.rm = T)))
+    gts = c(gts, sum(2*abs(covariances), na.rm = T)/(sum(variances) + sum(2*abs(covariances), na.rm = T)))
   }
   
   result = data.frame(
@@ -435,23 +465,101 @@ ggsave(paste("../results/", today, "/linked_selection.pdf", sep = ""), height = 
 ## check simulations of gt curves
 
 ```{r}
-neutfreqs <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
+params <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/config/parameters.tsv", sep = "\t", header = T)
 
-no_col <- lapply(neutfreqs[1:5], FUN = function(x) { max(count.fields(x, sep = "\t")) })
+neutfreq_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
 
-neutfreqs <- mapply(function(x,y){ read.table(x, fill = T, col.names = 1:y)}, neutfreqs[1:5], no_col)
+#no_col <- lapply(neutfreqs[1], FUN = function(x) { max(count.fields(x, sep = "\t")) })
 
-tbl <-
-    list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T) %>% 
-  max(count.fields(., sep = "\t"))
-    #map_df(~read_table(.))
+neutfreq_files <- sample(neutfreq_files, size = 540, replace = F)
+
+sim_curves <- NULL
+
+for(neutfreq_file in neutfreq_files){
+  simid <- as.numeric(gsub(".*/", "", gsub("_neutfreqs.tsv", "", neutfreq_file)))
+  
+  print(simid)
+  
+  no_col <- max(count.fields(neutfreq_file, sep = "\t"))
+
+  neutfreqs <- read.table(neutfreq_file, fill = T, col.names = 1:no_col, sep = "\t")
+
+  neutfreqs <- melt(neutfreqs, id = "X1")
+
+  neutfreqs$pos <- str_extract(neutfreqs$value, ";.*;")
+  neutfreqs$freq <- str_extract(neutfreqs$value, ";0.*$")
+
+  neutfreqs$pos <- as.numeric(gsub(";", "", neutfreqs$pos))
+  neutfreqs$freq <- as.numeric(gsub(";", "", neutfreqs$freq))
+
+  neutfreqs <- neutfreqs %>%
+    group_by(pos) %>%
+    mutate(dp = freq - lag(freq))
+
+# Source - https://stackoverflow.com/a/5890979
+# Posted by Chase
+# Retrieved 2026-02-21, License - CC BY-SA 3.0
+#reshape(neutfreqs[,c("X1", "pos", "dp")], idvar = "pos", timevar = "X1", direction = "wide")
+
+#neutfreqs$gen_pos <- paste(neutfreqs$X1, neutfreqs$pos, )
+#spread(neutfreqs[,c("X1", "pos", "dp")], key = "pos", value = "dp")
+
+# Source - https://stackoverflow.com/a/5890689
+# Posted by Ista, modified by community. See post 'Timeline' for change history
+# Retrieved 2026-02-21, License - CC BY-SA 3.0
+  neutfreqs <- neutfreqs[,c("X1", "pos", "dp")]
+  neutfreqs <- neutfreqs[complete.cases(neutfreqs),]
+  neutfreqs <- neutfreqs[!duplicated(neutfreqs[,c("X1", "pos")]),]
+  dpmat <- dcast(neutfreqs, pos ~ X1, value.var = "dp")
+
+  dpmat <- dpmat[,-2]
+  
+  dpmat <- dpmat[complete.cases(dpmat),-1:-6]
+
+  dpcov_mat <- cov(dpmat[,-1])
+
+  sim_curve <- gt_curves(dpcov_mat, calcabs = TRUE)
+
+  param_row <- params[(params$ID == simid),]
+  
+  sim_curve$alpha <- param_row[, "alpha"]
+  sim_curve$sigma <- param_row[, "sigma"]
+  sim_curve$tmu <- param_row[, "tmu"]
+  sim_curve$adjust <- param_row[, "adjust"]
+  
+  sim_curves <- rbind(sim_curves, sim_curve)
+}
+
+# average across reps in a site
+mean_sims = sim_curves %>% group_by(gen, sigma, alpha, adjust) %>% summarize(gts = mean(gts))
+
+ggplot(subset(mean_sims, gen <= 5), aes(x = gen, y = gts, group = interaction(sigma, alpha), color = as.factor(sigma), shape = as.factor(alpha))) +
+  geom_point() +
+  scale_color_scico_d() +
+  facet_wrap(~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered"))) +
+  geom_line() +
+  theme(legend.position = "top") +
+  #coord_fixed() +
+  #coord_equal(ratio = 5/0.75) +
+  labs(x = "Generation", y = "G(t)", color = "Self\nrate", shape = "|s|")
+
+ggsave(paste("../results/", today, "/simulated_linked_selection.pdf", sep = ""), height = 4.5, width = 7, device = cairo_pdf)
+
+# dpcov_long <- melt(dpcov_mat)
+# 
+# ggplot(subset(dpcov_long, Var1 == 10251 & Var2 > 10251), aes(x = Var2, y = abs(value))) +
+#   geom_smooth() +
+#   geom_point()
 ```
 
 ## load scRNA-seq data
 
 ```{r}
+global <- readRDS("/global/scratch/users/milesroberts/tmp/GSE226097_global_integration_221009.rds")
 
-flower <- readRDS("../data/GSE226097_flower_250805.rds")
+meta <- global[[]]
 
-flower[["data"]]
+#flower <- readRDS("../data/GSE226097_flower_250805.rds")
+
+#flower[["data"]]
 ```
