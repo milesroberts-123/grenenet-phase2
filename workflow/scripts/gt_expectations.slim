@@ -111,7 +111,7 @@ s2 late() {
 //}
 
 s4 late() {
-  p1.outputVCFSample(20);
+  p1.outputVCFSample(5, filePath = data_dir + "/" + ID + ".vcf");
   sim.simulationFinished();
   //sim.outputFull(data_dir + '/' + basename + "_fullsims.bin", binary=T);
 }
