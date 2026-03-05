@@ -4,14 +4,13 @@ params <- expand.grid(
     nmu=1e-8,
     tmu=c(1e-9, 2e-9),
     R=1e-8,
-    N=1000,
+    N=2000,
     L=5e6,
-    n=50,
-    sigma=c(0, 0.05, 0.5, 0.95, 1),
-    alpha=c(0, 0.01),
+    sigma=c(0, 0.05, 0.5, 0.95, 0.99),
+    alpha=c(0, 0.005, 0.01),
     gamma=5,
-    tau=95,
-    rep=1:10,
+    tau=105,
+    rep=1:60,
     adjust=c(T, F)
 )
 
