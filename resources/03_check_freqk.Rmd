@@ -794,7 +794,7 @@ params <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenen
 
 neutfreq_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
 
-neutfreq_files <- sample(neutfreq_files, size = 1000, replace = F)
+#neutfreq_files <- sample(neutfreq_files, size = 1000, replace = F)
 
 sim_curves <- NULL
 
@@ -854,23 +854,24 @@ sim_curves$alpha2[(sim_curves$alpha == 0)] = "Neutral"
 mean_sims = sim_curves %>% group_by(gen, sigma, alpha2, adjust) %>% summarize(gts = mean(gt), sum_cov = mean(sum_cov), sum_abs_cov = mean(sum_abs_cov), sum_var = mean(sum_var), ratio = mean(ratio, na.rm = T))
 
 # gt over time
-ggplot(mean_sims, aes(x = gen, y = gts, group = interaction(sigma, alpha2), color = as.factor(sigma))) +
+ggplot(subset(mean_sims, (gts > 0 & gts < 1)), aes(x = gen, y = gts, group = sigma, color = as.factor(sigma))) +
   geom_point(size = 1.5) +
-  geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
+  #geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
   geom_line() +
+  ylim(0,1) +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "G(t)", color = "Self\nrate")
 
 ggsave(paste("../results/", today, "/simulated_linked_selection_gt.pdf", sep = ""), height = 4.5, width = 7, device = cairo_pdf)
 
 # sum of covariances over time
-ggplot(mean_sims, aes(x = gen, y = sum_cov, group = interaction(sigma, alpha2), color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = sum_cov, group = sigma, color = as.factor(sigma))) +
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of Cov(\u0394pi, \u0394pj)", color = "Self\nrate")
@@ -878,11 +879,11 @@ ggplot(mean_sims, aes(x = gen, y = sum_cov, group = interaction(sigma, alpha2), 
 ggsave(paste("../results/", today, "/simulated_linked_selection_sum_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # sum of absolute value of covariances over time
-ggplot(mean_sims, aes(x = gen, y = sum_abs_cov, group = interaction(sigma, alpha2), color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = sum_abs_cov, group = sigma, color = as.factor(sigma))) +
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of |Cov(\u0394pi, \u0394pj)|", color = "Self\nrate")
@@ -902,9 +903,16 @@ ggplot(mean_sims, aes(x = gen, y = sum_var, group = interaction(sigma, alpha2), 
 ggsave(paste("../results/", today, "/simulated_linked_selection_sum_var.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # importance of fluctuating vs directional selection
-ggplot(subset(mean_sims, gen == 100), aes(x = alpha2, y = ratio)) +
-  geom_boxplot() +
-  facet_wrap(~sigma, nrow = 1)
+ggplot(mean_sims, aes(x = gen, y = ratio, group = sigma, color = as.factor(sigma))) +
+  geom_point(size = 1.5) +
+  geom_hline(yintercept = 0.5, lty = 2, lwd = 1.1) +
+  scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
+  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  geom_line() +
+  theme(legend.position = "top") +
+  labs(x = "Generation", y = "Proportion of Cov(\u0394pi, \u0394pj) < 0", color = "Self\nrate")
+
+ggsave(paste("../results/", today, "/simulated_linked_selection_fluctuating.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # try using averages of variances components
 mean_sims$gt2 = mean_sims$sum_cov/(mean_sims$sum_cov + mean_sims$sum_var)

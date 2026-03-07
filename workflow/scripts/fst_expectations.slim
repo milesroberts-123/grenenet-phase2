@@ -1,0 +1,63 @@
+initialize() {
+initializeTreeSeq();
+initializeMutationRate(mu);
+initializeMutationType("m1", 0.5, "f", 0.0);
+initializeGenomicElementType("g1", m1, 1.0);
+initializeGenomicElement(g1, 0, L-1);
+initializeRecombinationRate(R);
+}
+
+1 early() {
+    defineGlobal("historical", c());
+    defineGlobal("modern", c());    
+    // read population from msprime
+    start_tree_name = paste("msprime_results/", ID, ".trees", sep = ""); 
+    print(start_tree_name);
+    sim.readFromPopulationFile(start_tree_name);
+    p0.setSelfingRate(sigma);
+    // --- block schedule ---
+    // read in sampling times
+    lines = readFile("sampling_times.csv");
+    lines = lines[substr(lines, 0, 1) != "//"];
+    sam_types = c();
+    sam_times = c();
+    for (line in lines) {
+        fields = strsplit(line, ",");
+        //print(fields);
+        sam_types = c(sam_types, fields[0]);
+        sam_times = c(sam_times, asInteger(fields[1]));
+    }
+    print(sam_types);
+    print(sam_times);
+    // schedule historical sampling times
+    print("Historical sampling times:");
+    hist_times = sam_times[(sam_types == "historical")];
+    mod_times = sam_times[(sam_types == "modern")];
+    community.rescheduleScriptBlock(s1, ticks=hist_times);
+    community.rescheduleScriptBlock(s2, ticks=mod_times);
+    // schedule end
+    community.rescheduleScriptBlock(s3, ticks=max(c(hist_times, mod_times)));
+}
+
+s1 1000 late() {
+      print("Sampling a historical individual at: " + sim.cycle);
+      //allIndividuals = sim.subpopulations.individuals;
+      //defineGlobal("historical", c(historical, sample(p0.individuals, 1).haplosomes));
+      //historical = c(historical, sample(p0.individuals, 1).haplosomes);
+      p0.outputVCFSample(1, outputMultiallelics = F, filePath = ("slim_results/" + ID + "_" + "historical" + "_" + sim.cycle + ".vcf"));
+      //sample(p0.individuals, 1).genomes.outputVCF("test.vcf");
+}
+
+s2 1000 late() {
+    print("Sampling a modern individual at: " + sim.cycle);
+    p0.outputVCFSample(1, filePath = ("slim_results/" + ID + "_" + "modern" + "_" + sim.cycle + ".vcf"), append = T);
+    modern = c(modern, sample(p0.haplosomes, 1));
+}
+
+s3 100 early() {
+    //historical.outputHaplosomes(); 
+    //print("Calculating Fst...");
+    //FST = calcFST(historical, modern);
+    //print(FST);
+    sim.simulationFinished(); 
+}
