@@ -15,12 +15,13 @@ rule msprime:
         python scripts/burnin.py -N {params.N} -L {params.L} -R {params.R} --ID {wildcards.ID}
         """
 
-rule slim:
+rule fst_slim:
     group: "fst"
     input:
         "msprime_results/{ID}.trees"
     output:
-        "slim_fst_results/{ID}_fst.tsv"
+        expand("slim_fst_results/{{ID}}_modern_{time}.vcf", time = lookup(query="type == 'modern'", within=sampling_times, cols="time")),
+        expand("slim_fst_results/{{ID}}_historical_{time}.vcf", time = lookup(query="type == 'historical'", within=sampling_times, cols="time"))
     conda:
         "../envs/msprime.yaml"
     params:
@@ -35,10 +36,10 @@ rule slim:
 rule bgzip:
     group: "fst"
     input:
-        "slim_results/{ID}_{population}_{time}.vcf"
+        "slim_fst_results/{ID}_{population}_{time}.vcf"
     output:
-        "slim_results/{ID}_{population}_{time}.vcf.gz",
-        "slim_results/{ID}_{population}_{time}.vcf.gz.tbi"
+        "slim_fst_results/{ID}_{population}_{time}.vcf.gz",
+        "slim_fst_results/{ID}_{population}_{time}.vcf.gz.tbi"
     conda:
         "../envs/bcftools.yaml"
     shell:
@@ -50,7 +51,7 @@ rule bgzip:
 rule bcftools_merge:
     group: "fst"
     input:
-        expand("slim_results/{{ID}}_{population}_{time}.vcf.gz", time = fst_params["time"])
+        expand("slim_fst_results/{{ID}}_{{population}}_{time}.vcf.gz", time = lookup(query="type == '{population}'", within=sampling_times, cols="time"))
     output:
         "bcftools_results/{ID}_{population}.vcf.gz"
     conda:

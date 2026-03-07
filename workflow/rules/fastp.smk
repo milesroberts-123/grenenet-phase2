@@ -1,7 +1,7 @@
 rule fastp:
     input:
-        read1=lookup(query="sample == '{sample}'", within=parameters, cols=["read1"]),
-        read2=lookup(query="sample == '{sample}'", within=parameters, cols=["read2"]),
+        read1=lookup(query="sample == '{sample}'", within=reads, cols=["read1"]),
+        read2=lookup(query="sample == '{sample}'", within=reads, cols=["read2"]),
     output:
         pread1="fastp_results/trimmed_paired_R1_{sample}.fastq.gz",
         pread2="fastp_results/trimmed_paired_R2_{sample}.fastq.gz",

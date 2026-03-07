@@ -17,12 +17,13 @@ initializeRecombinationRate(R);
     p0.setSelfingRate(sigma);
     // --- block schedule ---
     // read in sampling times
-    lines = readFile("sampling_times.csv");
+    lines = readFile("../config/sampling_times.csv");
     lines = lines[substr(lines, 0, 1) != "//"];
+    lines = lines[1:length(lines)]; // drop header
     sam_types = c();
     sam_times = c();
     for (line in lines) {
-        fields = strsplit(line, ",");
+        fields = strsplit(line, "\t");
         //print(fields);
         sam_types = c(sam_types, fields[0]);
         sam_times = c(sam_times, asInteger(fields[1]));

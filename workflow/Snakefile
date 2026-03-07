@@ -11,17 +11,29 @@ min_version("9.5.1")
 configfile: "../config/config.yaml"
 
 # load samples
-parameters = pd.read_table(
-    "../config/parameters.tsv", sep="\t", dtype={"ID": str}
+gt_params = pd.read_table(
+    "../config/gt_params.tsv", sep="\t", dtype={"ID": str}
 ).set_index(["ID"], drop=False)
 
 reads = pd.read_table(
     "../config/reads.tsv", sep="\t", dtype={"sample": str}
 ).set_index(["sample"], drop=False)
 
+fst_params = pd.read_table(
+    "../config/fst_params.tsv", sep="\t", dtype={"ID": str}
+).set_index(["ID"], drop=False)
+
+sampling_times = pd.read_table(
+    "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
+).set_index(["ID"], drop=False)
+
 rule all_sims:
     input:
-        expand("slim_results/{ID}_neutfreqs.tsv", ID=parameters["ID"])
+        expand("slim_results/{ID}_neutfreqs.tsv", ID=gt_params["ID"])
+
+rule all_fst_sims:
+    input:
+        expand("allele_frequencies/{ID}_{population}.tsv", ID=fst_params["ID"], population = ["historical", "modern"])
 
 rule all_poolseq:
     input:
@@ -42,6 +54,7 @@ rule all_seed_mix:
 include: "rules/freqk.smk"
 include: "rules/fastp.smk"
 include: "rules/msprime.smk"
+include: "rules/fst_sim.smk"
 #include: "rules/kmc.smk"
 #include: "rules/kmc_contam_db.smk"
 #include: "rules/kmc_rm_contam.smk"
