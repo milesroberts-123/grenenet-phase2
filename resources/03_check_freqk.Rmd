@@ -929,6 +929,40 @@ ggplot(mean_sims, aes(x = gen, y = gt2, group = interaction(sigma, alpha2), colo
 ggsave(paste("../results/", today, "/simulated_linked_selection_gt_mean_components.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 ```
 
+## historical vs modern pairings
+
+```{r}
+pairings <- read.csv("../data/comb_hist+1001g.prs_geo+gen.csv")
+
+historical <- pairings[, 1:2]
+
+historical$type <- "historical"
+
+colnames(historical) <- gsub("historical_", "", colnames(historical))
+
+modern <- pairings[, 5:6]
+
+modern$type <- "modern"
+
+colnames(modern) <- gsub("modern_", "", colnames(modern))
+
+slim_pairings <- rbind(historical, modern)
+
+slim_pairings$time <- slim_pairings$year - min(slim_pairings$year) + 1
+
+slim_pairings <- slim_pairings %>% group_by(type, time) %>% summarize(n = n()) %>% arrange(time, .by_group = T)
+
+slim_pairings$ID = 1:nrow(slim_pairings)
+
+write.table(slim_pairings, "../config/sampling_times.tsv", quote = F, row.names = F, sep = "\t")
+
+sum(slim_pairings$n)
+
+```
+
+
+
+
 ## load scRNA-seq data
 
 ```{r}
