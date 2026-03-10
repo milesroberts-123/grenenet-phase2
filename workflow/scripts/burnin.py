@@ -61,10 +61,10 @@ ts = msprime.sim_mutations(
 
 # calculate fst between historical and modern
 print("Calculate fst...")
-result = ts.Fst(sample_sets=[ts.samples(time=(0,args.tau)), ts.samples(time=(args.tau, max(individual_times)))])
+result = ts.Fst(sample_sets=[ts.samples(time=(1,args.tau)), ts.samples(time=(args.tau, max(individual_times)))])
 print(result)
 
 with open('msprime_results/' + args.ID + ".txt", 'w') as f:
-  f.write('%d' % result)
+  f.write(f"{result}\n")
 
 print("Done!")
