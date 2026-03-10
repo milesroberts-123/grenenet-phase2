@@ -32,7 +32,6 @@ print(args.N)
 # load ts from slim
 print("Loading ts from slim...")
 slim_ts = tskit.load("slim_fst_results/" + args.ID + ".trees")
-print(slim_ts.metadata["SLiM"]["user_metadata"])
 
 print(f"The tree sequence has {slim_ts.num_trees} trees\n"
       f"on a genome of length {slim_ts.sequence_length},\n"
