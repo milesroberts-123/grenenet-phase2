@@ -19,6 +19,7 @@ parser.add_argument('-N', action="store", dest='N', default=0)
 parser.add_argument('-L', action="store", dest='L', default=0)
 parser.add_argument('-R', action="store", dest='R', default=0)
 parser.add_argument('--mu', action="store", dest='mu', default=0)
+parser.add_argument('--tau', action="store", dest='tau', default=0)
 
 # Now, parse the command line arguments and store the 
 # values in the `args` variable
@@ -48,28 +49,8 @@ rts = pyslim.recapitate(slim_ts,
              recombination_rate=args.R,
              ancestral_Ne=int(args.N))
 
-# get nodes assigned to individuals
-#ind_nodes = np.array([ts.individual(x).nodes for x in range(ts.num_individuals)])
-#ts.nodes_individual
-#ts.nodes_time
-
-# get times assigned to individuals on nodes
-#node_times = np.array([ts.node(x).time for x in range(ts.num_nodes)])
-
-# get times for individuals
-#ind_times = np.array([node_times[x] for x in ind_nodes.flatten())
-
-# simplify ts
-#print("simplifying...")
-#keep_indivs = range(1000, 1003)
-#keep_nodes = []
-#for i in keep_indivs:
-#  keep_nodes.extend(rts.individual(i).nodes)
-
-#sts = rts.simplify(keep_nodes, keep_input_roots=True)
-
 # add mutations to ts
-print("Adding mutaitons...")
+print("Adding mutations...")
 next_id = pyslim.next_slim_mutation_id(rts)
 
 ts = msprime.sim_mutations(
@@ -80,9 +61,11 @@ ts = msprime.sim_mutations(
 )
 
 # calculate fst between historical and modern
-#historical = []
-#modern = []
 print("Calculate fst...")
-result = ts.Fst(sample_sets=[ts.samples(time=(0,14)), ts.samples(time=(15, 191))])
+result = ts.Fst(sample_sets=[ts.samples(time=(0,args.tau)), ts.samples(time=(args.tau, max(individual_times)))])
 print(result)
+
+with open('msprime_results/' + args.ID + ".txt", 'w') as f:
+  f.write('%d' % number)
+
 print("Done!")

@@ -25,17 +25,16 @@ write.table(gt_params, "../config/gt_params.tsv", sep = "\t", quote = F, row.nam
 
 # fst simulations parameters
 fst_params <- expand.grid(
-    mu=1e-8,
-    R=1e-8,
-    N=1000,
+    mu=7e-09,
+    R=8.06452e-10,
+    msprimeN=78000,
     L=5e6,
-    sigma=c(0.95),
-    rep=1:2000,
-    adjust=c(T, F)
-)
+    sigma=0.95,
+    rep=1:20000,
+    tau=14)
 
 # adjust Ne based on selfing rate
-fst_params$N[(fst_params$adjust == T)] = as.integer(fst_params$N[(fst_params$adjust == T)]/(1 - fst_params$sigma[(fst_params$adjust == T)]/2))
+fst_params$slimN = as.integer(fst_params$msprimeN/(1 - fst_params$sigma/2))
 
 # add simulation id
 fst_params$ID <- 1:nrow(fst_params)

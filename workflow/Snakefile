@@ -33,7 +33,7 @@ rule all_sims:
 
 rule all_fst_sims:
     input:
-        expand("allele_frequencies/{ID}_{population}.tsv", ID=fst_params["ID"], population = ["historical", "modern"])
+        expand("msprime_results/{ID}.txt", ID=fst_params["ID"])
 
 rule all_poolseq:
     input:
