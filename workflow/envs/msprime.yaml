@@ -1,4 +1,4 @@
-name: msprime
+name: 
 channels:
   - conda-forge
 dependencies:
@@ -8,9 +8,13 @@ dependencies:
   - ca-certificates=2026.1.4=hbd8a1cb_0
   - demes=0.2.3=pyhd8ed1ab_1
   - gsl=2.7=he838d99_0
+  - humanize=4.15.0=pyhd8ed1ab_0
   - icu=78.2=h33c6efd_0
+  - importlib-metadata=8.7.0=pyhe01879c_1
+  - importlib_metadata=8.7.0=h40b2b14_1
   - jsonschema=4.26.0=pyhcf101f3_0
   - jsonschema-specifications=2025.9.1=pyhcf101f3_0
+  - kastore=0.3.5=py314hc02f841_0
   - ld_impl_linux-64=2.45.1=default_hbd61a6d_101
   - libblas=3.11.0=5_h4a7cf45_openblas
   - libcblas=3.11.0=5_h0358290_openblas
@@ -34,6 +38,7 @@ dependencies:
   - numpy=2.4.2=py314h2b28147_1
   - openssl=3.6.1=h35e630c_1
   - pip=26.0.1=pyh145f28c_0
+  - pyslim=1.1.0=pyhd8ed1ab_0
   - python=3.14.3=h32b2ec7_101_cp314
   - python_abi=3.14=8_cp314
   - readline=8.3=h853b02a_0
@@ -41,11 +46,13 @@ dependencies:
   - rpds-py=0.30.0=py314h2e6c369_0
   - ruamel.yaml=0.19.1=pyhcf101f3_0
   - ruamel.yaml.clib=0.2.15=py314h0f05182_1
+  - setuptools=82.0.0=pyh332efcf_0
   - slim=5.1=hecca717_0
   - tk=8.6.13=noxft_h366c992_103
   - tskit=1.0.1=py314hc02f841_0
   - typing_extensions=4.15.0=pyhcf101f3_0
   - tzdata=2025c=hc9c84f9_1
+  - zipp=3.23.0=pyhcf101f3_1
   - zstd=1.5.7=hb78ec9c_6
 
-prefix: "/global/home/users/milesroberts/.local/share/mamba/envs/msprime"
+prefix: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/.snakemake/conda/cda843b147d9808034a8f9c722af7568_"
