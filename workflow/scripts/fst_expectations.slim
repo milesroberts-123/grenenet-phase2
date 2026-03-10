@@ -3,12 +3,12 @@ initializeTreeSeq();
 initializeMutationRate(0);
 initializeMutationType("m1", 0.5, "f", 0.0);
 initializeGenomicElementType("g1", m1, 1.0);
-initializeGenomicElement(g1, 0, L-1);
+initializeGenomicElement(g1, 0, asInteger(L-1));
 initializeRecombinationRate(R);
 }
 
 1 early() {
-    sim.addSubpop("p0", N);
+    sim.addSubpop("p0", asInteger(N));
     p0.setSelfingRate(sigma);
     // read in sampling times
     lines = readFile("../config/sampling_times.tsv");
@@ -48,6 +48,6 @@ s2 1000 late() {
 }
 
 s3 100 early() {
-    sim.treeSeqOutput("slim_fst_results/" + ID + ".trees", metadata = Dictionary("foo", 1, "bar", 2));
+    sim.treeSeqOutput("slim_fst_results/" + ID + ".trees");
     sim.simulationFinished(); 
 }
