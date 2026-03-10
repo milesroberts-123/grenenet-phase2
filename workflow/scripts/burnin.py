@@ -65,6 +65,6 @@ result = ts.Fst(sample_sets=[ts.samples(time=(0,args.tau)), ts.samples(time=(arg
 print(result)
 
 with open('msprime_results/' + args.ID + ".txt", 'w') as f:
-  f.write('%d' % number)
+  f.write('%d' % result)
 
 print("Done!")
