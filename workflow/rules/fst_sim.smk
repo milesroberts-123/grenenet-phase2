@@ -1,9 +1,19 @@
+rule grep:
+    input:
+        expand("msprime_results/{ID}.txt", ID = fst_params["ID"])
+    output:
+        "fst_results.txt"
+    shell:
+        """
+        grep "" {input} | sed 's/:/\t/g' > {output}
+        """
+
 rule msprime:
     group: "fst"
     input:
         "slim_fst_results/{ID}.trees"
     output:
-        "msprime_results/{ID}.txt"
+        temp("msprime_results/{ID}.txt")
     conda:
         "../envs/msprime.yaml"
     params:

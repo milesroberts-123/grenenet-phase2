@@ -27,10 +27,10 @@ write.table(gt_params, "../config/gt_params.tsv", sep = "\t", quote = F, row.nam
 fst_params <- expand.grid(
     mu=7e-09,
     R=8.06452e-10,
-    msprimeN=78000,
-    L=5e6,
+    msprimeN=24000,
+    L=c(3081,6583),
     sigma=0.95,
-    rep=1:20000,
+    rep=1:10000,
     tau=14)
 
 # adjust Ne based on selfing rate
