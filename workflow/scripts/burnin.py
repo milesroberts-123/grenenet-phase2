@@ -67,4 +67,32 @@ print(result)
 with open('msprime_results/' + args.ID + ".txt", 'w') as f:
   f.write(f"{result}\n")
 
+#
+nodes = ts.tables.nodes
+is_sample = nodes.flags & tskit.NODE_IS_SAMPLE
+
+# sample node IDs
+sample_nodes = [u for u in ts.samples()]
+
+# filter by time
+ancient_samples = [u for u in sample_nodes if nodes.time[u] > int(args.tau)]
+modern_samples  = [u for u in sample_nodes if (nodes.time[u] <= int(args.tau)) and (nodes.time[u] > 0)]
+
+# simplify
+ancient_ts = ts.simplify(samples=ancient_samples)
+modern_ts  = ts.simplify(samples=modern_samples)
+
+ancient_n = int(ancient_ts.num_samples / 2)
+ancient_names = [f"his_{i}indv" for i in range(ancient_n)]
+
+modern_n = int(modern_ts.num_samples / 2)
+modern_names = [f"mod_{i}indv" for i in range(modern_n)]
+
+# write to vcf
+with open("msprime_results/ancient_" + args.ID + ".vcf", "w") as f:
+    ancient_ts.write_vcf(f, individual_names = ancient_names)
+
+with open("msprime_results/modern_" + args.ID + ".vcf", "w") as f:
+    modern_ts.write_vcf(f, individual_names = modern_names)
+
 print("Done!")
