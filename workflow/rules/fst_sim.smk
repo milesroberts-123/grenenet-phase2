@@ -29,7 +29,9 @@ rule popfile:
     output:
         temp("popfiles/{ID}.txt")
     shell:
-        "sed 's:\(mod_.*\):\1\tmodern:g' {input} | sed 's:\(his_.*\):\1\thistorical:g' | cut -f 1,2,7 > {output}"
+        r"""
+        sed 's:\(mod_.*\):\1\tmodern:g' {input} | sed 's:\(his_.*\):\1\thistorical:g' | cut -f 1,2,7 > {output}
+        """
 
 rule plink:
     group: "fst"
