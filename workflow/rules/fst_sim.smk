@@ -39,7 +39,9 @@ rule plink:
         "bcftools_merge_results/merged_{ID}.vcf"
     output:
         temp("plink_results/{ID}.bed"),
-        temp("plink_results/{ID}.fam")
+        temp("plink_results/{ID}.fam"),
+        temp("plink_results/{ID}.bim"),
+        temp("plink_results/{ID}.log")
     conda:
         "../envs/plink2.yaml"
     shell:
@@ -56,7 +58,7 @@ rule bcftools:
         "../envs/bcftools.yaml"
     shell:
         """
-        bcftools merge -0 -O z -o {output} --no-index {input}
+        bcftools merge -0 -O u --no-index {input} | bcftools view -m2 -M2 -Oz -o {output}
         """
 
 rule msprime:
@@ -64,7 +66,7 @@ rule msprime:
     input:
         "slim_fst_results/{ID}.trees"
     output:
-        temp("msprime_results/{ID}.txt"),
+        "msprime_results/{ID}.txt",
         temp("msprime_results/modern_{ID}.vcf"),
         temp("msprime_results/historical_{ID}.vcf")
     conda:
