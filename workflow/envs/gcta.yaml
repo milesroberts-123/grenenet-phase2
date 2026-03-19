@@ -1,0 +1,7 @@
+name: 
+channels:
+  - bioconda
+dependencies:
+  - gcta=1.94.1=h9ee0642_0
+
+prefix: "/global/scratch/users/milesroberts/conda/gcta"

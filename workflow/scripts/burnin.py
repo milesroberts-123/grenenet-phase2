@@ -89,7 +89,7 @@ modern_n = int(modern_ts.num_samples / 2)
 modern_names = [f"mod_{i}indv" for i in range(modern_n)]
 
 # write to vcf
-with open("msprime_results/ancient_" + args.ID + ".vcf", "w") as f:
+with open("msprime_results/historical_" + args.ID + ".vcf", "w") as f:
     ancient_ts.write_vcf(f, individual_names = ancient_names)
 
 with open("msprime_results/modern_" + args.ID + ".vcf", "w") as f:

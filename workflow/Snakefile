@@ -33,7 +33,8 @@ rule all_sims:
 
 rule all_fst_sims:
     input:
-        "fst_results.txt"
+        #"fst_results.txt"
+        expand("gcta_results/{ID}.txt", ID=fst_params["ID"])
         #expand("msprime_results/{ID}.txt", ID=fst_params["ID"])
 
 rule all_poolseq:
