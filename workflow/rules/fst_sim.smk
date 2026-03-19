@@ -13,7 +13,7 @@ rule gcta:
     input:
         bed="plink_results/{ID}.bed",
         popfile="popfiles/{ID}.txt",
-        fam=temp("plink_results/{ID}.fam")
+        fam="plink_results/{ID}.fam"
     output:
         "gcta_results/{ID}.fst",
         temp("gcta_results/{ID}.log")
