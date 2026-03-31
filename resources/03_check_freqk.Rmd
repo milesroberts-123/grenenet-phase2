@@ -3,7 +3,6 @@ title: "R Notebook"
 output: html_notebook
 ---
 
-
 ## set-up
 
 ```{r}
@@ -18,6 +17,8 @@ library(reshape2)
 library(tidyverse)
 
 library(vroom)
+
+library(data.table)
 
 today <- Sys.Date()
 
@@ -40,21 +41,55 @@ theme_set(
 ## functions
 
 ```{r}
-gt_from_pmat <- function(pmats, calcabs = FALSE) {
-  # sanity checks
+# visualize var-cov matrix
+get_upper_tri <- function(cormat){
+    cormat[lower.tri(cormat)]<- NA
+    diag(cormat) <- NA
+    return(cormat)
+}
+
+plot_var_cov_matrix <- function(covmat, output_name){
+  # get just upper triangle
+  upper_tri <- get_upper_tri(covmat)
+  melted_cormat <- melt(upper_tri, na.rm = TRUE)
+  # Heatmap
+  plot_cor <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value)) +
+    geom_tile(color = "white") +
+    #geom_text(aes(label = round(value, 4)), size = 5, color = "black") +
+    scale_fill_gradient2(
+      low = "#65014B",
+      mid = "#F5F0F0",
+      high = "#0C4C00",
+      midpoint = 0,
+      space = "Lab",
+      name = "(\u0394pi, \u0394pj)"
+    ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        vjust = 1,
+        hjust = 1
+      ),
+      text = element_text(size = 14, family = "Helvetica")
+    ) +
+    coord_fixed() +
+    labs(x = "", y = "")
   
-  # calculate allele frequency differences between generations
-  print("Calculating allele frequency increments...")
-  dps = list()
-  for (i in 1:(length(pmats) - 1)) {
-    print(i)
-    dps[[i]] = pmats[[i + 1]] - pmats[[i]]
-  }
+  ggsave(output_name,
+         plot_cor,
+         bg = "white",
+         device = cairo_pdf)
+}
+
+# buffalo coop gt curves
+gt_from_pmat <- function(dps, calcabs = FALSE, output_name) {
+  # sanity checks
   
   # loop over replicates
   # create matrix of allele frequncy increments
   # calculate cov matrix for increments
-  result = NULL
+  results = NULL
   col_names <- colnames(dps[[1]])
   for (i in 1:ncol(dps[[1]])) {
     print(i)
@@ -68,6 +103,9 @@ gt_from_pmat <- function(pmats, calcabs = FALSE) {
     print("Calculating covariance...")
     covmat <- cov(dp)
     covmat[lower.tri(covmat)] <- NA
+    
+    # plot variance covariance matrix
+    plot_var_cov_matrix(covmat, paste(output_name, "_", i, ".pdf", sep = ""))
     
     # variances and covar
     print("Extracting covariances and variances...")
@@ -113,16 +151,20 @@ gt_from_pmat <- function(pmats, calcabs = FALSE) {
       gt = gts,
       sum_cov = sums_cov,
       sum_abs_cov = sums_abs_cov,
-      sum_var = sums_var,
+      sum_pos_cov = sums_pos_cov,
+      sum_neg_cov = sums_neg_cov,
       ratio = sums_neg_cov / (sums_pos_cov + sums_neg_cov),
+      sum_var = sums_var,
       replicate = i
     )
+    
+    results = rbind(results, result)
   }
-  return(result)
+  return(results)
 }
 
 ## buffalo gt curves
-gt_curves <- function(covmat, calcabs = FALSE) {
+gt_from_covmat <- function(covmat) {
   covmat[lower.tri(covmat)] <- NA
   
   covariances <- covmat[upper.tri(covmat)]
@@ -151,19 +193,22 @@ gt_curves <- function(covmat, calcabs = FALSE) {
   }
   
   # calculate gt
-  if (calcabs == TRUE) {
-    gts = sums_abs_cov/(sums_var + sums_abs_cov)
-  } else {
-	  gts = sums_cov/(sums_var + sums_cov)
-  }
+#   if (calcabs == TRUE) {
+#     gts = sums_abs_cov/(sums_var + sums_abs_cov)
+#   } else {
+# 	  gts = sums_cov/(sums_var + sums_cov)
+#   }
   
   result = data.frame(
     gen = 1:nrow(covmat),
-    gt = gts,
+    gt = sums_cov/(sums_var + sums_cov),
+    gt_abs = sums_abs_cov/(sums_var + sums_abs_cov),
     sum_cov = sums_cov,
     sum_abs_cov = sums_abs_cov,
+    sum_pos_cov = sums_pos_cov,
+    sum_neg_cov = sums_neg_cov,
     sum_var = sums_var,
-    ratio = sums_neg_cov/(sums_pos_cov + sums_neg_cov)
+    ratio = sums_pos_cov/(sums_pos_cov + sums_neg_cov)
   )
   
   return(result)
@@ -238,46 +283,7 @@ plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, 
   ggsave(paste("../results/", today, "/", prefix, "_", site, ".jpg", sep = ""), height = height, width = width)
 }
 
-# visualize var-cov matrix
-get_upper_tri <- function(cormat){
-    cormat[lower.tri(cormat)]<- NA
-    diag(cormat) <- NA
-    return(cormat)
-}
 
-plot_var_cov_matrix <- function(covmat, output_name){
-  # get just upper triangle
-  upper_tri <- get_upper_tri(covmat)
-  melted_cormat <- melt(upper_tri, na.rm = TRUE)
-  # Heatmap
-  plot_cor <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value)) +
-    geom_tile(color = "white") +
-    geom_text(aes(label = round(value, 4)), size = 5, color = "black") +
-    scale_fill_gradient2(
-      low = "#65014B",
-      mid = "#F5F0F0",
-      high = "#0C4C00",
-      midpoint = 0,
-      space = "Lab",
-      name = "(\u0394pi, \u0394pj)"
-    ) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(
-        angle = 45,
-        vjust = 1,
-        hjust = 1
-      ),
-      text = element_text(size = 14, family = "Helvetica")
-    ) +
-    coord_fixed() +
-    labs(x = "", y = "")
-  
-  ggsave(output_name,
-         plot_cor,
-         bg = "white",
-         device = cairo_pdf)
-}
 ```
 
 
@@ -420,31 +426,116 @@ ggplot(real_vs_freqk, aes(x = RF_real, y = RF_freqk)) +
 ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
 ```
 
-## load allele frequencies
+## randomly switch tracked allele frequencies
 
 ```{r}
+set.seed(1111)
+
 # LD-pruned data
 #gen0 <- read.table("../data/average_seedmix_p0_LDpruned.txt", sep = "\t")
 #hapfire <- read.table("../data/merged_hapFIRE_allele_frequency_LDpruned.txt", sep = "\t", header = T)
 
 # full dataset
-gen0 <- read.table("/global/scratch/users/milesroberts/tmp/average_seedmix_p0.txt", sep = "\t")
-
-#hapfire_phase1 <- read_csv("/global/scratch/users/milesroberts/tmp/merged_hapFIRE_allele_frequency.csv")
-
-start <- Sys.time()
-hapfire_phase1 <- vroom("/global/scratch/users/milesroberts/tmp/merged_hapFIRE_allele_frequency.csv", delim = ",", col_select = starts_with("1_"))
-end <- Sys.time()
-end - start
-
-hapfire_phase2 <- vroom("/global/scratch/users/milesroberts/tmp/PHASE2_merged_hapFIRE_allele_frequency.csv", delim = ",", col_select = starts_with("1_"))
-
-hapfire <- cbind(hapfire_phase1, hapfire_phase2)
+gen0 <- vroom("/global/scratch/users/milesroberts/tmp/average_seedmix_p0.txt", delim = "\t", col_names = F)
 
 # randomly swith which allele is being tracked
 # right now, the non-reference allele is always the one we're tracking
-idx <- sample(1:nrow(hapfire), size = round(nrow(hapfire)/2), replace = F)
-hapfire[idx,] <- 1 - hapfire[idx,]
+idx <- sample(c(T,F), size = nrow(gen0), replace = T)
+gen0[idx,"X3"] <- 1 - gen0[idx,"X3"]
+
+write.csv(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", quote = F, row.names = F)
+
+#hapfire_phase1 <- read_csv("/global/scratch/users/milesroberts/tmp/merged_hapFIRE_allele_frequency.csv")
+
+# start <- Sys.time()
+# hapfire_phase1 <- vroom("/global/scratch/users/milesroberts/tmp/merged_hapFIRE_allele_frequency.csv", delim = ",")
+# end <- Sys.time()
+# end - start
+# 
+# hapfire_phase2 <- vroom("/global/scratch/users/milesroberts/tmp/PHASE2_merged_hapFIRE_allele_frequency.csv", delim = ",")
+# 
+# hapfire <- cbind(hapfire_phase1, hapfire_phase2)
+# 
+# write.csv(hapfire, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_hapfire_allele_frequency.csv", quote = F, row.names = F)
+
+# randomly switch which allele is being tracked, same as gen0
+# j = 0
+# for(i in idx){
+#   if(j %% 1000 == 0){
+#     print(j)
+#   }
+#   hapfire[idx,] <- 1 - hapfire[idx,]
+#   j = j + 1
+# }
+
+process_one_minus <- function(idx, chunk_size, output) {
+  function(x, pos) {
+    print(pos)
+    print(Sys.time())
+    # calculate end
+    chunk_size <- nrow(x)
+    end <- pos + chunk_size - 1
+    # subtract 1 from some alleles
+    print(paste("Start:", pos, "End:", end))
+    idx_sub <- idx[pos:end]
+    x[idx_sub,] <- 1 - x[idx_sub,]
+    write.table(x, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
+  }
+}
+
+# phase 1
+read_csv_chunked(
+  "/global/scratch/users/milesroberts/tmp/PHASE_1_2_COMBINED_hapFIRE_allele_frequency.csv",
+  callback = SideEffectChunkCallback$new(
+    process_one_minus(
+      idx,
+      5000,
+      "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_switched.csv"
+    )
+  ),
+  chunk_size = 5000
+)
+
+# phase 2
+# read_csv_chunked(
+#   "/global/scratch/users/milesroberts/tmp/PHASE2_merged_hapFIRE_allele_frequency.csv",
+#   callback = SideEffectChunkCallback$new(
+#     process_one_minus(
+#       idx,
+#       5000,
+#       "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_2_hapfire_allele_frequency_rng_switched.csv"
+#     )
+#   ),
+#   chunk_size = 5000
+# )
+```
+
+## load allele frequencies
+
+```{r}
+#gen0 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", delim = ",", col_names = T)
+
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", data.table = F)
+
+#hapfire_phase1 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_hapfire_allele_frequency_rng_switched.csv", delim = ",")
+
+#hapfire_phase1 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_hapfire_allele_frequency_rng_switched.csv", data.table = F)
+
+#hapfire_phase2 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_2_hapfire_allele_frequency_rng_switched.csv", delim = ",")
+
+#hapfire_phase2 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_2_hapfire_allele_frequency_rng_switched.csv", data.table = F)
+
+#hapfire <- cbind(hapfire_phase1, hapfire_phase2)
+
+#rm(hapfire_phase1, hapfire_phase2)
+#gc()
+
+hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_switched.csv", data.table = F)
+
+# omit allele frequencies near abosrbing boundaries
+non_abosrbing_freq <- (gen0$X3 >= 1/231) & (gen0$X3 <= 1 - 1/231)
+gen0 <- gen0[non_abosrbing_freq,]
+hapfire <- hapfire[non_abosrbing_freq,]
 ```
 
 ## feder test (LD pruned dataset)
@@ -870,17 +961,26 @@ ggplot(subset(results, gen == 3), aes(x = reorder(site, ratio, FUN = median), y 
 ggsave(paste("../results/", today, "/linked_selection_directional_vs_fluctuating.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
 ```
 
-## check simulations of gt curves
+## analyze - simulations of gt curves
 
 ```{r}
 
-params <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/config/parameters.tsv", sep = "\t", header = T)
+params <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/config/gt_params.tsv", sep = "\t", header = T, data.table = F)
 
 neutfreq_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
 
 #neutfreq_files <- sample(neutfreq_files, size = 1000, replace = F)
 
+files_to_plot <- c(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1_neutfreqs.tsv",
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/10_neutfreqs.tsv",
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/100_neutfreqs.tsv",
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1000_neutfreqs.tsv",
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1001_neutfreqs.tsv"
+)
+
 sim_curves <- NULL
+output <- paste("simulated_gt_curves_" , today, ".txt", sep = "")
 
 for(neutfreq_file in neutfreq_files){
   simid <- as.numeric(gsub(".*/", "", gsub("_neutfreqs.tsv", "", neutfreq_file)))
@@ -890,9 +990,9 @@ for(neutfreq_file in neutfreq_files){
   
   no_col <- max(count.fields(neutfreq_file, sep = "\t"))
 
-  neutfreqs <- read.table(neutfreq_file, fill = T, col.names = 1:no_col, sep = "\t")
+  neutfreqs <- read.table(neutfreq_file, fill = T, col.names = 1:no_col, sep = "\t", skip = 5)
 
-  neutfreqs <- melt(neutfreqs, id = "X1")
+  neutfreqs <- reshape2::melt(neutfreqs, id = "X1")
 
   neutfreqs$pos <- str_extract(neutfreqs$value, ";.*;")
   neutfreqs$freq <- str_extract(neutfreqs$value, ";0.*$")
@@ -903,6 +1003,10 @@ for(neutfreq_file in neutfreq_files){
   neutfreqs <- neutfreqs %>%
     group_by(pos) %>%
     mutate(dp = freq - lag(freq))
+  
+  # ggplot(neutfreqs, aes(x = X1, y = dp, group = pos)) +
+  #   geom_point() +
+  #   geom_line()
 
   # Source - https://stackoverflow.com/a/5890689
   # Posted by Ista, modified by community. See post 'Timeline' for change history
@@ -910,15 +1014,21 @@ for(neutfreq_file in neutfreq_files){
   neutfreqs <- neutfreqs[,c("X1", "pos", "dp")]
   neutfreqs <- neutfreqs[complete.cases(neutfreqs),]
   neutfreqs <- neutfreqs[!duplicated(neutfreqs[,c("X1", "pos")]),]
-  dpmat <- dcast(neutfreqs, pos ~ X1, value.var = "dp")
+  dpmat <- reshape2::dcast(neutfreqs, pos ~ X1, value.var = "dp")
 
+  #dpmat <- dpmat %>% filter(rowSums(is.na(.)) <= ncol(dpmat)*0.5)
   dpmat <- dpmat[,-2]
   
   #dpmat <- dpmat[complete.cases(dpmat),]
 
   dpcov_mat <- cov(dpmat[,-1], use = "pairwise.complete.obs")
-
-  sim_curve <- gt_curves(dpcov_mat, calcabs = FALSE)
+  
+  if(neutfreq_file %in% files_to_plot){
+    print("Plotting variance covariance matrix...")
+    plot_var_cov_matrix(dpcov_mat, paste(simid, "_var_cov_mat", sep = ""))
+  }
+  
+  sim_curve <- gt_from_covmat(dpcov_mat)
 
   param_row <- params[(params$ID == simid),]
   
@@ -927,22 +1037,37 @@ for(neutfreq_file in neutfreq_files){
   sim_curve$tmu <- param_row[, "tmu"]
   sim_curve$adjust <- param_row[, "adjust"]
   
-  sim_curves <- rbind(sim_curves, sim_curve)
+  write.table(sim_curve, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
+  
 }
+
+```
+
+# plot - simulations of gt curves
+```{r}
+sim_curves <- fread("simulated_gt_curves_2.txt")
 
 # average across reps in a site
 sim_curves$alpha2 = (sim_curves$alpha > 0)
 sim_curves$alpha2[(sim_curves$alpha > 0)] = "Selection"
 sim_curves$alpha2[(sim_curves$alpha == 0)] = "Neutral"
 
-mean_sims = sim_curves %>% group_by(gen, sigma, alpha2, adjust) %>% summarize(gts = mean(gt), sum_cov = mean(sum_cov), sum_abs_cov = mean(sum_abs_cov), sum_var = mean(sum_var), ratio = mean(ratio, na.rm = T))
+mean_sims = sim_curves %>% 
+  group_by(gen, sigma, alpha, adjust) %>% 
+  summarize(gts = mean(gt), 
+            sum_cov = mean(sum_cov), 
+            sum_abs_cov = mean(sum_abs_cov),
+            sum_pos_cov = mean(sum_pos_cov),
+            sum_neg_cov = mean(sum_neg_cov),
+            sum_var = mean(sum_var), 
+            ratio = mean(ratio, na.rm = T))
 
 # gt over time
-ggplot(subset(mean_sims, (gts > 0 & gts < 1)), aes(x = gen, y = gts, group = sigma, color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = gts, group = sigma, color = as.factor(sigma))) +
   geom_point(size = 1.5) +
-  #geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  #facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
   geom_line() +
   ylim(0,1) +
   theme(legend.position = "top") +
@@ -955,7 +1080,8 @@ ggplot(mean_sims, aes(x = gen, y = sum_cov, group = sigma, color = as.factor(sig
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  #facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of Cov(\u0394pi, \u0394pj)", color = "Self\nrate")
@@ -967,7 +1093,8 @@ ggplot(mean_sims, aes(x = gen, y = sum_abs_cov, group = sigma, color = as.factor
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  #facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of |Cov(\u0394pi, \u0394pj)|", color = "Self\nrate")
@@ -975,11 +1102,12 @@ ggplot(mean_sims, aes(x = gen, y = sum_abs_cov, group = sigma, color = as.factor
 ggsave(paste("../results/", today, "/simulated_linked_selection_sum_abs_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # sum variances over time
-ggplot(mean_sims, aes(x = gen, y = sum_var, group = interaction(sigma, alpha2), color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = sum_var, group = interaction(sigma, alpha), color = as.factor(sigma))) +
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  #facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of Var(\u0394pi)", color = "Self\nrate", linetype = "|s| > 0")
@@ -991,7 +1119,21 @@ ggplot(mean_sims, aes(x = gen, y = ratio, group = sigma, color = as.factor(sigma
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0.5, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  #facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
+  geom_line() +
+  theme(legend.position = "top") +
+  labs(x = "Generation", y = "Proportion of Cov(\u0394pi, \u0394pj) < 0", color = "Self\nrate")
+
+ggsave(paste("../results/", today, "/simulated_linked_selection_fluctuating.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
+
+# sum of negative covariances
+ggplot(mean_sims, aes(x = gen, y = ratio, group = sigma, color = as.factor(sigma))) +
+  geom_point(size = 1.5) +
+  geom_hline(yintercept = 0.5, lty = 2, lwd = 1.1) +
+  scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
+  #facet_grid(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Proportion of Cov(\u0394pi, \u0394pj) < 0", color = "Self\nrate")
@@ -1001,65 +1143,226 @@ ggsave(paste("../results/", today, "/simulated_linked_selection_fluctuating.pdf"
 # try using averages of variances components
 mean_sims$gt2 = mean_sims$sum_cov/(mean_sims$sum_cov + mean_sims$sum_var)
 
-ggplot(mean_sims, aes(x = gen, y = gt2, group = interaction(sigma, alpha2), color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = gt2, group = interaction(sigma, alpha), color = as.factor(sigma))) +
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  #facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "G(t)\nmean components", color = "Self\nrate")
 
 ggsave(paste("../results/", today, "/simulated_linked_selection_gt_mean_components.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
+
+# absolute value of covariance
+ggplot(mean_sims, aes(x = gen, y = sum_abs_cov/(sum_abs_cov + sum_var), group = interaction(sigma, alpha), color = as.factor(sigma))) +
+  geom_point(size = 1.5) +
+  geom_vline(xintercept = 5) +
+  scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
+  #facet_wrap(alpha2~adjust, labeller = as_labeller(c("TRUE" = "Ne constant", "FALSE" = "Ne lowered", "Selection" = "Selection", "Neutral" = "Neutral"))) +
+  facet_grid(alpha~adjust) +
+  geom_line() +
+  theme(legend.position = "top") +
+  labs(x = "Generation", y = "G(t)\nabs. value", color = "Self\nrate")
+
+ggsave(paste("../results/", today, "/simulated_linked_selection_gt_abs_value.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 ```
 
 ## temporal covariances - phase 2
 
 ```{r}
-# full dataset
-gen0 <- vroom("/global/scratch/users/milesroberts/tmp/average_seedmix_p0.txt", delim = "\t", col_names = FALSE)
-
-start <- Sys.time()
-hapfire_phase1 <- vroom("/global/scratch/users/milesroberts/tmp/merged_hapFIRE_allele_frequency.csv", delim = ",")
-end <- Sys.time()
-end - start
-
-hapfire_phase2 <- vroom("/global/scratch/users/milesroberts/tmp/PHASE2_merged_hapFIRE_allele_frequency.csv", delim = ",")
-
-hapfire <- cbind(hapfire_phase1, hapfire_phase2)
-rm(hapfire_phase1, hapfire_phase2)
-gc()
-
-# randomly swith which allele is being tracked
-# right now, the non-reference allele is always the one we're tracking
-idx <- sample(1:nrow(hapfire), size = round(nrow(hapfire)/2), replace = F)
-hapfire[idx,] <- 1 - hapfire[idx,]
+# # full dataset
+# gen0 <- vroom("/global/scratch/users/milesroberts/tmp/average_seedmix_p0.txt", delim = "\t", col_names = FALSE)
+# 
+# start <- Sys.time()
+# hapfire_phase1 <- vroom("/global/scratch/users/milesroberts/tmp/merged_hapFIRE_allele_frequency.csv", delim = ",")
+# end <- Sys.time()
+# end - start
+# 
+# hapfire_phase2 <- vroom("/global/scratch/users/milesroberts/tmp/PHASE2_merged_hapFIRE_allele_frequency.csv", delim = ",")
+# 
+# hapfire <- cbind(hapfire_phase1, hapfire_phase2)
+# rm(hapfire_phase1, hapfire_phase2)
+# gc()
+# 
+# # randomly swith which allele is being tracked
+# # right now, the non-reference allele is always the one we're tracking
+# idx <- sample(1:nrow(hapfire), size = round(nrow(hapfire)/2), replace = F)
+# hapfire[idx,] <- 1 - hapfire[idx,]
+# 
 
 # make list of sites
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
+# for now, ignore sites that lack reps with contiguous generations
+sites <- sites[c(1,3,5:17,19:21,23,25:29,31)]
+
 # loop over sites
 all_gt_curves = NULL
+
 for(site in sites){
+  print(paste("Site:", site))
+  
   # subset to one site
+  print("Subsetting to one site...")
   hap_site <- hapfire %>% select(starts_with(paste(site, "_", sep = "")))
   
   # partition data by generation
   # should work for an arbitrary number of generations
-  num_gen <- length(unique(str_extract("_._", colnames(hap_site))))
-  gens = list()
+  print("Paritioning data by generation...")
+  num_gen <- length(unique(unlist(str_extract_all(colnames(hap_site), "_.*_"))))
+  
+  # get replicates that are in all generations
+  reps <- gsub(".*_", "", colnames(hap_site))
+  rep_tab <- table(reps)
+  kept_reps <- names(rep_tab)[rep_tab == num_gen]
+  
+  gens <- list()
+  gens[[1]] <- gen0$X3
   for(i in 1:num_gen){
-    gens[[i]] <- hap_site[,grepl(paste("_", i, "_", sep = ""), names(hap_site))] 
+    gens[[i+1]] <- hap_site %>% 
+      select(matches(paste("_", i, "_", kept_reps, "$", sep = "", collapse = "|"))) %>%
+      relocate(all_of(paste(site,"_", i, "_", kept_reps, sep = "")))
   }
-
+  
+  # calculate allele frequency differences between generations
+  print("Calculating allele frequency increments...")
+  dps <- list()
+  for (i in 1:(length(gens) - 1)) {
+    print(i)
+    dps[[i]] <- gens[[i + 1]] - gens[[i]]
+  }
+  
   # calculate gt curves
-  site_gt = gt_from_pmat(gens,calcabs = T)
+  site_gt = gt_from_pmat(dps, calcabs = T, site)
   
   # save result
   site_gt$site = site
   all_gt_curves = rbind(all_gt_curves, site_gt)
 }
 
+#### PLOT #### 
+# average across reps in a site
+mean_gts = all_gt_curves %>% 
+  group_by(site, gen) %>% 
+  summarize(gt = mean(gt), 
+            sum_cov = mean(sum_cov), 
+            sum_var = mean(sum_var), 
+            sum_abs_cov = mean(sum_abs_cov),
+            sum_pos_cov = mean(sum_pos_cov),
+            sum_neg_cov = mean(sum_neg_cov),
+            ratio = mean(ratio, na.rm = T),
+            n = n())
+
+# remove sites with very few replicates or did not have at least 3 generations (including generation 0)
+all_gt_curves <- all_gt_curves %>% filter(site != "10" & site != "43" & site != "24" & site != "26" & site != "23" & site != "37" & site != "60")
+  
+mean_gts <- mean_gts %>% filter(n > 2 & n <= 12)
+
+# merge in climate data
+mean_gts <- merge(mean_gts, worldclim_sitesdata, by = "site")
+
+# plot mean of averages
+ggplot(all_gt_curves, aes(
+  x = gen,
+  y = gt,
+  group = interaction(site, replicate)
+)) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.1) +
+  geom_line(
+    data = mean_gts,
+    aes(
+      x = gen,
+      y = gt,
+      group = site,
+      color = bio1
+    ),
+    lwd = 2,
+    alpha = 1
+  ) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name = "Generation", limits = c(1:5)) +
+  labs(x = "Generation", y = "Proportion of allele frequency\nchange due to linked selection", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
+
+# plot covariances
+ggplot(all_gt_curves, aes(x = gen, y = sum_cov, group = interaction(site, replicate))) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.1) +
+  geom_line(data = mean_gts, aes(x = gen, y = sum_cov, group = site, color = bio1), lwd = 2, alpha = 1) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = "Sum of Cov(\u0394pi, \u0394pj)", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection_sum_cov.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
+
+# plot variances
+ggplot(all_gt_curves, aes(x = gen, y = sum_var, group = interaction(site, replicate))) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.1) +
+  geom_line(data = mean_gts, aes(x = gen, y = sum_var, group = site, color = bio1), lwd = 2, alpha = 1) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = "Var(\u0394pi)", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection_sum_var.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
+
+# plot positive and negative covariances
+all_gt_curves_posneg <- all_gt_curves %>% pivot_longer(cols = c(sum_pos_cov, sum_neg_cov))
+
+mean_gts_posneg <- mean_gts %>% pivot_longer(cols = c(sum_pos_cov, sum_neg_cov))
+
+all_gt_curves_posneg[(all_gt_curves_posneg$name == "sum_neg_cov"),"value"] <- all_gt_curves_posneg[(all_gt_curves_posneg$name == "sum_neg_cov"),"value"]*(-1)
+
+mean_gts_posneg[(mean_gts_posneg$name == "sum_neg_cov"),"value"] <- mean_gts_posneg[(mean_gts_posneg$name == "sum_neg_cov"),"value"]*(-1)
+                                                                                                                                                          
+ggplot(all_gt_curves_posneg, aes(x = gen, y = value, group = interaction(site,name, replicate))) +
+  facet_wrap(.~name, nrow = 2, ncol = 1, scales = "free_y")+
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.1) +
+  geom_hline(yintercept = 0, lwd = 1.2, lty = 2) +
+  geom_line(data = mean_gts_posneg, aes(x = gen, y = value, group = interaction(site,name), color = bio1), lwd = 2, alpha = 1) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = "Sum of Cov(\u0394pi, \u0394pj)", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection_sum_cov_components.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
+
+# plot abs of covariances
+ggplot(all_gt_curves, aes(x = gen, y = sum_abs_cov, group = interaction(site, replicate))) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.1) +
+  geom_line(data = mean_gts, aes(x = gen, y = sum_abs_cov, group = site, color = bio1), lwd = 2, alpha = 1) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = "Sum of |Cov(\u0394pi, \u0394pj)|", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection_sum_abs_cov.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
+
+# means of components
+mean_gts$gt2 <- mean_gts$sum_abs_cov/(mean_gts$sum_abs_cov + mean_gts$sum_var)
+
+ggplot(all_gt_curves, aes(x = gen, y = gt, group = interaction(site, replicate))) +
+  geom_point(alpha = 0.1) +
+  geom_line(alpha = 0.1) +
+  geom_line(data = mean_gts, aes(x = gen, y = gt2, group = site, color = bio1), lwd = 2, alpha = 1) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = "Proportion of allele frequency\nchange due to linked selection", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection_mean_components.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
+
+# importance of fluctuating vs directional selection
+ggplot(subset(all_gt_curves, gen == 5), aes(x = reorder(site, ratio, FUN = median), y = ratio)) +
+  geom_boxplot() +
+  geom_jitter() +
+  geom_hline(yintercept = 0.5, lty = 2, lwd = 1.5) +
+  labs(x = "Site", y = "Proportion of Cov(\u0394pi, \u0394pj) < 0", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste("../results/", today, "/linked_selection_directional_vs_fluctuating.pdf", sep = ""), height = 5, width = 7, device = cairo_pdf)
 ```
 
 ## historical vs modern pairings
@@ -1097,29 +1400,69 @@ sum(slim_pairings$n)
 ## Fst - historical vs modern
 
 ```{r}
-alpha = 0.001
+cutoff = 0.05
 
-fst <- vroom(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/fst_results.txt",
+msprime <- vroom(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/msprime_fst.txt",
   delim = "\t",
   col_names = F
 )
 
-fst$ID <- as.numeric(gsub(".*/|.txt", "", fst$X1))
+msprime$ID <- as.numeric(gsub(".*/|.txt", "", fst$X1))
 
+names(msprime)[2] = "msprime_fst"
+
+gcta <- vroom(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/gcta_fst.txt",
+  delim = "\t",
+  col_names = F
+)
+
+gcta$ID <- as.numeric(gsub(".*/|.fst:1", "", gcta$X1))
+
+gcta <- gcta %>% group_by(ID) %>% summarize(gcta_fst = mean(X7), S = n())
+
+gcta_msprime <- merge(msprime, gcta, by = "ID")
+
+# compare gcta and msprime
+nei_weir_fst <- ggplot(gcta_msprime, aes(x = msprime_fst, y = gcta_fst)) +
+  geom_point(shape = 16) +
+  #geom_smooth(method = "lm") +
+  geom_abline(slope = 1, intercept = 0, lwd = 1.2, color = "green") +
+  labs(x = "Nei 1973 Fst (msprime)", y = "Weir 1996 Fst (gcta)")
+
+# merge with window sizes and calculate p-values
 params <- vroom(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/config/fst_params.tsv",
   delim = "\t"
 )
 
-fst <- merge(params, fst, by = "ID")
+params_fst <- merge(params, gcta_msprime, by = "ID")
 
-fst %>% 
-  filter(X2 > 0) %>% 
+params_fst %>% 
+  #filter(gcta_fst > 0) %>% 
   group_by(L) %>% 
-  summarize(upb = quantile(X2, probs = 1 - alpha/2),
-            lwb = quantile(X2, probs = alpha / 2))
+  summarize(upb = quantile(gcta_fst, probs = 1 - cutoff/2, na.rm = T),
+            lwb = quantile(gcta_fst, probs = cutoff / 2, na.rm = T),
+            ost1_filter_test = 1 - ecdf(gcta_fst)(0.003892181),
+            erecta_filter_test = 1 - ecdf(gcta_fst)(0.032451811),
+            ost_unfilter_test = 1 - ecdf(gcta_fst)(0.011700622),
+            erecta_unfilter_test = 1 - ecdf(gcta_fst)(0.014078437))
 
+# tact distribution of fst from gcta
+fst_density <- ggplot(params_fst, aes(x = gcta_fst)) +
+  geom_density() +
+  facet_wrap(L~., ncol = 1, labeller = "label_both") +
+  geom_vline(data = filter(params_fst, L == 3081), aes(xintercept = 0.003892181), lty = 1) +
+  geom_vline(data = filter(params_fst, L == 3081), aes(xintercept = 0.011700622), lty = 2) +
+  geom_vline(data = filter(params_fst, L == 6583), aes(xintercept = 0.032451811), lty = 1) +
+  geom_vline(data = filter(params_fst, L == 6583), aes(xintercept = 0.014078437), lty = 2) +
+  labs(x = "Neutral Weir 1996 Fst\n(Sampling desing, Ne = 20,000)")
+
+
+ggarrange(fst_density, nei_weir_fst, ncol = 2, labels = c("A", "B"), font.label = list(size = 16, family = "Helvetica"))
+
+ggsave(paste("../results/", today, "/baseline_fst_historical_modern.pdf", sep = ""), height = 4, width = 8, device = cairo_pdf)
 ```
 
 
