@@ -1,4 +1,4 @@
-rule grep:
+rule grep_msprime:
     input:
         expand("msprime_results/{ID}.txt", ID = fst_params["ID"])
     output:
@@ -6,6 +6,16 @@ rule grep:
     shell:
         """
         grep "" {input} | sed 's/:/\t/g' > {output}
+        """
+
+rule grep_gcta:
+    input:
+        expand("gcta_results/{ID}.fst", ID = fst_params["ID"])
+    output:
+        "gcta_fst.txt"
+    shell:
+        """
+        grep "^1" gcta_results/*.fst > gcta_fst.txt
         """
 
 rule gcta:

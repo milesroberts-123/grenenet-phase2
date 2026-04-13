@@ -1,17 +1,17 @@
 library("dplyr")
 
 gt_params <- expand.grid(
-    nmu=1e-8,
-    tmu=1e-9,
-    R=1e-8,
-    N=1000,
+    nmu=7e-09,
+    tmu=c(7e-10, 1e-9),
+    R=8.06452e-10,
+    N=c(1000, 2500),
     L=5e6,
     sigma=c(0, 0.05, 0.5, 0.95, 0.99),
-    alpha=c(0, 0.01),
+    alpha=c(0, 0.0025, 0.005, 0.01, 0.015),
     gamma=5,
-    tau=105,
-    rep=1:60,
-    adjust=c(T, F)
+    tau=205,
+    rep=1:30,
+    adjust=c(T)
 )
 
 # adjust Ne based on selfing rate

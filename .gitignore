@@ -1,3 +1,4 @@
+*.tar.gz
 *.csv
 *.hdf5
 *.fai

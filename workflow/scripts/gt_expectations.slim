@@ -26,6 +26,10 @@ initialize() {
   m2.convertToSubstitution = T;
   m2.mutationStackPolicy = "f";
 
+  // simulation start and end
+  defineGlobal("burnin", 10*N);
+  defineGlobal("end", burnin + tau);
+
   // initialize output file headers
   bname = (ID + "_" + N + "N_" + R + "R_" + alpha + "alpha_" + nmu + "nmu_" + 
             tmu + "tmu_" + L + "L");
@@ -42,14 +46,14 @@ initialize() {
 // --- fitness function definitions
 // even there there are sites with fitness effects, these during the burnin
 // have no effect on fitness (yet)
-
-//s1 mutationEffect(m1) {
-//  return 1.0;
-//}
-
-//s3 fitnessEffect() {
-//  return  exp(individual.tagF);
-//}
+mutationEffect(m1) {
+  if (sim.cycle <= burnin) {
+    return 1.0;
+  }
+  else {
+    return effect;
+  }
+}
 
 // --- blocks
 1 early() {
@@ -57,8 +61,8 @@ initialize() {
     p1.setSelfingRate(sigma);
     // --- block schedule --- 
     // whole sims: calc phenotypes to propogate breeding value in tagF
-    burnin = 10*N;
-    end = burnin + gamma + tau;
+    //defineGlobal("burnin", 10*N);
+    //end = burnin + tau;
     // when recording begins
     //community.rescheduleScriptBlock(s1, start=2, end=burnin+gamma);
     community.rescheduleScriptBlock(s2, start=burnin, end=end);
@@ -68,11 +72,11 @@ initialize() {
     community.rescheduleScriptBlock(s4, start=end);
 }
 
-//s1 mutationEffect(m1) {
+//s1 1000 mutationEffect(m1) {
 //  return 1.0;
 //}
 
-//s3 mutationEffect(m1) {
+//s3 1000 mutationEffect(m1) {
 //  return effect;
 //}
 
@@ -96,8 +100,6 @@ s2 late() {
     genic_var = 2*sum(alpha^2 * x * (1-x));
     y = sim.mutationFrequencies(p1, sim.mutationsOfType(m2));
     ssh = 2*sum(y * (1-y));
-    // report to stdout
-    //cat("Generation: " + sim.cycle + "; zbar: "+ zbar + "; genic var:" + genic_var + "\n");
     // write phenotypes
     row = paste(c(sim.cycle, zbar, pheno_mean, 
                   var(inds.tagF), genic_var, ssh, length(y)), sep="\t");
@@ -106,12 +108,7 @@ s2 late() {
     write_freqs(neutfreqs_file, p1, m2, sim.cycle);
 }
 
-//s3 mutationEffect(m1) {
-//  return effect;
-//}
-
 s4 late() {
   p1.outputVCFSample(5, filePath = data_dir + "/" + ID + ".vcf");
   sim.simulationFinished();
-  //sim.outputFull(data_dir + '/' + basename + "_fullsims.bin", binary=T);
 }
