@@ -9,9 +9,10 @@ gt_params <- expand.grid(
     sigma=c(0, 0.05, 0.5, 0.95, 0.99),
     alpha=c(0, 0.0025, 0.005, 0.01, 0.015),
     gamma=5,
-    tau=205,
+    tau=105,
     rep=1:30,
-    adjust=c(T)
+    adjust=c(T,F),
+    struct=c("unstruct", "struct")
 )
 
 # adjust Ne based on selfing rate

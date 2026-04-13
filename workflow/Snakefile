@@ -27,7 +27,7 @@ sampling_times = pd.read_table(
     "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
 ).set_index(["ID"], drop=False)
 
-rule all_sims:
+rule all_gt_sims:
     input:
         expand("slim_results/{ID}_neutfreqs.tsv", ID=gt_params["ID"])
 
@@ -45,14 +45,6 @@ rule all_poolseq:
 rule all_seed_mix:
     input:
         expand("freqk_call_results/{sample}.txt", sample=config["seed_samples"])
-
-#rule all:
-#    input:
-        #expand("fastp_results/trimmed_paired_R1_{ID}.fastq.gz", ID = config["samples"]),
-#        "multiqc_report.html",
-        #expand("kmc_results/after_{sample}.txt", sample = parameters.loc[parameters["experiment"] == "adaptest", "sample"])        
-#        expand("samtools_results/{sample}.txt", sample = parameters.loc[parameters["experiment"] == "benchmark", "sample"]),
-        #expand("varscan_results/{ID}.tsv", ID = config["samples"])
 
 include: "rules/freqk.smk"
 include: "rules/fastp.smk"

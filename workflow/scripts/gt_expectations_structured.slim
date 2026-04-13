@@ -1,0 +1,96 @@
+// Started by borrowing code from Vince Buffalo and modifying/updating it to 
+// work with newest version of slim (v5.1 as of writing)
+// https://github.com/vsbuffalo/cvtk/blob/master/slim_sims/neutral_burnin.slim
+
+function (void)write_freqs(string file, object<Subpopulation> subpop,
+                     object<MutationType> mut_type, integer generation) {
+  fmt_freqs='applyValue.id + ";" + applyValue.position + ";" + sim.mutationFrequencies(subpop, applyValue);';
+  line = paste(sapply(sim.mutationsOfType(mut_type), fmt_freqs), sep="\t");
+  writeFile(file, generation + "\t" + line, append=T);
+}
+
+initialize() {
+    initializeSLiMOptions(nucleotideBased=T);
+    length = initializeAncestralNucleotides(fastaFile);
+    defineConstant("L", length);
+    initializeMutationTypeNuc("m1", 0.5, "f", 0.0);
+    initializeMutationTypeNuc("m2", 0.5, "f", 0.0);
+    initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
+    initializeGenomicElement(g1, 0, L-1);
+    initializeRecombinationRate(R);
+    m1.convertToSubstitution = T;
+    m1.mutationStackPolicy = "l";
+    m2.convertToSubstitution = T;
+    m2.mutationStackPolicy = "l";
+}
+
+// reporting each gen
+early() {
+    catn("Generation: " + sim.cycle);
+}
+
+// schedule end
+//1 early() {
+//    community.rescheduleScriptBlock(s1, start=tau);
+//}
+
+// set-up population and output
+1 late() {
+    defineConstant("seed", getSeed());
+    defineConstant("data_dir", 'slim_results');
+    defineConstant("neutfreqs_file", data_dir + "/" + ID + "_neutfreqs.tsv");
+
+    // initialize output file headers
+    defineConstant("stats_file", data_dir + '/' + ID + '_stats.tsv');
+    // write header
+    param_string = "#seed=" + seed + ";alpha=" + alpha + ";N=" + N +
+                 ";L=" + R + ";L=" + L +
+                 ";tmu=" + tmu;
+    writeFile(stats_file, param_string, append=F);
+    writeFile(stats_file, "gen\tzbar\tzbar_nofix\tzvar\tgenic_var\tneut_het\tS", append=T);
+
+    sim.addSubpop("p1", 231);
+    catn("Reading haplosomes...");
+    p1.haplosomes.readHaplosomesFromVCF(vcfFile, m1);
+    catn("Scaling up population...");
+    p1.setSubpopulationSize(N);
+    p1.setSelfingRate(sigma);
+    catn("Sampling mutations...");
+    sampled = sample(sim.mutations, asInteger(4*tmu*N*L));
+    catn("Sampled mutations: " + length(sampled));
+    // Assign +/- alpha
+    for (mut in sampled) {
+        mut.setMutationType(m2);
+        if (runif(1) < 0.5) {
+            mut.setSelectionCoeff(alpha);
+        } else {
+            mut.setSelectionCoeff(-alpha);
+        }
+    }
+}
+
+late() {
+    inds = sim.subpopulations.individuals;
+    phenotypes = inds.sumOfMutationsOfType(m2);
+    fixed_trait = sum(sim.substitutions.selectionCoeff);
+    inds.tagF = phenotypes;
+    // post-burnin: start recording
+    pheno_mean = mean(inds.tagF);
+    zbar = pheno_mean + fixed_trait;
+    x = sim.mutationFrequencies(p1, sim.mutationsOfType(m2));
+    genic_var = 2*sum(alpha^2 * x * (1-x));
+    y = sim.mutationFrequencies(p1, sim.mutationsOfType(m1));
+    ssh = 2*sum(y * (1-y));
+    // write phenotypes
+    row = paste(c(sim.cycle, zbar, pheno_mean, 
+                  var(inds.tagF), genic_var, ssh, length(y)), sep="\t");
+    writeFile(stats_file, row, append=T);
+    // write neutral frequency trajectories
+    write_freqs(neutfreqs_file, p1, m1, sim.cycle);
+}
+
+10 late() {
+  catn("Output vcf...");
+  p1.outputVCFSample(5, filePath = data_dir + "/" + ID + ".vcf");
+  sim.simulationFinished();
+}
