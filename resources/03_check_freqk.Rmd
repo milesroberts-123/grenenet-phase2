@@ -2132,14 +2132,19 @@ ggsave(paste("../results/", today, "/linked_selection_mean_components_abs", s, "
 }
 ```
 
-## block bootstrap procedure to get uncertainty estimates
+# block bootstrap procedure to get uncertainty estimates
+
+## create blocks
+
 ```{r}
-window_size <- 5000
+window_size <- 15000
 
 blocks <- gen0 %>%
   group_by(X1) %>%
   mutate(block = (row_number() - 1) %/% window_size + 1,
          window = paste(X1, block, sep = "_"))
+
+length(unique(blocks$window))
 
 hapfire$window <- blocks$window
 
@@ -2149,7 +2154,7 @@ for(site in sites) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% group_by(window) %>% select(starts_with(paste(site, "_", sep = "")))
   for(w in unique(hap_site$window)){
-    print(paste("Window:", w))
+    #print(paste("Window:", w))
     hap_window <- hap_site %>% filter(window == w)
     hap_window <- hap_window[,-1]
     for(exprep in 1:12) {
@@ -2196,6 +2201,58 @@ for(site in sites) {
 # save results
 write.table(blocks_gt_curves, paste(results_path, "block_gt_for_bootstrapping.txt", sep = ""), row.names = F, quote = F, sep = "\t")
 ```
+
+
+## make confidence intervals
+
+```{r}
+
+blocks_gt_curves <- fread("../results/2026-04-15/block_gt_for_bootstrapping.txt")
+
+# make list of sites
+sites <- unique(blocks_gt_curves$site)
+
+B = 250
+W = 200
+
+cis <- NULL
+
+for(s in sites){
+  boot_samples = NULL
+  for(b in 1:B){
+    boot_sample <- blocks_gt_curves %>%
+      filter(site == s) %>%
+      nest_by(replicate, window) %>% # Group and nest into a list-column
+      ungroup() %>%
+      slice_sample(n = W, replace = TRUE) %>%  # Sample groups with replacement
+      unnest(data) %>% 
+      group_by(site, gen) %>% 
+      summarize(
+        gt_abs = weighted.mean(sum_abs_cov, S)/weighted.mean(sum_abs_cov + sum_var, S))
+    
+    boot_samples <- rbind(boot_samples, boot_sample)
+  }
+  
+  ci <- boot_samples %>% group_by(gen) %>% summarize(lwr = quantile(gt_abs, 0.025), med = median(gt_abs), upr = quantile(gt_abs, 0.975))
+  ci$site <- s
+  
+  cis <- rbind(cis, ci)
+}
+
+ggplot(cis, aes(x = gen, y = med, group = site)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin=lwr, ymax=upr), width=.2,
+                 position=position_dodge(0.05)) +
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = "G(t) abs.", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste(results_path, "bootstrap_gt_abs.pdf", sep = ""), width = 5, height = 4)
+```
+
+# Fst 
+
 ## historical vs modern pairings
 
 ```{r}
