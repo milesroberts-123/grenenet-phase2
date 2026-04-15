@@ -2209,11 +2209,10 @@ write.table(blocks_gt_curves, paste(results_path, "block_gt_for_bootstrapping.tx
 
 blocks_gt_curves <- fread("../results/2026-04-15/block_gt_for_bootstrapping.txt")
 
-# make list of sites
-sites <- unique(blocks_gt_curves$site)
 
-B = 250
-W = 200
+sites <- unique(blocks_gt_curves$site) # make list of sites
+B = 250 # number of bootstrap samples per site
+W = 200 # number of windows in the genome
 
 cis <- NULL
 
