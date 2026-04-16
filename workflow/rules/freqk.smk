@@ -4,7 +4,6 @@ rule cat:
         "fastp_results/trimmed_paired_R2_{sample}.fastq.gz",
         "fastp_results/trimmed_unpaired_R1_{sample}.fastq.gz",
         "fastp_results/trimmed_unpaired_R2_{sample}.fastq.gz",
-        #expand(config["phase1_poolseq_root"] + "{{sample}}{mate}", mate=config["phase1_poolseq_suffix"]),
     group: "freqk"
     output:
         temp("cat_results/{sample}.fq"),

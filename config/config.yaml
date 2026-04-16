@@ -1,7 +1,7 @@
 # Simulation parameters
-sim_fasta: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/Athaliana_447_TAIR10_allATGC.fa"
+sim_fasta: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/Athaliana_447_TAIR10_chr1.fa"
 
-sim_vcf: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/greneNet_final_v1.1_chr1.recode.vcf"
+sim_vcf: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/greneNet_final_v1.1_chr1.recode.vcf.gz"
 
 
 # Empirical sequence data parameters

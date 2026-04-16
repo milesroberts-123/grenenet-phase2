@@ -19,8 +19,11 @@ default-resources:
 set-resources:
     slim:
         runtime: "10m"
+    cat:
+        runtime: "60m"
     freqk_count:
-        cpus_per_task: 2
+        runtime: "60m"
+        cpus_per_task: 4
     fastp:
         cpus_per_task: 2
     kmc_contam_db:
@@ -35,7 +38,7 @@ set-resources:
 # parallelization with threads needs to be defined separately:
 # threads and cpus_per_task are supposed to be synonymous for this plugin, but for some reason I need to specify them separately
 set-threads:
-    freqk_count: 2
+    freqk_count: 4
     fastp: 2
     kmc: 2
     kmc_contam_db: 4

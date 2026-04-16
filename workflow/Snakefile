@@ -15,10 +15,14 @@ gt_params = pd.read_table(
     "../config/gt_params.tsv", sep="\t", dtype={"ID": str}
 ).set_index(["ID"], drop=False)
 
+# empirical data
 reads = pd.read_table(
     "../config/reads.tsv", sep="\t", dtype={"sample": str}
 ).set_index(["sample"], drop=False)
 
+reads = reads[reads['sample'].str.contains('^S')]
+
+# fst simulations
 fst_params = pd.read_table(
     "../config/fst_params.tsv", sep="\t", dtype={"ID": str}
 ).set_index(["ID"], drop=False)
@@ -42,9 +46,9 @@ rule all_poolseq:
     input:
         expand("freqk_call_results/{sample}.txt", sample=reads["sample"])
 
-rule all_seed_mix:
-    input:
-        expand("freqk_call_results/{sample}.txt", sample=config["seed_samples"])
+#rule all_seed_mix:
+#    input:
+#        expand("freqk_call_results/{sample}.txt", sample=config["seed_samples"])
 
 include: "rules/freqk.smk"
 include: "rules/fastp.smk"

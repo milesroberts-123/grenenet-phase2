@@ -29,11 +29,6 @@ early() {
     catn("Generation: " + sim.cycle);
 }
 
-// schedule end
-//1 early() {
-//    community.rescheduleScriptBlock(s1, start=tau);
-//}
-
 // set-up population and output
 1 late() {
     defineConstant("seed", getSeed());
@@ -50,13 +45,14 @@ early() {
     writeFile(stats_file, "gen\tzbar\tzbar_nofix\tzvar\tgenic_var\tneut_het\tS", append=T);
 
     sim.addSubpop("p1", 231);
+    p1.setSelfingRate(sigma);
     catn("Reading haplosomes...");
-    p1.haplosomes.readHaplosomesFromVCF(vcfFile, m1);
+    p1.individuals.readIndividualsFromVCF(vcfFile, m1);
     catn("Scaling up population...");
     p1.setSubpopulationSize(N);
-    p1.setSelfingRate(sigma);
-    catn("Sampling mutations...");
-    sampled = sample(sim.mutations, asInteger(4*tmu*N*L));
+    num_mut = asInteger(4*tmu*N*L);
+    catn("Sampling mutations:" + num_mut);
+    sampled = sample(sim.mutations, num_mut);
     catn("Sampled mutations: " + length(sampled));
     // Assign +/- alpha
     for (mut in sampled) {

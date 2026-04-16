@@ -13,10 +13,29 @@
 #    shell:
 #        "msp ancestry {params.n} -N {params.N} -L {params.L} -r {params.r} | msp mutations {params.mu} > {output}"
 
+rule bcftools_random:
+    group: "simulation"
+    input:
+        fasta=config["sim_fasta"],
+        vcf=config["sim_vcf"]
+    output:
+        bed=temp("random_{ID}.bed"),
+        vcf=temp("bcftools_random_results/{ID}.vcf")
+    conda:
+        "../envs/bcftools.yaml"
+    params:
+        L=lookup(query="ID == '{ID}'", within=gt_params, cols="L")
+    shell:
+        """
+        bedtools random -l {params.L} -n 1 -g {input.fasta}.fai > {output.bed}
+        bcftools view -R {output.bed} -o {output.vcf} {input.vcf}
+        """
+
 rule slim:
     group: "simulation"
-    #input:
-    #    "msprime_results/{ID}.trees"
+    input:
+        vcf = "bcftools_random_results/{ID}.vcf",
+        fasta = config["sim_fasta"]
     output:
         "slim_results/{ID}_neutfreqs.tsv"
     conda:
@@ -31,15 +50,13 @@ rule slim:
         alpha=lookup(query="ID == '{ID}'", within=gt_params, cols="alpha"),
         gamma=lookup(query="ID == '{ID}'", within=gt_params, cols="gamma"),
         tau=lookup(query="ID == '{ID}'", within=gt_params, cols="tau"),
-        fasta=config["sim_fasta"],
-        vcf=config["sim_vcf"],
         struct=lookup(query="ID == '{ID}'", within=gt_params, cols="struct")
     shell:
         """
         if [[ "unstruct" == "{params.struct}" ]]; then
             slim -d N={params.N} -d L={params.L} -d nmu={params.nmu} -d tmu={params.tmu} -d R={params.R} -d sigma={params.sigma} -d alpha={params.alpha} -d ID={wildcards.ID} -d gamma={params.gamma} -d tau={params.tau} scripts/gt_expectations.slim
         elif [[ "struct" == "{params.struct}" ]]; then
-            slim -d fastaFile='"{params.fasta}"' -d vcfFile='"{params.vcf}"' -d N={params.N} -d sigma={params.sigma} -d tmu={params.tmu} -d R={params.R} -d alpha={params.alpha} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
+            slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{input.vcf}"' -d N={params.N} -d sigma={params.sigma} -d tmu={params.tmu} -d R={params.R} -d alpha={params.alpha} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
         else
             echo "Invalid simulation type!"
         fi
