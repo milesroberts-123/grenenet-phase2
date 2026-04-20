@@ -2280,24 +2280,25 @@ ggsave(paste(results_path, "bootstrap_gt_abs_jitter.pdf", sep = ""), width = 5, 
 # make list of sites
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
-# for now, ignore sites that lack reps with contiguous generations
-sites <- sites[-30]
+# for now, ignore sites that do not have at least 2 incremenent
+sites <- sites[c(-11, -14, -18, -19, -30, -31)]
 
 # loop over sites
-conv_gt_curves = NULL
+conv_gt_results = NULL
 
 for(site in sites) {
   print(paste("Site:", site))
-  num <- 0
-  denom <- 0
-  n_pairs <- 0
-  visited <- c()
-  for(i in 1:11) {
+  total_var <- 0
+  total_covar <- 0
+  n_valid_reps <- 12
+  pdiffs <- NULL
+  for(i in 1:12) {
     print(paste("Rep A:", i))
     hap_rep_i <- hapfire %>% select(starts_with(paste(site, "_", sep = "")) & ends_with(paste("_", i, sep = "")))
     
     if(ncol(hap_rep_i) <= 1){
       print("Need at least two increments. Skipping to next replicate...")
+      n_valid_reps <- n_valid_reps - 1
       next
     }
     
@@ -2321,71 +2322,43 @@ for(site in sites) {
     
     # calculate increments
     pdiff_i <- as.matrix(pmat_i[, -1] - pmat_i[, -ncol(pmat_i)])
-    
-    for(j in (i+1):12){
-      print(paste("Rep B:", j))
-      
-      # subset to one site
-      hap_rep_j <- hapfire %>% select(starts_with(paste(site, "_", sep = "")) & ends_with(paste("_", j, sep = "")))
-      
-      if(ncol(hap_rep_j) <= 1){
-        print("Need at least two increments. Skipping to next replicate...")
-        next
-      }
-      
-      # sample sizes
-      n_j <- sample_sizes[(sample_sizes$site_gen_plot %in% colnames(hap_rep_j)),]
-      n_j <- rbind(c(0, 1e5), n_j)
-      n_j <- n_j %>% arrange(site_gen_plot)
-      
-      # re-order columns by generation
-      hap_rep_j <- hap_rep_j %>% relocate(all_of(sort(colnames(hap_rep_j))))
-      
-      # create allele-frequency matrix
-      pmat_j <- NULL
-      pmat_j <- cbind(pmat_j, gen0$X3)
-      colnames(pmat_j)[1] <- "0"
-      for(w in 1:ncol(hap_rep_j)){
-        pmat_j <- cbind(pmat_j, hap_rep_j[,w])
-        colnames(pmat_j)[w+1] <- colnames(hap_rep_j)[w]
-      }
-      
-      # calculate increments
-      pdiff_j <- pmat_j[, -1] - pmat_j[, -ncol(pmat_j)]
-      
-      # combine replicate increments
-      pdiff_ij <- cbind(pdiff_i, pdiff_j)
-
-      # covariances
-      cov_pd_ij <- cov(pdiff_ij, use = "pairwise.complete.obs")
-      
-      # covariances within rep A
-      cov_pd_i <- cov_pd_ij[(1:ncol(pdiff_i)), (1:ncol(pdiff_i))]
-      cov_pd_i <- correct_covmat_for_n(cov_pd_i, pmat_i, n_i$n)
-      
-      # covariances within rep B
-      cov_pd_j <- cov_pd_ij[(ncol(pdiff_i) + 1):(ncol(pdiff_i) + ncol(pdiff_j)), (ncol(pdiff_i) + 1):(ncol(pdiff_i) + ncol(pdiff_j))]
-      cov_pd_j <- correct_covmat_for_n(cov_pd_j, pmat_j, n_j$n)
-      
-      # covariances across A and B
-      cov_pd_cross <- as.matrix(cov_pd_ij[(1:ncol(pdiff_i)), (ncol(pdiff_i) + 1):(ncol(pdiff_i) + ncol(pdiff_j))])
-      
-      num <- num + sum(odiag(cov_pd_cross), na.rm = T)
-      n_pairs <- n_pairs +1
-      
-      if(!(i %in% visited)){
-        visited <- union(visited, i)
-        denom <- denom + sum(cov_pd_i)
-      }
-      
-      if(!(j %in% visited)){
-        visited <- union(visited, j)
-        denom <- denom + sum(cov_pd_j)
-      }
-      
-    }
+    pdiffs <- cbind(pdiffs, pdiff_i)
   }
+
+  # increment covariances
+  cov_pdiffs <- cov(pdiffs, use = "pairwise.complete.obs")
+  
+  # covariances within a rep
+  row_rep <- gsub(".*_","", rownames(cov_pdiffs))
+  col_rep <- gsub(".*_","", colnames(cov_pdiffs))
+  for(k in unique(row_rep)){
+    cov_k <- cov_pdiffs[k == row_rep, k == col_rep]
+    # TO DO: correct covariances within reps by sample size
+    total_var <- total_var + sum(cov_k)
+  }
+  
+  # covariances across reps
+  for(k in unique(row_rep)){
+    cov_k <- cov_pdiffs[k == row_rep, k != col_rep]
+    total_covar <- total_covar + sum(cov_k)
+  }
+  
+  # save results
+  # number of pairs*2 in denominator of covar average because I'm double-counting above
+  result = data.frame(site = site, 
+              gt_shared = (total_covar/(n_valid_reps*(n_valid_reps - 1)))/(total_var/n_valid_reps) )
+  
+ conv_gt_results<-  rbind(conv_gt_results, result)
 }
+
+
+# Example: Bars sorted from highest value to lowest
+ggplot(conv_gt_results, aes(x = reorder(site, -gt_shared), y = gt_shared)) +
+  geom_col() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = "Site", y = "Proportion of selection\nshared across replicates")
+
+ggsave(paste(results_path, "linked_selection_shared_across_reps_within_site.pdf", sep = ""), width = 7, height = 4)
 
 ```
 
