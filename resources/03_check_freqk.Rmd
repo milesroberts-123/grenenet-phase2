@@ -49,6 +49,13 @@ theme_set(
 # functions
 
 ```{r}
+
+# get off diagonal elements of matrix
+# Source - https://stackoverflow.com/a/70488619
+# Posted by akrun, modified by community. See post 'Timeline' for change history
+# Retrieved 2026-04-20, License - CC BY-SA 4.0
+odiag <- function(x) x[col(x) != row(x)]
+
 # visualize var-cov matrix
 get_upper_tri <- function(cormat){
     cormat[lower.tri(cormat)]<- NA
@@ -2284,6 +2291,7 @@ for(site in sites) {
   num <- 0
   denom <- 0
   n_pairs <- 0
+  visited <- c()
   for(i in 1:11) {
     print(paste("Rep A:", i))
     hap_rep_i <- hapfire %>% select(starts_with(paste(site, "_", sep = "")) & ends_with(paste("_", i, sep = "")))
@@ -2353,20 +2361,28 @@ for(site in sites) {
       
       # covariances within rep A
       cov_pd_i <- cov_pd_ij[(1:ncol(pdiff_i)), (1:ncol(pdiff_i))]
-      
       cov_pd_i <- correct_covmat_for_n(cov_pd_i, pmat_i, n_i$n)
       
       # covariances within rep B
       cov_pd_j <- cov_pd_ij[(ncol(pdiff_i) + 1):(ncol(pdiff_i) + ncol(pdiff_j)), (ncol(pdiff_i) + 1):(ncol(pdiff_i) + ncol(pdiff_j))]
-      
       cov_pd_j <- correct_covmat_for_n(cov_pd_j, pmat_j, n_j$n)
       
       # covariances across A and B
-      cov_pd_cross <- t(as.matrix(cov_pd_ij[(1:ncol(pdiff_i)), (ncol(pdiff_i) + 1):(ncol(pdiff_i) + ncol(pdiff_j))]))
+      cov_pd_cross <- as.matrix(cov_pd_ij[(1:ncol(pdiff_i)), (ncol(pdiff_i) + 1):(ncol(pdiff_i) + ncol(pdiff_j))])
       
-      num <- num + sum(get_upper_tri(cov_pd_cross), na.rm = T)
-      denom <- denom + sum(cov_pd_i) + sum(cov_pd_j)
-      n_pairs <- n_pairs + 1
+      num <- num + sum(odiag(cov_pd_cross), na.rm = T)
+      n_pairs <- n_pairs +1
+      
+      if(!(i %in% visited)){
+        visited <- union(visited, i)
+        denom <- denom + sum(cov_pd_i)
+      }
+      
+      if(!(j %in% visited)){
+        visited <- union(visited, j)
+        denom <- denom + sum(cov_pd_j)
+      }
+      
     }
   }
 }
