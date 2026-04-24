@@ -1,0 +1,298 @@
+// ============================================================================
+//  NonWF Cold Storage Population Simulation
+// ============================================================================
+//
+//  OVERVIEW
+//  --------
+//  Models a population with two distinct life-history compartments:
+//
+//    p1  –  "cold storage"  : dormant/overwintering pool (e.g. seed/egg bank).
+//              Individuals persist across ticks, age annually, and experience
+//              age-based mortality.
+//
+//    p2  –  breeding pool   : active adults recruited from cold storage each
+//              tick.  They reproduce once and then die (semelparity).
+//
+//  TICK CYCLE (each tick T)
+//  ------------------------
+//    1. reproduction(p2) — each p2 individual generates N_OFFSPRING offspring
+//       that are deposited directly into cold storage (p1) at age 0.
+//    2. early()          — (a) mark last cycle's p2 for death (fitnessScaling=0),
+//                          (b) move age-eligible p1 individuals to p2 according
+//                              to MOVE_RATE,
+//                          (c) apply logistic density-dependence to new p2,
+//                          (d) set age-based survival for p1 individuals.
+//    3. Viability/survival selection (automatic) — SLiM applies fitnessScaling
+//       values set in step 2 to determine who lives and who dies.
+//    4. late()           — report population statistics; check stop condition.
+//    5. Age increment (automatic) — all surviving individuals gain +1 age.
+//
+//  COMMAND-LINE USAGE
+//  ------------------
+//  Run with defaults:
+//    slim cold_storage_nonWF.slim
+//
+//  Override any parameter with -d KEY=VALUE (use quotes for strings):
+//    slim -d "VCF_FILE='mydata.vcf'" \
+//         -d N_VCF=200 \
+//         -d K=500 \
+//         -d MOVE_RATE=0.25 \
+//         -d COLD_SURV=0.80 \
+//         -d SIM_LENGTH=300 \
+//         cold_storage_nonWF.slim
+//
+//  VCF REQUIREMENTS
+//  ----------------
+//  The VCF must contain exactly N_VCF diploid individuals (2*N_VCF haplotypes).
+//  All SNP positions must be <= CHROM_LEN.
+//  Non-nucleotide SLiM VCF format is expected (REF=A, ALT=T convention);
+//  for nucleotide-based models see section 19.12 of the SLiM manual.
+// ============================================================================
+
+initialize() {
+
+    initializeSLiMModelType("nonWF");
+
+    // ── Adjustable parameters ────────────────────────────────────────────────
+    // Each block checks whether the constant already exists (set from the
+    // command line with -d), falling back to the default value if not.
+
+    // Path to the VCF file used to initialise cold storage genotypes.
+    if (!exists("VCF_FILE"))
+        defineConstant("VCF_FILE", "cold_storage.vcf");
+
+    // Number of diploid individuals encoded in the VCF (must match exactly).
+    if (!exists("N_VCF"))
+        defineConstant("N_VCF", 100);
+
+    // Carrying capacity for the breeding population (p2).
+    // Logistic density dependence: breeder survival = min(1, K / n_breeders).
+    if (!exists("K"))
+        defineConstant("K", 200);
+
+    // Fraction of age-eligible cold storage individuals recruited to p2 each tick.
+    // Values in (0, 1]; 1.0 moves all eligible individuals.
+    if (!exists("MOVE_RATE"))
+        defineConstant("MOVE_RATE", 0.30);
+
+    // Minimum age (in ticks) before a cold storage individual becomes eligible
+    // for recruitment to the breeding pool.
+    if (!exists("MIN_AGE"))
+        defineConstant("MIN_AGE", 1);
+
+    // Age at which cold storage individuals are guaranteed to die.
+    // Individuals with age >= MAX_COLD_AGE receive fitnessScaling = 0.
+    if (!exists("MAX_COLD_AGE"))
+        defineConstant("MAX_COLD_AGE", 6);
+
+    // Per-tick survival probability for cold storage individuals
+    // (applies to individuals with MIN_AGE <= age < MAX_COLD_AGE).
+    if (!exists("COLD_SURV"))
+        defineConstant("COLD_SURV", 0.85);
+
+    // Number of offspring each p2 individual contributes to cold storage per tick.
+    if (!exists("N_OFFSPRING"))
+        defineConstant("N_OFFSPRING", 3);
+
+    // Per-base-per-gamete mutation rate.
+    if (!exists("MU"))
+        defineConstant("MU", 1e-7);
+
+    // Per-base recombination rate (probability of crossover between adjacent bases).
+    if (!exists("R"))
+        defineConstant("R", 1e-8);
+
+    // Last valid chromosome position (chromosome length = CHROM_LEN + 1 bases).
+    // Must be >= the largest SNP position in the VCF file.
+    if (!exists("CHROM_LEN"))
+        defineConstant("CHROM_LEN", 99999);
+
+    // Total number of ticks to simulate.  Set to 0 for no hard limit
+    // (simulation runs until extinction or manually stopped).
+    if (!exists("SIM_LENGTH"))
+        defineConstant("SIM_LENGTH", 200);
+
+    // ── Genetic architecture ─────────────────────────────────────────────────
+
+    // Single neutral mutation type.
+    // convertToSubstitution must be set explicitly to T in nonWF models
+    // (it defaults to F, unlike WF models, because absolute fitness values
+    // in nonWF models make it generally unsafe to remove fixed mutations
+    // automatically — see SLiM Manual §25.5).
+    initializeMutationType("m1", 0.5, "f", 0.0);
+    m1.convertToSubstitution = T;
+
+    initializeGenomicElementType("g1", m1, 1.0);
+    initializeGenomicElement(g1, 0, CHROM_LEN);
+    initializeMutationRate(MU);
+    initializeRecombinationRate(R);
+}
+
+
+// ============================================================================
+//  REPRODUCTION  (fires once per p2 individual, before early() each tick)
+// ============================================================================
+//
+//  Each breeding individual (p2) generates N_OFFSPRING offspring.  Critically,
+//  offspring are added to p1 (cold storage), NOT to subpop (which would be p2).
+//  New offspring start at age 0 and are therefore ineligible for immediate
+//  recruitment to p2 (requires age >= MIN_AGE).
+
+reproduction(p2) {
+    for (i in seqLen(N_OFFSPRING)) {
+        mate = p2.sampleIndividuals(1);       // random mating within p2
+        p1.addCrossed(individual, mate);      // offspring land in cold storage
+    }
+}
+
+
+// ============================================================================
+//  INITIALIZATION  (tick 1 only)
+// ============================================================================
+
+1 early() {
+    // Create cold storage with exactly N_VCF diploid individuals.
+    sim.addSubpop("p1", N_VCF);
+
+    // Load standing genetic variation from VCF into cold storage.
+    // The haplosome count (2 * N_VCF) must match the VCF sample count.
+    p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
+    //p1.addCloned(p1.sampleIndividuals(1));
+
+    // Create an initially empty breeding population.
+    sim.addSubpop("p2", 0);
+
+    catn("=== Cold Storage NonWF Simulation ===");
+    catn("Parameters:");
+    catn("  VCF_FILE    = " + VCF_FILE);
+    catn("  N_VCF       = " + N_VCF);
+    catn("  K           = " + K);
+    catn("  MOVE_RATE   = " + MOVE_RATE);
+    catn("  MIN_AGE     = " + MIN_AGE);
+    catn("  MAX_COLD_AGE= " + MAX_COLD_AGE);
+    catn("  COLD_SURV   = " + COLD_SURV);
+    catn("  N_OFFSPRING = " + N_OFFSPRING);
+    catn("  SIM_LENGTH  = " + SIM_LENGTH);
+    catn("Tick 1: " + p1.individualCount + " individuals loaded into cold storage.");
+}
+
+1 reproduction(p1){
+  p1.addCloned(individual);
+}
+
+// ============================================================================
+//  PER-TICK LIFE-HISTORY LOGIC  (runs every tick, after reproduction())
+// ============================================================================
+
+early() {
+
+    // Skip tick 1; initialisation was handled by the block above.
+    if (community.tick == 1) return;
+
+    // ── A.  Kill last cycle's breeders ───────────────────────────────────────
+    //
+    //  p2 individuals already reproduced (in this tick's reproduction() phase).
+    //  Setting fitnessScaling = 0.0 ensures they die during SLiM's viability/
+    //  survival phase later this tick.  Effective fitness = 0 × p2.fitnessScaling
+    //  = 0, regardless of any subpopulation-level scaling.
+
+    if (p2.individualCount > 0)
+        p2.individuals.fitnessScaling = 0.0;
+
+
+    // ── B.  Recruit eligible cold-storage individuals into p2 ────────────────
+    //
+    //  Eligible:  MIN_AGE <= age < MAX_COLD_AGE
+    //  Sample:    MOVE_RATE fraction of eligible, with a minimum of 1 if
+    //             any are eligible (prevents complete stagnation when counts
+    //             are small).
+
+    cold = p1.individuals;
+
+    if (cold.size() > 0) {
+
+        eligible_mask = (cold.age >= MIN_AGE) & (cold.age < MAX_COLD_AGE);
+        eligible = cold[eligible_mask];
+
+        if (eligible.size() > 0) {
+            n_move = max(1, asInteger(round(eligible.size() * MOVE_RATE)));
+            n_move = min(n_move, eligible.size());
+            movers = sample(eligible, n_move);
+
+            // Move individuals from cold storage to the breeding population.
+            // takeMigrants() removes them from p1 and adds them to p2.
+            p2.takeMigrants(movers);
+
+            // ── C.  Density-dependent survival for new breeders ───────────────
+            //
+            //  Logistic density dependence: survival probability is capped at 1.0
+            //  below carrying capacity, and decreases as K / n_breeders when
+            //  n_breeders > K.  Setting individual fitnessScaling overrides the
+            //  fitnessScaling these individuals carried from cold storage.
+            //
+            //  Note: p2.fitnessScaling remains at its default of 1.0, so effective
+            //  fitness for each new breeder = dd_surv × 1.0 = dd_surv.
+
+            n_breed = movers.size();
+            dd_surv = min(1.0, K / n_breed);
+            movers.fitnessScaling = dd_surv;
+        }
+    }
+
+
+    // ── D.  Age-based mortality for cold storage (p1) ────────────────────────
+    //
+    //  After movers have left, apply survival values to the remaining p1
+    //  individuals.  SLiM interprets fitnessScaling in [0,1] as a survival
+    //  probability in nonWF models.
+
+    cold_remaining = p1.individuals;
+
+    if (cold_remaining.size() > 0) {
+        // Default annual survival for individuals within the viable age range.
+        cold_remaining.fitnessScaling = COLD_SURV;
+
+        // Force-kill individuals that have exceeded the maximum cold-storage age.
+        too_old = cold_remaining[cold_remaining.age >= MAX_COLD_AGE];
+        if (too_old.size() > 0)
+            too_old.fitnessScaling = 0.0;
+    }
+}
+
+
+// ============================================================================
+//  OUTPUT  (late, after viability selection each tick)
+// ============================================================================
+
+2:300 late() {
+    tick = community.tick;
+    n_cold  = p1.individualCount;
+    n_breed = p2.individualCount;
+
+    // Detect extinction.
+    if (n_cold == 0 & n_breed == 0) {
+        catn(tick + ": EXTINCTION – both populations empty. Simulation halted.");
+        sim.simulationFinished();
+        return;
+    }
+
+    // Per-tick statistics line.
+    if (n_cold > 0) {
+        ages      = p1.individuals.age;
+        mean_age  = round(mean(ages) * 100) / 100;
+        max_age   = max(ages);
+        catn(tick + ":  cold=" + n_cold +
+             "  breeders=" + n_breed +
+             "  cold_mean_age=" + mean_age +
+             "  cold_max_age="  + max_age);
+    } else {
+        catn(tick + ":  cold=0  breeders=" + n_breed);
+    }
+
+    // End of scheduled run.
+    if (SIM_LENGTH > 0 & tick >= SIM_LENGTH) {
+        catn("=== Simulation reached tick " + SIM_LENGTH + " – finished. ===");
+        sim.simulationFinished();
+    }
+}
+
