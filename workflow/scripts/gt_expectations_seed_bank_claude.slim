@@ -49,6 +49,16 @@
 //  for nucleotide-based models see section 19.12 of the SLiM manual.
 // ============================================================================
 
+// Started by borrowing code from Vince Buffalo and modifying/updating it to
+// work with newest version of slim (v5.1 as of writing)
+// https://github.com/vsbuffalo/cvtk/blob/master/slim_sims/neutral_burnin.slim
+function (void)write_freqs(string file, object<Subpopulation> subpop,
+                     object<MutationType> mut_type, integer generation) {
+  fmt_freqs='applyValue.id + ";" + applyValue.position + ";" + sim.mutationFrequencies(subpop, applyValue);';
+  line = paste(sapply(sim.mutationsOfType(mut_type), fmt_freqs), sep="\t");
+  writeFile(file, generation + "\t" + line, append=T);
+}
+
 initialize() {
 
     initializeSLiMModelType("nonWF");
@@ -112,6 +122,14 @@ initialize() {
     if (!exists("SIM_LENGTH"))
         defineConstant("SIM_LENGTH", 200);
 
+    // Selfing rate
+    if (!exists("SIGMA"))
+        defineConstant("SIGMA", 0.5);
+
+    // Simulation ID
+    if (!exists("ID"))
+        defineConstant("ID", "test");
+
     // ── Genetic architecture ─────────────────────────────────────────────────
 
     // Single neutral mutation type.
@@ -139,9 +157,14 @@ initialize() {
 //  recruitment to p2 (requires age >= MIN_AGE).
 
 reproduction(p2) {
-    for (i in seqLen(N_OFFSPRING)) {
-        mate = p2.sampleIndividuals(1);       // random mating within p2
-        p1.addCrossed(individual, mate);      // offspring land in cold storage
+    REALIZED_OFFSPRING = rpois(1, N_OFFSPRING);
+    for (i in seqLen(REALIZED_OFFSPRING)) {
+        if (runif(1) > SIGMA){
+            mate = p2.sampleIndividuals(1);       // random mating within p2
+            p1.addCrossed(individual, mate);      // offspring land in cold storage
+        } else {
+            p1.addSelfed(individual);
+        }
     }
 }
 
@@ -157,7 +180,6 @@ reproduction(p2) {
     // Load standing genetic variation from VCF into cold storage.
     // The haplosome count (2 * N_VCF) must match the VCF sample count.
     p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
-    //p1.addCloned(p1.sampleIndividuals(1));
 
     // Create an initially empty breeding population.
     sim.addSubpop("p2", 0);
@@ -173,19 +195,21 @@ reproduction(p2) {
     catn("  COLD_SURV   = " + COLD_SURV);
     catn("  N_OFFSPRING = " + N_OFFSPRING);
     catn("  SIM_LENGTH  = " + SIM_LENGTH);
+    catn("  SIGMA       = " + SIGMA);
     catn("Tick 1: " + p1.individualCount + " individuals loaded into cold storage.");
-}
 
-1 reproduction(p1){
-  p1.addCloned(individual);
+    // reschedule population tracking until initial generations
+    community.rescheduleScriptBlock(s1, start=2, end=SIM_LENGTH);
+    community.rescheduleScriptBlock(s2, start=2, end=SIM_LENGTH);
 }
 
 // ============================================================================
 //  PER-TICK LIFE-HISTORY LOGIC  (runs every tick, after reproduction())
 // ============================================================================
 
-early() {
-
+s1 300 early() {
+    catn("Tick " + sim.cycle + ": " + "Beginning of early phase.");
+    catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
     // Skip tick 1; initialisation was handled by the block above.
     if (community.tick == 1) return;
 
@@ -195,18 +219,18 @@ early() {
     //  Setting fitnessScaling = 0.0 ensures they die during SLiM's viability/
     //  survival phase later this tick.  Effective fitness = 0 × p2.fitnessScaling
     //  = 0, regardless of any subpopulation-level scaling.
-
+    catn("Tick " + sim.cycle + ": " + "killing breeders from last cycle.");
     if (p2.individualCount > 0)
         p2.individuals.fitnessScaling = 0.0;
 
-
+    catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
     // ── B.  Recruit eligible cold-storage individuals into p2 ────────────────
     //
     //  Eligible:  MIN_AGE <= age < MAX_COLD_AGE
     //  Sample:    MOVE_RATE fraction of eligible, with a minimum of 1 if
     //             any are eligible (prevents complete stagnation when counts
     //             are small).
-
+    catn("Tick " + sim.cycle + ": " + "sprouting some seeds.");
     cold = p1.individuals;
 
     if (cold.size() > 0) {
@@ -234,18 +258,19 @@ early() {
             //  fitness for each new breeder = dd_surv × 1.0 = dd_surv.
 
             n_breed = movers.size();
-            dd_surv = min(1.0, K / n_breed);
+            //dd_surv = min(1.0, K / n_breed);
+            dd_surv = (n_breed > 0) ? min(1.0, K / n_breed) else 1.0;
             movers.fitnessScaling = dd_surv;
         }
     }
-
+    catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
 
     // ── D.  Age-based mortality for cold storage (p1) ────────────────────────
     //
     //  After movers have left, apply survival values to the remaining p1
     //  individuals.  SLiM interprets fitnessScaling in [0,1] as a survival
     //  probability in nonWF models.
-
+    catn("Tick " + sim.cycle + ": " + "Killing some seeds.");
     cold_remaining = p1.individuals;
 
     if (cold_remaining.size() > 0) {
@@ -257,6 +282,7 @@ early() {
         if (too_old.size() > 0)
             too_old.fitnessScaling = 0.0;
     }
+    catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
 }
 
 
@@ -264,7 +290,9 @@ early() {
 //  OUTPUT  (late, after viability selection each tick)
 // ============================================================================
 
-2:300 late() {
+s2 300 late() {
+    write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
+
     tick = community.tick;
     n_cold  = p1.individualCount;
     n_breed = p2.individualCount;
@@ -281,12 +309,12 @@ early() {
         ages      = p1.individuals.age;
         mean_age  = round(mean(ages) * 100) / 100;
         max_age   = max(ages);
-        catn(tick + ":  cold=" + n_cold +
+        catn("Tick " + tick + ": cold=" + n_cold +
              "  breeders=" + n_breed +
              "  cold_mean_age=" + mean_age +
              "  cold_max_age="  + max_age);
     } else {
-        catn(tick + ":  cold=0  breeders=" + n_breed);
+        catn("Tick " + tick + ":  cold=0  breeders=" + n_breed);
     }
 
     // End of scheduled run.
