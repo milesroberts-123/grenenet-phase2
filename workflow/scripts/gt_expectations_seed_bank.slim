@@ -19,7 +19,7 @@
 //       that are deposited directly into cold storage (p1) at age 0.
 //    2. early()          — (a) mark last cycle's p2 for death (fitnessScaling=0),
 //                          (b) move age-eligible p1 individuals to p2 according
-//                              to MOVE_RATE,
+//                              to GERM_RATE,
 //                          (c) apply logistic density-dependence to new p2,
 //                          (d) set age-based survival for p1 individuals.
 //    3. Viability/survival selection (automatic) — SLiM applies fitnessScaling
@@ -36,8 +36,8 @@
 //    slim -d "VCF_FILE='mydata.vcf'" \
 //         -d N_VCF=200 \
 //         -d K=500 \
-//         -d MOVE_RATE=0.25 \
-//         -d COLD_SURV=0.80 \
+//         -d GERM_RATE=0.25 \
+//         -d BANK_SURV=0.80 \
 //         -d SIM_LENGTH=300 \
 //         cold_storage_nonWF.slim
 //
@@ -62,96 +62,23 @@ function (void)write_freqs(string file, object<Subpopulation> subpop,
 initialize() {
 
     initializeSLiMModelType("nonWF");
-
-    // ── Adjustable parameters ────────────────────────────────────────────────
-    // Each block checks whether the constant already exists (set from the
-    // command line with -d), falling back to the default value if not.
-
-    // Path to the VCF file used to initialise cold storage genotypes.
-    if (!exists("VCF_FILE"))
-        defineConstant("VCF_FILE", "cold_storage.vcf");
-
-    // Number of diploid individuals encoded in the VCF (must match exactly).
-    if (!exists("N_VCF"))
-        defineConstant("N_VCF", 100);
-
-    // Carrying capacity for the breeding population (p2).
-    // Logistic density dependence: breeder survival = min(1, K / n_breeders).
-    if (!exists("K"))
-        defineConstant("K", 200);
-
-    // Fraction of age-eligible cold storage individuals recruited to p2 each tick.
-    // Values in (0, 1]; 1.0 moves all eligible individuals.
-    if (!exists("MOVE_RATE"))
-        defineConstant("MOVE_RATE", 0.30);
-
-    // Minimum age (in ticks) before a cold storage individual becomes eligible
-    // for recruitment to the breeding pool.
-    if (!exists("MIN_AGE"))
-        defineConstant("MIN_AGE", 1);
-
-    // Age at which cold storage individuals are guaranteed to die.
-    // Individuals with age >= MAX_COLD_AGE receive fitnessScaling = 0.
-    if (!exists("MAX_COLD_AGE"))
-        defineConstant("MAX_COLD_AGE", 6);
-
-    // Per-tick survival probability for cold storage individuals
-    // (applies to individuals with MIN_AGE <= age < MAX_COLD_AGE).
-    if (!exists("COLD_SURV"))
-        defineConstant("COLD_SURV", 0.85);
-
-    // Number of offspring each p2 individual contributes to cold storage per tick.
-    if (!exists("N_OFFSPRING"))
-        defineConstant("N_OFFSPRING", 3);
-
-    // Per-base-per-gamete neutral mutation rate.
-    if (!exists("MU"))
-        defineConstant("MU", 1e-7);
-
-    // Per-base-per gamete selected mutation rate.
-    if (!exists("TMU"))
-        defineConstant("TMU", 1e-8);
-
-    // Per-base recombination rate (probability of crossover between adjacent bases).
-    if (!exists("R"))
-        defineConstant("R", 1e-8);
-
-    // Last valid chromosome position (chromosome length = CHROM_LEN + 1 bases).
-    // Must be >= the largest SNP position in the VCF file.
-    if (!exists("CHROM_LEN"))
-        defineConstant("CHROM_LEN", 99999);
-
-    // Total number of ticks to simulate.  Set to 0 for no hard limit
-    // (simulation runs until extinction or manually stopped).
-    if (!exists("SIM_LENGTH"))
-        defineConstant("SIM_LENGTH", 200);
-
-    // Selfing rate
-    if (!exists("SIGMA"))
-        defineConstant("SIGMA", 0.5);
-
-    // selection coefficient for non-neutral mutations
-    if (!exists("ALPHA"))
-        defineConstant("ALPHA", 0.01);
-
-    // Simulation ID
-    if (!exists("ID"))
-        defineConstant("ID", "test");
+    initializeSLiMOptions(nucleotideBased=T);
+    length = initializeAncestralNucleotides(FASTA_FILE);
+    defineConstant("CHROM_LEN", length);
 
     // ── Genetic architecture ─────────────────────────────────────────────────
-
     // Single neutral mutation type.
     // convertToSubstitution must be set explicitly to T in nonWF models
     // (it defaults to F, unlike WF models, because absolute fitness values
     // in nonWF models make it generally unsafe to remove fixed mutations
     // automatically — see SLiM Manual §25.5).
-    initializeMutationType("m1", 0.5, "f", 0.0);
-    initializeMutationType("m2", 0.5, "f", 0.0);
+    initializeMutationTypeNuc("m1", 0.5, "f", 0.0);
+    initializeMutationTypeNuc("m2", 0.5, "f", 0.5);
     m1.convertToSubstitution = T;
 
-    initializeGenomicElementType("g1", m1, 1.0);
-    initializeGenomicElement(g1, 0, CHROM_LEN);
-    initializeMutationRate(MU);
+    initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
+    initializeGenomicElement(g1, 0, CHROM_LEN-1);
+    //initializeMutationRate(MU);
     initializeRecombinationRate(R);
 }
 
@@ -198,10 +125,10 @@ reproduction(p2) {
     catn("  VCF_FILE    = " + VCF_FILE);
     catn("  N_VCF       = " + N_VCF);
     catn("  K           = " + K);
-    catn("  MOVE_RATE   = " + MOVE_RATE);
+    catn("  GERM_RATE   = " + GERM_RATE);
     catn("  MIN_AGE     = " + MIN_AGE);
-    catn("  MAX_COLD_AGE= " + MAX_COLD_AGE);
-    catn("  COLD_SURV   = " + COLD_SURV);
+    catn("  MAX_BANK_AGE= " + MAX_BANK_AGE);
+    catn("  BANK_SURV   = " + BANK_SURV);
     catn("  N_OFFSPRING = " + N_OFFSPRING);
     catn("  SIM_LENGTH  = " + SIM_LENGTH);
     catn("  SIGMA       = " + SIGMA);
@@ -251,8 +178,8 @@ s1 300 early() {
     catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
     // ── B.  Recruit eligible cold-storage individuals into p2 ────────────────
     //
-    //  Eligible:  MIN_AGE <= age < MAX_COLD_AGE
-    //  Sample:    MOVE_RATE fraction of eligible, with a minimum of 1 if
+    //  Eligible:  MIN_AGE <= age < MAX_BANK_AGE
+    //  Sample:    GERM_RATE fraction of eligible, with a minimum of 1 if
     //             any are eligible (prevents complete stagnation when counts
     //             are small).
     catn("Tick " + sim.cycle + ": " + "sprouting some seeds.");
@@ -260,11 +187,11 @@ s1 300 early() {
 
     if (cold.size() > 0) {
 
-        eligible_mask = (cold.age >= MIN_AGE) & (cold.age < MAX_COLD_AGE);
+        eligible_mask = (cold.age >= MIN_AGE) & (cold.age < MAX_BANK_AGE);
         eligible = cold[eligible_mask];
 
         if (eligible.size() > 0) {
-            n_move = max(1, asInteger(round(eligible.size() * MOVE_RATE)));
+            n_move = max(1, asInteger(round(eligible.size() * GERM_RATE)));
             n_move = min(n_move, eligible.size());
             movers = sample(eligible, n_move);
 
@@ -299,10 +226,10 @@ s1 300 early() {
 
     if (cold_remaining.size() > 0) {
         // Default annual survival for individuals within the viable age range.
-        cold_remaining.fitnessScaling = COLD_SURV;
+        cold_remaining.fitnessScaling = BANK_SURV;
 
         // Force-kill individuals that have exceeded the maximum cold-storage age.
-        too_old = cold_remaining[cold_remaining.age >= MAX_COLD_AGE];
+        too_old = cold_remaining[cold_remaining.age >= MAX_BANK_AGE];
         if (too_old.size() > 0)
             too_old.fitnessScaling = 0.0;
     }

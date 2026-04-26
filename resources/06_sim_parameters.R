@@ -1,6 +1,6 @@
 library("dplyr")
 
-gt_params <- expand.grid(
+gt_wf_params <- expand.grid(
     nmu=7e-09,
     tmu=c(7e-10),
     R=8.06452e-10,
@@ -12,18 +12,37 @@ gt_params <- expand.grid(
     tau=105,
     rep=1:30,
     adjust=c(T),
-    type="bank",
-    #type=c("unstruct", "struct", "bank")
+    #type="bank",
+    type=c("unstruct", "struct")
 )
 
+gt_nonwf_params <- expand.grid(N=1000,
+			         nmu=7e-09,
+    tmu=c(7e-10),
+    R=8.06452e-10,
+    L=1e6,
+    sigma=c(0, 0.05, 0.5, 0.95, 0.99),
+    alpha=c(0, 0.0025, 0.005, 0.01, 0.015),
+    rep=1:30,
+    gamma=10,
+    tau=10,
+    K=c(1000),
+    N_OFFSPRING=c(3),
+    GERM_RATE=c(0.75),
+    BANK_SURV=c(0.9),
+    type="bank"
+			       )
+
 # adjust Ne based on selfing rate
-gt_params$N[(gt_params$adjust == T)] = as.integer(gt_params$N[(gt_params$adjust == T)]/(1 - gt_params$sigma[(gt_params$adjust == T)]/2))
+gt_wf_params$N[(gt_wf_params$adjust == T)] = as.integer(gt_wf_params$N[(gt_wf_params$adjust == T)]/(1 - gt_wf_params$sigma[(gt_wf_params$adjust == T)]/2))
+
+# combine sims
 
 # add simulation id
-gt_params$ID <- 1:nrow(gt_params)
+gt_nonwf_params$ID <- 1:nrow(gt_nonwf_params)
 
 # save
-write.table(gt_params, "../config/gt_params.tsv", sep = "\t", quote = F, row.names = F)
+write.table(gt_nonwf_params, "../config/gt_params.tsv", sep = "\t", quote = F, row.names = F)
 
 # fst simulations parameters
 fst_params <- expand.grid(
