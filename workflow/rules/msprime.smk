@@ -31,10 +31,23 @@ rule bcftools_random:
         bcftools view -R {output.bed} -o {output.vcf} {input.vcf}
         """
 
+rule bcftools_duplicate:
+    group: "simulation"
+    input:
+        "bcftools_random_results/{ID}.vcf"
+    output:
+        "bcftools_duplicate_results/{ID}.vcf"
+    conda:
+        "../envs/bcftools.yaml"
+    shell:
+        """
+        bcftools merge --force-samples {input} {input} {input} {input} {input} {input} {input} -Ou -o {output}
+        """
+
 rule slim:
     group: "simulation"
     input:
-        vcf = "bcftools_random_results/{ID}.vcf",
+        vcf = "bcftools_duplicate_results/{ID}.vcf",
         fasta = config["sim_fasta"]
     output:
         "slim_results/{ID}_neutfreqs.tsv"
@@ -50,13 +63,15 @@ rule slim:
         alpha=lookup(query="ID == '{ID}'", within=gt_params, cols="alpha"),
         gamma=lookup(query="ID == '{ID}'", within=gt_params, cols="gamma"),
         tau=lookup(query="ID == '{ID}'", within=gt_params, cols="tau"),
-        struct=lookup(query="ID == '{ID}'", within=gt_params, cols="struct")
+        type=lookup(query="ID == '{ID}'", within=gt_params, cols="type")
     shell:
         """
-        if [[ "unstruct" == "{params.struct}" ]]; then
+        if [[ "unstruct" == "{params.type}" ]]; then
             slim -d N={params.N} -d L={params.L} -d nmu={params.nmu} -d tmu={params.tmu} -d R={params.R} -d sigma={params.sigma} -d alpha={params.alpha} -d ID={wildcards.ID} -d gamma={params.gamma} -d tau={params.tau} scripts/gt_expectations.slim
-        elif [[ "struct" == "{params.struct}" ]]; then
+        elif [[ "struct" == "{params.type}" ]]; then
             slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{input.vcf}"' -d N={params.N} -d sigma={params.sigma} -d tmu={params.tmu} -d R={params.R} -d alpha={params.alpha} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
+        elif [[ "bank" == "{params.type}" ]]; then
+            slim -d vcfFile='"{input.vcf}"' -d SIGMA={params.sigma} -d MU={params.nmu} -d R={params.R} -d ID={wildcards.ID} scripts/gt_expectations_seed_bank.slim 
         else
             echo "Invalid simulation type!"
         fi

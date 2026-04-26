@@ -12,8 +12,8 @@ gt_params <- expand.grid(
     tau=105,
     rep=1:30,
     adjust=c(T),
-    struct="struct"
-    #struct=c("unstruct", "struct")
+    type="bank",
+    #type=c("unstruct", "struct", "bank")
 )
 
 # adjust Ne based on selfing rate
