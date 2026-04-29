@@ -101,7 +101,10 @@ rule slim:
         bank_surv=lookup(query="ID == '{ID}'", within=gt_params, cols="BANK_SURV"),
         K=lookup(query="ID == '{ID}'", within=gt_params, cols="K"),
         n_offspring=lookup(query="ID == '{ID}'", within=gt_params, cols="N_OFFSPRING"),
-        type=lookup(query="ID == '{ID}'", within=gt_params, cols="type")
+        type=lookup(query="ID == '{ID}'", within=gt_params, cols="type"),
+        surv=lookup(query="ID == '{ID}'", within=gt_params, cols="SURVIVAL_SELECTION"),
+        min_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MIN_AGE"),
+        max_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MAX_AGE")
     shell:
         """
         if [[ "unstruct" == "{params.type}" ]]; then
@@ -109,7 +112,7 @@ rule slim:
         elif [[ "struct" == "{params.type}" ]]; then
             slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{input.vcf}"' -d N={params.N} -d sigma={params.sigma} -d tmu={params.tmu} -d R={params.R} -d alpha={params.alpha} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
         elif [[ "bank" == "{params.type}" ]]; then
-            slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{input.vcf}"' -d N_VCF=5082 -d SIGMA={params.sigma} -d NMU={params.nmu} -d TMU={params.tmu} -d R={params.R} -d SIM_LENGTH={params.tau} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE=1 -d MAX_BANK_AGE=100 -d N_OFFSPRING={params.n_offspring} -d ALPHA={params.alpha} -d ID={wildcards.ID} scripts/gt_expectations_seed_bank.slim 
+            slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{input.vcf}"' -d N_VCF=5082 -d SIGMA={params.sigma} -d NMU={params.nmu} -d TMU={params.tmu} -d R={params.R} -d SIM_LENGTH={params.tau} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d ALPHA={params.alpha} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} scripts/gt_expectations_seed_bank.slim 
         else
             echo "Invalid simulation type!"
         fi

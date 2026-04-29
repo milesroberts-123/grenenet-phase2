@@ -6,17 +6,17 @@
 //  --------
 //  Models a population with two distinct life-history compartments:
 //
-//    p1  –  "cold storage"  : dormant/overwintering pool (e.g. seed/egg bank).
+//    p1  –  "seed storage"  : dormant/overwintering pool (e.g. seed/egg seed).
 //              Individuals persist across ticks, age annually, and experience
 //              age-based mortality.
 //
-//    p2  –  breeding pool   : active adults recruited from cold storage each
+//    p2  –  breeding pool   : active adults recruited from seed storage each
 //              tick.  They reproduce once and then die (semelparity).
 //
 //  TICK CYCLE (each tick T)
 //  ------------------------
 //    1. reproduction(p2) — each p2 individual generates N_OFFSPRING offspring
-//       that are deposited directly into cold storage (p1) at age 0.
+//       that are deposited directly into seed storage (p1) at age 0.
 //    2. early()          — (a) mark last cycle's p2 for death (fitnessScaling=0),
 //                          (b) move age-eligible p1 individuals to p2 according
 //                              to GERM_RATE,
@@ -30,7 +30,7 @@
 //  COMMAND-LINE USAGE
 //  ------------------
 //  Run with defaults:
-//    slim cold_storage_nonWF.slim
+//    slim seed_storage_nonWF.slim
 //
 //  Override any parameter with -d KEY=VALUE (use quotes for strings):
 //    slim -d "VCF_FILE='mydata.vcf'" \
@@ -39,7 +39,7 @@
 //         -d GERM_RATE=0.25 \
 //         -d BANK_SURV=0.80 \
 //         -d SIM_LENGTH=300 \
-//         cold_storage_nonWF.slim
+//         seed_storage_nonWF.slim
 //
 //  VCF REQUIREMENTS
 //  ----------------
@@ -65,20 +65,17 @@ initialize() {
     initializeSLiMOptions(nucleotideBased=T);
     length = initializeAncestralNucleotides(FASTA_FILE);
     defineConstant("CHROM_LEN", length);
-
     // ── Genetic architecture ─────────────────────────────────────────────────
-    // Single neutral mutation type.
     // convertToSubstitution must be set explicitly to T in nonWF models
     // (it defaults to F, unlike WF models, because absolute fitness values
     // in nonWF models make it generally unsafe to remove fixed mutations
     // automatically — see SLiM Manual §25.5).
     initializeMutationTypeNuc("m1", 0.5, "f", 0.0);
-    initializeMutationTypeNuc("m2", 0.5, "f", 0.5);
+    initializeMutationTypeNuc("m2", 0.5, "f", 0.0);
+    initializeMutationTypeNuc("m3", 0.5, "f", 0.0);
     m1.convertToSubstitution = T;
-
     initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
     initializeGenomicElement(g1, 0, CHROM_LEN-1);
-    //initializeMutationRate(MU);
     initializeRecombinationRate(R);
 }
 
@@ -88,40 +85,33 @@ initialize() {
 // ============================================================================
 //
 //  Each breeding individual (p2) generates N_OFFSPRING offspring.  Critically,
-//  offspring are added to p1 (cold storage), NOT to subpop (which would be p2).
+//  offspring are added to p1 (seed storage), NOT to subpop (which would be p2).
 //  New offspring start at age 0 and are therefore ineligible for immediate
 //  recruitment to p2 (requires age >= MIN_AGE).
 
 reproduction(p2) {
-    REALIZED_OFFSPRING = rpois(1, N_OFFSPRING);
+    //catn("Individual fitness: " + individual.fitnessScaling);
+    REALIZED_FITNESS = pmax(0.0, N_OFFSPRING*(1 + individual.sumOfMutationsOfType(m3)));
+    REALIZED_OFFSPRING = rpois(1, REALIZED_FITNESS);
+    //catn("Individual fitness: " + REALIZED_FITNESS);
     for (i in seqLen(REALIZED_OFFSPRING)) {
         if (runif(1) > SIGMA){
             mate = p2.sampleIndividuals(1);       // random mating within p2
-            p1.addCrossed(individual, mate);      // offspring land in cold storage
+            p1.addCrossed(individual, mate);      // offspring land in seed storage
         } else {
             p1.addSelfed(individual);
         }
     }
 }
 
-
 // ============================================================================
 //  INITIALIZATION  (tick 1 only)
 // ============================================================================
 
 1 early() {
-    // Create cold storage with exactly N_VCF diploid individuals.
-    sim.addSubpop("p1", N_VCF);
-
-    // Load standing genetic variation from VCF into cold storage.
-    // The haplosome count (2 * N_VCF) must match the VCF sample count.
-    p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
-
-    // Create an initially empty breeding population.
-    sim.addSubpop("p2", 0);
-
     catn("=== Cold Storage NonWF Simulation ===");
     catn("Parameters:");
+    catn("  FASTA_FILE  = " + FASTA_FILE);
     catn("  VCF_FILE    = " + VCF_FILE);
     catn("  N_VCF       = " + N_VCF);
     catn("  K           = " + K);
@@ -134,7 +124,16 @@ reproduction(p2) {
     catn("  SIGMA       = " + SIGMA);
     catn("  ALPHA       = " + ALPHA);
 
-    catn("Tick 1: " + p1.individualCount + " individuals loaded into cold storage.");
+    // Create seed storage with exactly N_VCF diploid individuals.
+    sim.addSubpop("p1", N_VCF);
+
+    // Load standing genetic variation from VCF into seed storage.
+    p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
+
+    // Create an initially empty breeding population.
+    sim.addSubpop("p2", 0);
+    
+    catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
 
     // reschedule population tracking until initial generations
     community.rescheduleScriptBlock(s1, start=2, end=SIM_LENGTH);
@@ -146,12 +145,19 @@ reproduction(p2) {
    sampled = sample(sim.mutations, num_mut);
    catn("Tick 1: Sampled mutations: " + length(sampled));
    for (mut in sampled) {
-       mut.setMutationType(m2);
+
+       if (runif(1) < SURVIVAL_SELECTION){
+           mut.setMutationType(m2);
+       } else {
+           mut.setMutationType(m3);
+       }
+
        if (runif(1) < 0.5) {
            mut.setSelectionCoeff(ALPHA);
        } else {
            mut.setSelectionCoeff(-ALPHA);
        }
+
    }
 }
 
@@ -176,63 +182,66 @@ s1 300 early() {
         p2.individuals.fitnessScaling = 0.0;
 
     catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
-    // ── B.  Recruit eligible cold-storage individuals into p2 ────────────────
+    // ── B.  Recruit eligible seed-storage individuals into p2 ────────────────
     //
     //  Eligible:  MIN_AGE <= age < MAX_BANK_AGE
     //  Sample:    GERM_RATE fraction of eligible, with a minimum of 1 if
     //             any are eligible (prevents complete stagnation when counts
     //             are small).
     catn("Tick " + sim.cycle + ": " + "sprouting some seeds.");
-    cold = p1.individuals;
+    seed = p1.individuals;
 
-    if (cold.size() > 0) {
+    if (seed.size() > 0) {
 
-        eligible_mask = (cold.age >= MIN_AGE) & (cold.age < MAX_BANK_AGE);
-        eligible = cold[eligible_mask];
+        eligible_mask = (seed.age >= MIN_AGE) & (seed.age < MAX_BANK_AGE);
+        eligible = seed[eligible_mask];
 
         if (eligible.size() > 0) {
             n_move = max(1, asInteger(round(eligible.size() * GERM_RATE)));
             n_move = min(n_move, eligible.size());
-            movers = sample(eligible, n_move);
+            movers = sample(eligible, n_move, replace = F);
+            catn("Tick " + sim.cycle + ": " + "Eligible seeds: " + eligible.size() + " Germinating seeds: " + n_move);
 
-            // Move individuals from cold storage to the breeding population.
-            // takeMigrants() removes them from p1 and adds them to p2.
+            // Move individuals from seed storage to the breeding population.
             p2.takeMigrants(movers);
 
             // ── C.  Density-dependent survival for new breeders ───────────────
             //
             //  Logistic density dependence: survival probability is capped at 1.0
-            //  below carrying capacity, and decreases as K / n_breeders when
-            //  n_breeders > K.  Setting individual fitnessScaling overrides the
-            //  fitnessScaling these individuals carried from cold storage.
+            //  below carrying capacity, and decreases as K / n_planters when
+            //  n_planters > K.  Setting individual fitnessScaling overrides the
+            //  fitnessScaling these individuals carried from seed storage.
             //
             //  Note: p2.fitnessScaling remains at its default of 1.0, so effective
             //  fitness for each new breeder = dd_surv × 1.0 = dd_surv.
-
-            n_breed = movers.size();
-            dd_surv = (n_breed > 0) ? min(1.0, K / n_breed) else 1.0;
+            n_plant = movers.size();
+            dd_surv = (n_plant > 0) ? min(1.0, K / n_plant) else 1.0;
             movers.fitnessScaling = dd_surv;
         }
     }
     catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
 
-    // ── D.  Age-based mortality for cold storage (p1) ────────────────────────
+    // ── D.  Age-based mortality for seed storage (p1) ────────────────────────
     //
     //  After movers have left, apply survival values to the remaining p1
     //  individuals.  SLiM interprets fitnessScaling in [0,1] as a survival
     //  probability in nonWF models.
-    catn("Tick " + sim.cycle + ": " + "Killing some seeds.");
-    cold_remaining = p1.individuals;
+    catn("Tick " + sim.cycle + ": " + "Marking seeds for death.");
+    seed_remaining = p1.individuals;
+    seed_m2_effect_sum = p1.individuals.sumOfMutationsOfType(m2);
 
-    if (cold_remaining.size() > 0) {
+    if (seed_remaining.size() > 0) {
+        // catn("Tick " + sim.cycle + ": " + "Mean seed fitness: " + mean(seed_m2_effect_sum));
         // Default annual survival for individuals within the viable age range.
-        cold_remaining.fitnessScaling = BANK_SURV;
+        //seed_remaining.fitnessScaling = pmax(0.0, pmin(1.0, BANK_SURV + seed_m2_effect_sum));
+        seed_remaining.fitnessScaling = BANK_SURV;
 
-        // Force-kill individuals that have exceeded the maximum cold-storage age.
-        too_old = cold_remaining[cold_remaining.age >= MAX_BANK_AGE];
+        // Force-kill individuals that have exceeded the maximum seed-storage age.
+        too_old = seed_remaining[seed_remaining.age >= MAX_BANK_AGE];
         if (too_old.size() > 0)
             too_old.fitnessScaling = 0.0;
     }
+    catn("Tick " + sim.cycle + ": Min seed fitness: " + min(seed_remaining.fitnessScaling) + ", Mean seed fitness: " + mean(seed_remaining.fitnessScaling) + ", Max seed fitness: " + max(seed_remaining.fitnessScaling));
     catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
 }
 
@@ -245,32 +254,37 @@ s2 300 late() {
     write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
 
     tick = community.tick;
-    n_cold  = p1.individualCount;
-    n_breed = p2.individualCount;
+    n_seed  = p1.individualCount;
+    n_plant = p2.individualCount;
 
     // Detect extinction.
-    if (n_cold == 0 & n_breed == 0) {
+    if (n_seed == 0 & n_plant == 0) {
         catn(tick + ": EXTINCTION – both populations empty. Simulation halted.");
         sim.simulationFinished();
         return;
     }
 
     // Per-tick statistics line.
-    if (n_cold > 0) {
-        ages      = p1.individuals.age;
-        mean_age  = round(mean(ages) * 100) / 100;
-        max_age   = max(ages);
-        catn("Tick " + tick + ": cold=" + n_cold +
-             "  breeders=" + n_breed +
-             "  cold_mean_age=" + mean_age +
-             "  cold_max_age="  + max_age);
+    if (n_seed > 0 & n_plant > 0) {
+        seed_ages           = p1.individuals.age;
+        plant_ages          = p2.individuals.age;
+        plant_mean_age      = round(mean(plant_ages));
+        plant_max_age       = max(plant_ages);
+        seed_mean_age       = round(mean(seed_ages));
+        seed_max_age        = max(seed_ages);
+        catn("Tick " + tick + ": seeds=" + n_seed +
+             "  plants=" + n_plant +
+             "  seed_mean_age=" + seed_mean_age +
+             "  seed_max_age="  + seed_max_age + 
+             "  plant_mean_age=" + plant_mean_age + 
+             "  plant_max_age=" + plant_max_age);
     } else {
-        catn("Tick " + tick + ":  cold=0  breeders=" + n_breed);
+        catn("Tick " + tick + ":  seed=0  breeders=" + n_plant);
     }
 
     // End of scheduled run.
     if (SIM_LENGTH > 0 & tick >= SIM_LENGTH) {
-        catn("=== Simulation reached tick " + SIM_LENGTH + " – finished. ===");
+        catn("=== Simulation reached tick " + tick + " – finished. ===");
         sim.simulationFinished();
     }
 }
