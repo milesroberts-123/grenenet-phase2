@@ -1,5 +1,5 @@
 // ============================================================================
-//  NonWF Cold Storage Population Simulation
+//  NonWF Seed Bank Simulation
 // ============================================================================
 //
 //  OVERVIEW
@@ -27,26 +27,10 @@
 //    4. late()           — report population statistics; check stop condition.
 //    5. Age increment (automatic) — all surviving individuals gain +1 age.
 //
-//  COMMAND-LINE USAGE
-//  ------------------
-//  Run with defaults:
-//    slim seed_storage_nonWF.slim
-//
-//  Override any parameter with -d KEY=VALUE (use quotes for strings):
-//    slim -d "VCF_FILE='mydata.vcf'" \
-//         -d N_VCF=200 \
-//         -d K=500 \
-//         -d GERM_RATE=0.25 \
-//         -d BANK_SURV=0.80 \
-//         -d SIM_LENGTH=300 \
-//         seed_storage_nonWF.slim
-//
 //  VCF REQUIREMENTS
 //  ----------------
 //  The VCF must contain exactly N_VCF diploid individuals (2*N_VCF haplotypes).
 //  All SNP positions must be <= CHROM_LEN.
-//  Non-nucleotide SLiM VCF format is expected (REF=A, ALT=T convention);
-//  for nucleotide-based models see section 19.12 of the SLiM manual.
 // ============================================================================
 
 // Started by borrowing code from Vince Buffalo and modifying/updating it to
@@ -74,7 +58,13 @@ initialize() {
     initializeMutationTypeNuc("m2", 0.5, "f", 0.0);
     initializeMutationTypeNuc("m3", 0.5, "f", 0.0);
     m1.convertToSubstitution = T;
-    initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
+
+    if(STRUCTURE == 1) {
+        initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
+    } else {
+        mut_props = c(1.0, (TMU/NMU)*SURVIVAL_SELECTION, (TMU/NMU)*(1-SURVIVAL_SELECTION));
+        initializeGenomicElementType("g1", c(m1,m2,m3), mut_props, mmJukesCantor(NMU/3));
+    }
     initializeGenomicElement(g1, 0, CHROM_LEN-1);
     initializeRecombinationRate(R);
 }
@@ -123,42 +113,69 @@ reproduction(p2) {
     catn("  SIM_LENGTH  = " + SIM_LENGTH);
     catn("  SIGMA       = " + SIGMA);
     catn("  ALPHA       = " + ALPHA);
+    catn("  STRUCTURE   = " + STRUCTURE);
+    catn("  BURN        = " + BURN);
+    catn("=====================================");
 
     // Create seed storage with exactly N_VCF diploid individuals.
     sim.addSubpop("p1", N_VCF);
-
-    // Load standing genetic variation from VCF into seed storage.
-    p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
 
     // Create an initially empty breeding population.
     sim.addSubpop("p2", 0);
     
     catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
 
-    // reschedule population tracking until initial generations
-    community.rescheduleScriptBlock(s1, start=2, end=SIM_LENGTH);
-    community.rescheduleScriptBlock(s2, start=2, end=SIM_LENGTH);
+    if (STRUCTURE == 1) {
+         catn("Tick 1: Creating initial seed bank WITH population structure.");
+        // Load standing genetic variation from VCF into seed storage.
+        p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
+        
+        // reschedule population tracking until initial generations
+        community.rescheduleScriptBlock(s1, start=2, end=SIM_LENGTH);
+        community.rescheduleScriptBlock(s2, start=2, end=SIM_LENGTH);
+        community.rescheduleScriptBlock(s3, start=SIM_LENGTH+1); // move burn-in code to end of simulation
+        community.rescheduleScriptBlock(s4, start=SIM_LENGTH+1); // burn-in not needed
 
-   // Sampling mutations to experience selection
-   catn("Tick 1: Sampling mutations to be selected.");
-   num_mut = asInteger(4*TMU*N_VCF*CHROM_LEN);
-   sampled = sample(sim.mutations, num_mut);
-   catn("Tick 1: Sampled mutations: " + length(sampled));
-   for (mut in sampled) {
+        catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
+        catn("Tick 1: No burn-in will be performed and BURN is ignored.");
 
-       if (runif(1) < SURVIVAL_SELECTION){
-           mut.setMutationType(m2);
-       } else {
-           mut.setMutationType(m3);
-       }
+        catn("Tick 1: Sampling mutations to be selected.");
+        num_mut = asInteger(4*TMU*N_VCF*CHROM_LEN);
+        sampled = sample(sim.mutations, num_mut);
+        catn("Tick 1: Sampled mutations: " + length(sampled));
+        for (mut in sampled) {
+            if (runif(1) < SURVIVAL_SELECTION){
+                mut.setMutationType(m2);
+            } else {
+                mut.setMutationType(m3);
+            }
+            if (runif(1) < 0.5) {
+                mut.setSelectionCoeff(ALPHA);
+            } else {
+                mut.setSelectionCoeff(-ALPHA);
+            }
+        }
+    } else {
+        catn("Tick 1: Creating initial seed bank WITHOUT population structure.");
+        // reschedule population tracking until initial generations
+        community.rescheduleScriptBlock(s1, start=2, end=BURN+1+SIM_LENGTH);
+        community.rescheduleScriptBlock(s2, start=2, end=BURN+1+SIM_LENGTH);
+        community.rescheduleScriptBlock(s3, start=1, end=BURN);
+        community.rescheduleScriptBlock(s4, start=1, end=BURN);
+        catn("Tick 1: Set burn-in for " + BURN + " generations.");
+    }
+}
 
-       if (runif(1) < 0.5) {
-           mut.setSelectionCoeff(ALPHA);
-       } else {
-           mut.setSelectionCoeff(-ALPHA);
-       }
+//===================================================================================
+// MUTATION CALLBACKS (makes mutations neutral during burn-in, and non-neutral after)
+//===================================================================================
 
-   }
+s3 500 mutationEffect(m2) {
+  return 1.0;
+}
+
+s4 500 mutationEffect(m3) {
+  return 1.0;
 }
 
 // ============================================================================
@@ -182,6 +199,7 @@ s1 300 early() {
         p2.individuals.fitnessScaling = 0.0;
 
     catn("Tick " + sim.cycle + ": " + "Number of seeds: " + p1.individualCount + ", Number of plants: " + p2.individualCount);
+    
     // ── B.  Recruit eligible seed-storage individuals into p2 ────────────────
     //
     //  Eligible:  MIN_AGE <= age < MAX_BANK_AGE
@@ -192,10 +210,8 @@ s1 300 early() {
     seed = p1.individuals;
 
     if (seed.size() > 0) {
-
         eligible_mask = (seed.age >= MIN_AGE) & (seed.age < MAX_BANK_AGE);
         eligible = seed[eligible_mask];
-
         if (eligible.size() > 0) {
             n_move = max(1, asInteger(round(eligible.size() * GERM_RATE)));
             n_move = min(n_move, eligible.size());
@@ -233,8 +249,14 @@ s1 300 early() {
     if (seed_remaining.size() > 0) {
         // catn("Tick " + sim.cycle + ": " + "Mean seed fitness: " + mean(seed_m2_effect_sum));
         // Default annual survival for individuals within the viable age range.
+        if(STRUCTURE == 0 & sim.cycle <= BURN){
+            seed_remaining.fitnessScaling = BANK_SURV; // during burn-in just apply base survival
+        } else {
+            seed_remaining.fitnessScaling = pmax(0.0, pmin(1.0, BANK_SURV + seed_m2_effect_sum));
+        }
+
         //seed_remaining.fitnessScaling = pmax(0.0, pmin(1.0, BANK_SURV + seed_m2_effect_sum));
-        seed_remaining.fitnessScaling = BANK_SURV;
+        //seed_remaining.fitnessScaling = BANK_SURV;
 
         // Force-kill individuals that have exceeded the maximum seed-storage age.
         too_old = seed_remaining[seed_remaining.age >= MAX_BANK_AGE];
@@ -272,20 +294,39 @@ s2 300 late() {
         plant_max_age       = max(plant_ages);
         seed_mean_age       = round(mean(seed_ages));
         seed_max_age        = max(seed_ages);
+        seed_m2_count       = max(p1.individuals.countOfMutationsOfType(m2));
+        seed_m3_count       = max(p1.individuals.countOfMutationsOfType(m3));
+        seed_mean_pheno     = mean(p2.individuals.sumOfMutationsOfType(m2) + p2.individuals.countOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
+        plant_m2_count      = max(p2.individuals.countOfMutationsOfType(m2));
+        plant_m3_count      = max(p2.individuals.countOfMutationsOfType(m3));
+        plant_mean_pheno    = mean(p1.individuals.sumOfMutationsOfType(m2) + p1.individuals.countOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
         catn("Tick " + tick + ": seeds=" + n_seed +
-             "  plants=" + n_plant +
-             "  seed_mean_age=" + seed_mean_age +
-             "  seed_max_age="  + seed_max_age + 
-             "  plant_mean_age=" + plant_mean_age + 
-             "  plant_max_age=" + plant_max_age);
+             " plants=" + n_plant +
+             " seed_mean_age=" + seed_mean_age +
+             " seed_max_age="  + seed_max_age + 
+             " seed_m2_count=" + seed_m2_count +
+             " seed_m3_count=" + seed_m3_count +
+             " seed_mean_pheno=" + seed_mean_pheno +
+             " plant_mean_age=" + plant_mean_age + 
+             " plant_max_age=" + plant_max_age +
+             " plant_m2_count=" + plant_m2_count +
+             " plant_m3_count=" + plant_m3_count + 
+             " plant_mean_pheno=" + plant_mean_pheno);
     } else {
-        catn("Tick " + tick + ":  seed=0  breeders=" + n_plant);
+        catn("Tick " + tick + ": seeds=" + n_seed + " plants=" + n_plant);
     }
 
     // End of scheduled run.
-    if (SIM_LENGTH > 0 & tick >= SIM_LENGTH) {
-        catn("=== Simulation reached tick " + tick + " – finished. ===");
-        sim.simulationFinished();
+    if(STRUCTURE == 0){
+        if(tick >= BURN+1+SIM_LENGTH){
+            catn("=== Simulation reached tick " + tick + " – finished. ===");
+            sim.simulationFinished();
+        }
+    } else {
+        if (SIM_LENGTH > 0 & tick >= SIM_LENGTH) {
+            catn("=== Simulation reached tick " + tick + " – finished. ===");
+            sim.simulationFinished();
+        }
     }
 }
 
