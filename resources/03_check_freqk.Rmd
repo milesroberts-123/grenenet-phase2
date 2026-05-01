@@ -316,6 +316,28 @@ gt_n_adjust <- function(pmat, n) {
   return(result)
 }
 
+# create windows, should not bleed between chromosomes
+create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
+  
+  # check that data is sorted by chrom, then pos within chrom
+  sort_check <- data %>%
+    group_by({{ chrom_col_name }}) %>%
+    summarise(is_sorted = all(diff({{ pos_col_name }}) >= 0))
+  
+  if(!all(sort_check$is_sorted)){
+    stop("Input data should be sorted by position within chromosome.")
+  }
+  
+  blocks <- data %>%
+    group_by({{ chrom_col_name }}) %>%
+    mutate(block = (row_number() - 1) %/% window_size + 1,
+           window = paste({{ chrom_col_name }}, block, sep = sep))
+  
+  return(blocks)
+}
+
+
+
 ## manhattan plots
 # https://r-graph-gallery.com/101_Manhattan_plot.html
 # https://danielroelfs.com/posts/how-i-create-manhattan-plots-using-ggplot/
@@ -2741,6 +2763,28 @@ boot_samples %>% summarize(lwr = quantile(gt_shared, 0.025), med = median(gt_sha
 #### create confidence intervals
 
 ### sign permute allele frequency changes in blocks
+
+```{r}
+
+sign_permute_replicates <- 1000
+
+sign_permute_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+
+for(site in sites){
+  # within a block, randomly multiply allele frequency change by +1 or -1
+pdiffs_permuted <- pdiffs %>%
+  group_by(window) %>%
+  mutate(across(where(is.numeric), ~ .x * sample(c(1, -1), size = 1)))
+
+# save un-corrected covariance matrices
+cov_pdiffs_permuted <- cov(pdiffs_permuted)
+
+write.table(cov_pdiffs_permuted, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/increment_covariances.tsv",row.names = T, col.names = T, quote = F, sep = "\t")
+}
+
+
+```
+
 
 # Fst 
 
