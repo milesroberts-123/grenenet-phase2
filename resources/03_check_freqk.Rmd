@@ -54,12 +54,6 @@ theme_set(
 
 ```{r}
 
-# get off diagonal elements of matrix
-# Source - https://stackoverflow.com/a/70488619
-# Posted by akrun, modified by community. See post 'Timeline' for change history
-# Retrieved 2026-04-20, License - CC BY-SA 4.0
-odiag <- function(x) x[col(x) != row(x)]
-
 # visualize var-cov matrix
 get_upper_tri <- function(cormat){
     cormat[lower.tri(cormat)]<- NA
@@ -232,15 +226,18 @@ gt_from_covmat <- function(covmat) {
 }
 
 # sample size correction
-correct_covmat_for_n <- function(covmat, pmat, n){
+correct_covmat_for_n <- function(pmat, n){
   # calculate increments
   pdiff <- pmat[, -1] - pmat[, -ncol(pmat)]
+  
+  # calculate raw covariances
+  covmat = cov(pdiff, use = "pairwise.complete.obs")
   
   # correct covariances of adjacent intervals
   for(i in 1:(ncol(covmat)-1)){
     corrected_cov <- mean(pdiff[,i] * pdiff[,i+1], na.rm = T) + mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)
     
-    covmat[i, i+1] <- corrected_cov
+    covmat[i,i+1] <- corrected_cov
     covmat[i+1,i] <- corrected_cov
   }
   
@@ -271,7 +268,7 @@ gt_n_adjust <- function(pmat, n) {
   
   #print("Raw var-cov matrix:")
   #print(covmat)
-  covmat <- correct_covmat_for_n(covmat, pdiff, n)
+  covmat <- correct_covmat_for_n(covmat, pmat, n)
   #print(covmat)
   
   # separate out components
@@ -336,7 +333,13 @@ create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
   return(blocks)
 }
 
-
+# get sample sizes for particular replicates 
+grab_sample_sizes <- function(n_data, sample_col, samples, first_n){
+    rep_n <- n_data %>% filter({{ sample_col }} %in% samples)
+    rep_n <- rbind(c(0, first_n), rep_n)
+    rep_n <- rep_n %>% arrange({{ sample_col }})
+    return(rep_n)
+}
 
 ## manhattan plots
 # https://r-graph-gallery.com/101_Manhattan_plot.html
@@ -1310,9 +1313,12 @@ length(unique(blocks$block))
 
 hapfire$block <- blocks$block
 
-output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/glm_quasibinomial_coef_" , today, "_2.txt", sep = "")
+#output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/glm_quasibinomial_coef.txt", sep = "")
+output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-04/glm_quasibinomial_coef.txt", sep = "")
 
-for(b in unique(hapfire$block)){
+unique_blocks <- unique(hapfire$block)
+
+for(b in unique_blocks[27:length(unique_blocks)]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -2605,10 +2611,16 @@ for(site in sites){
 ### block covariances across all replicates
 
 ```{r}
-#pdiffs <- as.data.frame(pdiffs)
+pdiffs <- as.data.frame(pdiffs)
 if(!exists("pdiffs")){
   pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T)
 }
+
+# if(!exists("cov_pdiffs")){
+#   cov_pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/unbiased_increment_covariances.tsv", header = T, row.names = 1))
+# 
+#   colnames(cov_pdiffs) <- gsub("X", "", colnames(cov_pdiffs))
+# }
 
 # number of snps per window
 window_size <- 15000
@@ -2701,89 +2713,631 @@ for(b in 1:B){
 
 boot_samples %>% summarize(lwr = quantile(gt_shared, 0.025), med = median(gt_shared), upr = quantile(gt_shared, 0.975))
 
-
-
-
-
-
-
-
-
-
-
-
-
-# # add ranks
-# conv_gt_results$gt_rank <- rank(-conv_gt_results$gt_shared)
-# 
-# # ranks of repeatability from science paper
-# repeat_ranks <- data.frame(
-#   repeat_rank = 1:30,
-#   site = c(
-#     32, 4, 5, 54, 43, 46, 49, 6, 45, 1,
-#     42, 23, 9, 53, 10, 57, 37, 52, 55, 26,
-#     24, 25, 28, 12, 11, 2, 60, 13, 48, 27
-#   ),
-#   city = c(
-#     "Mallorca", "Cádiz", "Madrid", "Cologne", "Lesbos",
-#     "Würzburg", "Konstanz", "Barcelona", "Madrid", "Tübingen",
-#     "Warsaw", "St. Paul Minnesota", "Armonk New York", "Halle",
-#     "Brackenridge Texas", "Utrecht", "Bergen", "Bad Lauchstädt",
-#     "Saint Just en Chevalet", "Sde Boker", "Brixen im Thale",
-#     "Munich", "Durham North Carolina", "Bronx New York",
-#     "Columbia Missouri", "Montpellier", "Davis California",
-#     "Austin Texas", "Burlington Vermont", "Tartu"
-#   ),
-#   country = c(
-#     "Spain", "Spain", "Spain", "Germany", "Greece",
-#     "Germany", "Germany", "Spain", "Spain", "Germany",
-#     "Poland", "USA", "USA", "Germany", "USA", "Netherlands",
-#     "Norway", "Germany", "France", "Israel", "Austria",
-#     "Germany", "USA", "USA", "USA", "France", "USA",
-#     "USA", "USA", "Estonia"
-#   )
-# )
-# 
-# gt_vs_repeat_ranks <- merge(conv_gt_results, repeat_ranks, by = "site")
-# 
-# cor(gt_vs_repeat_ranks$gt_rank, gt_vs_repeat_ranks$repeat_rank, method = "spearman")
-# 
-# # Example: Bars sorted from highest value to lowest
-# ggplot(conv_gt_results, aes(x = reorder(site, -gt_shared), y = gt_shared)) +
-#   geom_col() +
-#   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-#   labs(x = "Site", y = "Proportion of selection\nshared across replicates")
-# 
-# ggsave(paste(results_path, "linked_selection_shared_across_reps_within_site.pdf", sep = ""), width = 7, height = 4)
-
 ```
 
 ### covariances across pairs of environments
 
-#### create confidence intervals
+```{r}
+if(!exists("cov_pdiffs")){
+  cov_pdiffs <- as.matrix(read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/unbiased_increment_covariances.tsv", header = TRUE, row.names = 1))
+  colnames(cov_pdiffs) <- gsub("X", "", colnames(cov_pdiffs))
+}
+
+sites <- unique(gsub("_.*", "", colnames(cov_pdiffs)))
+
+row_site <- gsub("_.*", "", rownames(cov_pdiffs))
+col_site <- gsub("_.*", "", colnames(cov_pdiffs))
+
+row_rep <- gsub("_.*_", "", rownames(cov_pdiffs))
+col_rep <- gsub("_.*_", "", colnames(cov_pdiffs))
+
+pair_gt_results = NULL
+
+for(i in 1:(length(sites) - 1)){
+  a = sites[i]
+  for(j in (i+1):length(sites)){
+    
+    b = sites[j]
+    
+    print(paste("Sites:", i, j))
+    
+    # subset cov to site pair
+    cov_pair <- cov_pdiffs[row_site == a, col_site == b]
+    
+    # remove overlapping increments
+    sub_row_rep <- gsub("_.*_", "", rownames(cov_pair))
+    sub_col_rep <- gsub("_.*_", "", colnames(cov_pair))
+  
+    sub_row_site <- gsub("_.*", "", rownames(cov_pair))
+    sub_col_site <- gsub("_.*", "", colnames(cov_pair))
+  
+    sub_row_gen <- gsub("_", "", str_extract(rownames(cov_pair), "_.*_"))
+    sub_col_gen <- gsub("_", "", str_extract(colnames(cov_pair), "_.*_"))
+    
+    # covariances across reps, non-overlapping increments
+    total_covar <- 0
+    for(k in colnames(cov_pair)){
+      col_gen <- gsub("_", "", str_extract(k, "_.*_"))
+      cov_k <- cov_pair[sub_row_gen != col_gen, k]
+      total_covar <- total_covar + 2*sum(cov_k)
+    }
+    
+    a_b_reps <- unique(c(sub_row_rep, sub_col_rep))
+    total_var <- 0
+    nreps <- 0
+    for(k in a_b_reps){
+      cov_k <- cov_pdiffs[k == row_rep, k == col_rep]
+      total_var <- total_var + sum(cov_k)
+      nreps <- nreps + 1
+    }
+    
+    npairs = length(unique(sub_row_rep))*length(unique(sub_col_rep))
+    
+    pair_gt_result = data.frame(site_a = a,
+                                site_b = b,
+                      nreps = nreps,
+                      npairs = npairs,
+                      total_covar = total_covar,
+                      total_var = total_var,
+                      mean_covar = total_covar/npairs,
+                      mean_var = total_var/nreps
+                      )
+    
+    pair_gt_results = rbind(pair_gt_results, pair_gt_result)
+    
+  }
+}
+
+pair_gt_results$ge_t <- pair_gt_results$mean_covar/pair_gt_results$mean_var
+
+pair_gt_results_clim <- merge(pair_gt_results, worldclim_sitesdata, by.x = "site_a", by.y = "site")
+
+pair_gt_results_clim <- merge(pair_gt_results_clim, worldclim_sitesdata, by.x = "site_b", by.y = "site", suffixes = c("_a", "_b"))
+
+pair_gt_results_clim$delta_bio1 <- (pair_gt_results_clim$bio1_a - pair_gt_results_clim$bio1_b)
+
+ggplot(pair_gt_results_clim, aes(x = delta_bio1, y = ge_t)) +
+  geom_point()
+```
 
 ### sign permute allele frequency changes in blocks
 
 ```{r}
 
-sign_permute_replicates <- 1000
+if(!exists("pdiffs")){
+  pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T)
+
+  #pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T, select = c("1_1_1", "1_2_1", "1_3_1", "1_1_2", "1_2_2", "1_3_2", "1_1_3", "1_2_3", "1_3_3", "1_1_4", "1_2_4", "1_3_4"))
+}
+
+sign_permute_replicates <- 200
 
 sign_permute_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
 
-for(site in sites){
-  # within a block, randomly multiply allele frequency change by +1 or -1
-pdiffs_permuted <- pdiffs %>%
-  group_by(window) %>%
-  mutate(across(where(is.numeric), ~ .x * sample(c(1, -1), size = 1)))
+pdiffs$window = sign_permute_blocks$window
 
-# save un-corrected covariance matrices
-cov_pdiffs_permuted <- cov(pdiffs_permuted)
+rm(sign_permute_blocks)
+gc()
 
-write.table(cov_pdiffs_permuted, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/increment_covariances.tsv",row.names = T, col.names = T, quote = F, sep = "\t")
+# make list of sites
+sites <- unique(gsub("_.*", "", colnames(pdiffs)))
+sites <- sites[c(-31)]
+
+#
+output_gt_perm <- paste(results_path, "gt_abs_permutations.txt", sep = "")
+
+# create permutations of allele frequency changes by site
+mean_gt_perms = NULL
+# subset to one site
+for (site in sites[26:30]) {
+  print(paste("Site:", site))
+  pdiffs_site <- pdiffs %>%
+    dplyr::select(starts_with(paste(site, "_", sep = "")), window)
+  # now permute many times
+  for (p in 1:sign_permute_replicates) {
+    # subset to one rep
+    print(paste("Replicate:", p))
+    # choose a random replicate
+    # within a block, randomly multiply allele frequency change by +1 or -1
+    pdiffs_perm <- pdiffs_site %>%
+      group_by(window) %>%
+      mutate(across(where(is.numeric), ~ .x * sample(c(1, -1), size = 1))) %>%
+      ungroup() %>%
+      dplyr::select(-window)
+    
+    gt_perms = NULL
+    # loop over each replicate
+    for (exprep in 1:12) {
+      pdiffs_perm_rep <- pdiffs_perm %>%
+        dplyr::select(ends_with(paste("_", exprep, sep = "")))
+      
+      if (ncol(pdiffs_perm_rep) <= 1) {
+        #print("Need at least two increments. Skipping to next replicate...")
+        next
+      }
+      
+      # un-corrected covariance matrices
+      cov_pdiffs_perm <- cov(pdiffs_perm_rep)
+      
+      # TO-DO: correct covariance matrices
+      
+      # calculate covariance rolling sums
+      gt_perm <- gt_from_covmat(cov_pdiffs_perm)
+      
+      # save result
+      gt_perm$rep = exprep
+      gt_perms <- rbind(gt_perms, gt_perm)
+    }
+    # average across replicates to get one permutation sample
+    if(is.null(gt_perms)){
+      next
+    }
+    
+    mean_gt_perm = gt_perms %>%
+      group_by(gen) %>%
+      summarize(
+        gt = mean(sum_cov) / mean(sum_cov + sum_var),
+        gt_abs = mean(sum_abs_cov) / mean(sum_abs_cov + sum_var),
+        sum_cov = mean(sum_cov),
+        sum_abs_cov = mean(sum_abs_cov),
+        sum_pos_cov = mean(sum_pos_cov),
+        sum_neg_cov = mean(sum_neg_cov),
+        sum_var = mean(sum_var),
+        ratio = mean(ratio, na.rm = T),
+        n = n()
+      )
+    
+    mean_gt_perm$perm = p
+    mean_gt_perm$site = site
+    
+    write.table(mean_gt_perm, output_gt_perm, col.names=!file.exists(output_gt_perm), append = T, row.names = F, sep = ",", quote = F)
+    #mean_gt_perms = rbind(mean_gt_perms, mean_gt_perm)
+  }
+}
+
+```
+
+### calculate permutation null distributions
+
+```{r}
+
+mean_gt_perms <- fread(paste(results_path, "gt_abs_permutations.txt", sep = ""), header = T)
+
+# remove extra permutations
+# sometimes happened, if R needed to be restarted from checkpoint
+mean_gt_perms <- mean_gt_perms %>% 
+  distinct(site, gen, perm, .keep_all = TRUE)
+
+# calculate percentiles of permutation distribution
+perm_int <- mean_gt_perms %>% 
+  group_by(gen, site) %>% 
+  summarize(lwr = quantile(gt_abs, 0.025), med = median(gt_abs), upr = quantile(gt_abs, 0.975)) %>%
+  arrange(site)
+
+write.table(perm_int, paste(results_path, "gt_abs_permutation_intervals_200.txt", sep = ""), row.names = F, quote = F, sep = "\t")
+```
+
+# Estimate linked selection parameters
+
+## load, format, and filter recombination map
+
+```{r}
+#
+library(MareyMap)
+data("Arabidopsis_thaliana")
+
+recom_map_1 <- data.frame(
+  chrom = 1,
+  pos = Arabidopsis_thaliana@maps$`Chromosome 1`@physicalPositions,
+  cm = Arabidopsis_thaliana@maps$`Chromosome 1`@geneticDistances
+)
+
+recom_map_1 <- recom_map_1 %>% filter(cm == cummax(cm))
+
+recom_map_2 <- data.frame(
+  chrom = 2,
+  pos = Arabidopsis_thaliana@maps$`Chromosome 2`@physicalPositions,
+  cm = Arabidopsis_thaliana@maps$`Chromosome 2`@geneticDistances
+)
+
+recom_map_2$cm <- recom_map_2$cm - min(recom_map_2$cm)
+
+recom_map_2 <- recom_map_2 %>% filter(cm == cummax(cm))
+
+recom_map_3 <- data.frame(
+  chrom = 3,
+  pos = Arabidopsis_thaliana@maps$`Chromosome 3`@physicalPositions,
+  cm = Arabidopsis_thaliana@maps$`Chromosome 3`@geneticDistances
+)
+
+recom_map_3$cm <- recom_map_3$cm - min(recom_map_3$cm)
+
+recom_map_3 <- recom_map_3 %>% filter(cm == cummax(cm))
+
+recom_map_4 <- data.frame(
+  chrom = 4,
+  pos = Arabidopsis_thaliana@maps$`Chromosome 4`@physicalPositions,
+  cm = Arabidopsis_thaliana@maps$`Chromosome 4`@geneticDistances
+)
+
+recom_map_4$cm <- recom_map_4$cm - min(recom_map_4$cm)
+
+recom_map_4 <- recom_map_4 %>% filter(cm == cummax(cm))
+
+# 5
+recom_map_5 <- data.frame(
+  chrom = 5,
+  pos = Arabidopsis_thaliana@maps$`Chromosome 5`@physicalPositions,
+  cm = Arabidopsis_thaliana@maps$`Chromosome 5`@geneticDistances
+)
+
+recom_map_5$cm <- recom_map_5$cm - min(recom_map_5$cm)
+
+recom_map_5 <- recom_map_5 %>% filter(cm == cummax(cm))
+
+recom_map <- rbind(recom_map_1, recom_map_2, recom_map_3, recom_map_4, recom_map_5)
+
+ggplot(recom_map, aes(x = pos, y = cm)) +
+  geom_point() +
+  facet_wrap(chrom~., scales = "free") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = "Position", y = "cM")
+```
+
+## calculate average ld or average ld decay by block
+```{r}
+
+# output file
+#output_mean_ld <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/mean_ld_by_block.tsv", sep = "")
+output_mean_ld <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-05/mean_ld_by_block.tsv", sep = "")
+
+# read ld_matrix in blocks and calculate average initial R2
+ld_matrix <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink.ld.tsv")
+
+# get correlations that are encompassed within each block
+blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+
+blocks <- blocks %>% 
+  group_by(window) %>% 
+  summarize(chr = unique(X1), start = min(X2), end = max(X2))
+
+for(i in 99:nrow(blocks)){
+  print(i)
+  print(Sys.time())
+  
+  b = blocks[i,]
+  start = b$start
+  end = b$end
+  chr = b$chr
+  w = b$window
+  
+  result <- data.frame(window = w,
+                       mean_ld = ld_matrix %>% 
+                         filter((CHR_A == chr) & (CHR_B == chr) & (BP_A >= start) & (BP_A <= end) & (BP_B >= start) & (BP_B <= end)) %>% summarize(mean(R2))
+  )
+  
+  write.table(result, output_mean_ld, col.names=!file.exists(output_mean_ld), append = T, row.names = F, sep = ",", quote = F)
+    
+}
+
+# 
+# ld_matrix %>% summarize(mean(R2))
+
+# process_ld <- function(output){
+#   function(x, pos) {
+#     print(pos)
+#     print(Sys.time())
+#     y <- x %>% summarize(chr = unique(CHR_A),
+#                     start = min(c(BP_A, BP_B)),
+#                     end = max(c(BP_A, BP_B)),
+#                     avg_r2 = mean(R2),
+#                     n = length(unique(c(SNP_A, SNP_B))))
+#     
+#     write.table(y, output, col.names=!file.exists(output), append = T, row.names = F, sep = "\t", quote = F)
+#   }
+# }
+# 
+# mean_ld <- read_tsv_chunked(
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink.ld.tsv",
+#   callback = SideEffectChunkCallback$new(process_ld("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink.ld.mean.tsv")),
+#   chunk_size = 99*15000)
+```
+
+## use least squares to estimate Ne and Va(1)
+
+Need:
+* allele frequencies
+* sample sizes
+* mean LD decay in windows through time, or just LD in initial generation if assuming no decay through time
+
+```{r}
+
+# sum of HWE heterozygosity across all sites
+ssh <- function(x){
+  sum(2*x*(1-x))
+}
+
+# interpolation of cM position of SNP based on recombination map
+# cm_interpolation <- function(chr, pos, ref){
+#   
+#   ref <- ref %>% filter(CHR == chr)
+#   
+#   # find two closest reference points to query point
+#   
+#   # if query falls before first reference point or last reference point, we can't interpolate
+#   
+#   # interpolate query point position
+#   
+# }
+
+# sample size correction
+estim_linked_selection_params <- function(pmat, n, mean_ld, weight){
+  
+  covmat <- correct_covmat_for_n(pmat, n)
+  
+  #print(covmat)
+  
+  # format cov as data frame
+  X <- melt(covmat)
+  X <- X[!duplicated(X$value),]
+
+  # grab 
+  X$t <- gsub("_", "", str_extract(X$Var1, "_.*_"))
+  X$s <- gsub("_", "", str_extract(X$Var2, "_.*_"))
+  #X$t <- X$Var1
+  #X$s <- X$Var2
+  
+  #print(X)
+  # create indicator variable
+  X$b <- as.numeric(X$t == X$s)
+  
+  #print(X)
+  # calculate sum of site heterozygosity for each time point
+  ssh_vec <- apply(pmat, MARGIN = 2, FUN = ssh)
+
+  ssh_vec <- data.frame(
+    t = names(ssh_vec),
+    ssh = ssh_vec
+  )
+
+  ssh_vec$t <- gsub("_", "", str_extract(ssh_vec$t, "_.*_"))
+  #print(ssh_vec)
+  
+  X <- merge(X, ssh_vec, by = "t")
+
+  X <- merge(X, ssh_vec, by.x = "s", by.y = "t", suffixes = c("_s", "_t"))
+
+  #print(X)
+  
+  # ratio of heterozygosity between time points
+  ssh_1 <- ssh(pmat[,1])
+  
+  X$ssh_ratio <- X$ssh_t/ssh_1
+  
+  # calculate Va covariante
+  X$a <- X$ssh_ratio*0.5*mean_ld*weight
+
+  # fit with least squares
+  # do not include intercept
+  # mod <- lm(value ~ a + b - 1, X)
+  # return(summary(mod))
+  return(X)
+}
+
+#estim_linked_selection_params(cbind(gen0$X3,p), c(1000,292,416,48,279))
+
+# load mean ld
+mean_ld_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-05/mean_ld_by_block.tsv")
+
+# assign blocks to allele frequencies
+# number of snps per window
+window_size <- 15000
+
+# create windows, should not bleed between chromosomes
+blocks <- gen0 %>%
+  group_by(X1) %>%
+  mutate(block = (row_number() - 1) %/% window_size + 1,
+         window = paste(X1, block, sep = "_"))
+
+length(unique(blocks$window))
+
+hapfire$window <- blocks$window
+
+# make list of sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+sites <- sites[c(-30, -32)]
+
+linked_params <- NULL
+
+output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation.txt", sep = "")
+
+# loop over genomic blocks
+num_blocks <- length(unique(hapfire$window))
+
+for(b in unique(hapfire$window)){
+  print(paste("Window:", b))
+  hap_block <- hapfire %>% filter(window == b)
+  for(site in unique(sites)){
+    print(paste("Site:", site))
+    hap_site <- hap_block %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+    gen0_block <- blocks %>% filter(window == b)
+    
+    mean_ld_block <- mean_ld_blocks %>% filter(window == b)
+    
+    for(exprep in 1:12){
+      hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+      if(ncol(hap_rep) <= 1){
+        print("Need at least two increments. Skipping to next replicate...")
+        next
+      }
+      
+      # get sample sizes
+      rep_n <- sample_sizes[(sample_sizes$site_gen_plot %in% colnames(hap_rep)),]
+      rep_n <- rbind(c(0, 1e3), rep_n)
+      rep_n <- rep_n %>% arrange(site_gen_plot)
+      
+      # sort names to be in order of generation
+      hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+      
+      hap_rep <- cbind(gen0_block$X3, hap_rep)
+      
+      names(hap_rep)[1] = 0
+      
+      # create table of linked selection covariates for linear model
+      linked_param_block <- estim_linked_selection_params(hap_rep, rep_n$n, mean_ld_block$mean.R2., 1/num_blocks)
+      
+      
+      linked_param_block$site = site
+      linked_param_block$rep = exprep
+      linked_param_block$block = b
+      linked_param_block$S = nrow(hap_rep)
+      
+      write.table(linked_param_block, output_linked_params, col.names=!file.exists(output_linked_params), append = T, row.names = F, sep = ",", quote = F)
+      
+      #linked_params <- rbind(linked_params, linked_param_block)
+    }
+  }
 }
 
 
+
+
+
 ```
+
+## fit linear model by location
+
+```{r}
+
+va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-06/va_ne_points_for_estimation.txt")
+
+# bootstrap estimates
+B = 200 # number of bootstrap samples per site
+W = 200 # number of windows in the genome
+alpha = 0.05 # ci width
+
+cis <- NULL
+
+for(focal_site in unique(va_ne_blocks$site)){
+  print(focal_site)
+  boot_samples = NULL
+  for(b in 1:B){
+    boot_sample <- va_ne_blocks %>%
+      filter(site == focal_site) %>%
+      nest_by(rep, block) %>% # Group and nest into a list-column
+      ungroup() %>%
+      slice_sample(n = W, replace = TRUE) %>%  # Sample groups with replacement
+      #unnest(data) %>% 
+      # group_by(site) %>%
+      #nest() %>%
+      mutate(
+        # Fit a linear model to each nested group
+        fit = map(data, ~ lm(abs(value) ~ a + b - 1, data = .x)),
+        # Extract tidy coefficients (intercept and slope)
+        tidied = map(fit, tidy)
+      ) %>%
+      # Expand the tidied results into a standard data frame
+      unnest(tidied) %>% 
+      dplyr::select(c(-data, -fit))
+    
+    boot_samples <- rbind(boot_samples, boot_sample)
+  }
+  
+  ci <- boot_samples %>% 
+    group_by(term) %>% 
+    summarize(lwr = quantile(estimate, alpha/2), 
+              med = median(estimate), 
+              upr = quantile(estimate, 1-alpha/2))
+  
+  ci$site <- focal_site
+  
+  cis <- rbind(cis, ci)
+}
+
+# convert to Ne
+avg_boot_ne <- cis %>%
+  subset(term == "b") %>%
+  mutate(Ne_upr=1/(2*lwr),
+         Ne_med=1/(2*med),
+         Ne_lwr=1/(2*upr))
+
+ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, ymax = Ne_upr)) +
+  geom_pointrange() +
+  scale_y_log10() +
+  labs(y = "Ne", x = "Site")
+
+ggsave(paste(results_path, "Ne_estimates_200_perms_abs_cov.pdf"), width = 8, height = 4)
+
+ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med/15000), y = med, ymin = lwr/15000, ymax = upr/15000)) +
+  geom_pointrange() +
+  labs(y = "Ne", x = "Site")
+
+#### POINT ESTIMATES ####
+# fit linear model for each site and replicate
+# can look at only absolute value of covariances
+va_ne_models <- va_ne_blocks %>%
+  group_by(site, rep) %>%
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+
+va_ne_site_means <- va_ne_models %>% 
+  group_by(site, term) %>% 
+  summarize(mean_est = mean(estimate), sd_est = sd(estimate), n = n(), se_est = sd_est/n)
+
+ggplot(va_ne_models, aes(x = estimate)) +
+  geom_histogram() +
+  facet_grid(.~term, scales = "free")
+
+avg_ne <- va_ne_models %>% 
+  subset(term == "b") %>% 
+  mutate(Ne=1/(2*estimate)) %>% 
+  group_by(site) %>%
+  summarize(sd = sd(Ne), n = n(), se = sd/n, Ne=mean(Ne)) %>%
+  arrange(Ne)
+
+
+```
+
+# Final figures
+
+## linked selection
+
+```{r}
+# permutation-based null distributions
+# gabs_null_1 <- fread("../results/2026-05-02/gt_abs_permutation_intervals.txt")
+# gabs_null_2 <- fread("../results/2026-05-02/gt_abs_permutation_intervals_2.txt")
+# gabs_null <- rbind(gabs_null_1, gabs_null_2)
+
+gabs_null <- fread("../results/2026-05-02/gt_abs_permutation_intervals_200.txt")
+
+# bootstrapping-based confidence intervals
+gabs_cis <- read.table("../results/2026-04-15/gt_abs_confidence_intervals.txt")
+
+gabs_cis <- merge(gabs_cis, worldclim_sitesdata, by = "site")
+  
+ggplot(gabs_cis, aes(x = gen, y = med, group = site, color = bio1)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin=lwr, ymax=upr), width=.2) +
+  geom_ribbon(data = gabs_null, mapping = aes(x=gen, ymin=lwr, ymax=upr), alpha = 0.2, color = "grey", size = 0.01) + 
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = expression(G[abs]), color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggsave(paste(results_path, "linked_selection_abs_with_null_200_perms.pdf"), width = 6, height = 4)
+```
+## shared selection between replicates
+
+
+
 
 
 # Fst 
