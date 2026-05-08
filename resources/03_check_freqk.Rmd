@@ -54,13 +54,34 @@ theme_set(
 
 ```{r}
 
-# visualize var-cov matrix
-get_upper_tri <- function(cormat){
-    cormat[lower.tri(cormat)]<- NA
-    diag(cormat) <- NA
-    return(cormat)
+#' Get upper triangle only of a matrix
+#'
+#' @param mat a matrix of numbers
+#'
+#' @return matrix
+#' @export
+#'
+#' @examples
+get_upper_tri <- function(mat){
+  mat[lower.tri(mat)]<- NA
+  diag(mat) <- NA
+  return(mat)
 }
 
+#' Plot a matrix of numbers as a heatmap, omitting diagonal
+#'
+#' @param covmat 
+#' @param output_name 
+#' @param include_values 
+#' @param low_col 
+#' @param mid_col 
+#' @param high_col 
+#' @param legend_name 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 plot_var_cov_matrix <- function(covmat, output_name, include_values = TRUE, low_col = "#65014B", mid_col = "#F5F0F0", high_col = "#0C4C00", legend_name = "Cov(\u0394pi, \u0394pj)" ){
   # get just upper triangle
   upper_tri <- get_upper_tri(covmat)
@@ -102,7 +123,6 @@ plot_cor <- plot_cor + scale_fill_gradient2(
 
 # buffalo coop gt curves
 gt_from_pmat <- function(dps, calcabs = FALSE, output_name) {
-  # sanity checks
   
   # loop over replicates
   # create matrix of allele frequncy increments
@@ -409,7 +429,6 @@ plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, 
   print("Save png...")
   ggsave(paste("../results/", today, "/", prefix, "_", site, ".jpg", sep = ""), height = height, width = width)
 }
-
 
 ```
 
@@ -1318,7 +1337,7 @@ output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 unique_blocks <- unique(hapfire$block)
 
-for(b in unique_blocks[27:length(unique_blocks)]){
+for(b in unique_blocks[42:length(unique_blocks)]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -3212,7 +3231,7 @@ for(b in unique(hapfire$window)){
 va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-06/va_ne_points_for_estimation.txt")
 
 # bootstrap estimates
-B = 200 # number of bootstrap samples per site
+B = 500 # number of bootstrap samples per site
 W = 200 # number of windows in the genome
 alpha = 0.05 # ci width
 
@@ -3266,7 +3285,7 @@ ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, y
   scale_y_log10() +
   labs(y = "Ne", x = "Site")
 
-ggsave(paste(results_path, "Ne_estimates_200_perms_abs_cov.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "Ne_estimates_500_perms_abs_cov.pdf"), width = 8, height = 4)
 
 ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med/15000), y = med, ymin = lwr/15000, ymax = upr/15000)) +
   geom_pointrange() +
@@ -3334,6 +3353,7 @@ ggplot(gabs_cis, aes(x = gen, y = med, group = site, color = bio1)) +
 
 ggsave(paste(results_path, "linked_selection_abs_with_null_200_perms.pdf"), width = 6, height = 4)
 ```
+
 ## shared selection between replicates
 
 
