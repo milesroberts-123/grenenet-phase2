@@ -5,8 +5,8 @@ output: html_notebook
 
 
 ```{r}
-library(ggplot2)
-library(dplyr)
+box::use(ggplot2[...])
+box::use(dplyr[...])
 ```
 
 ```{r}

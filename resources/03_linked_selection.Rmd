@@ -1,5 +1,5 @@
 ---
-title: "R Notebook"
+title: "Linked selection in GrENE-net phase 2"
 output: 
   html_notebook: 
     toc: true
@@ -30,6 +30,10 @@ library(broom)
 
 library(data.table)
 
+box::use(./R/gt[...])
+box::use(./R/plot[...])
+box::use(./R/utils[...])
+
 today <- Sys.Date()
 
 results_path <- paste("../results/", today, "/", sep = "")
@@ -53,403 +57,12 @@ theme_set(
 # functions
 
 ```{r}
-
-#' Get upper triangle only of a matrix
-#'
-#' @param mat a matrix of numbers
-#'
-#' @return matrix
-#' @export
-#'
-#' @examples
-get_upper_tri <- function(mat){
-  mat[lower.tri(mat)]<- NA
-  diag(mat) <- NA
-  return(mat)
-}
-
-#' Plot a matrix of numbers as a heatmap, omitting diagonal
-#'
-#' @param covmat 
-#' @param output_name 
-#' @param include_values 
-#' @param low_col 
-#' @param mid_col 
-#' @param high_col 
-#' @param legend_name 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-plot_var_cov_matrix <- function(covmat, output_name, include_values = TRUE, low_col = "#65014B", mid_col = "#F5F0F0", high_col = "#0C4C00", legend_name = "Cov(\u0394pi, \u0394pj)" ){
-  # get just upper triangle
-  upper_tri <- get_upper_tri(covmat)
-  melted_cormat <- reshape2::melt(upper_tri, na.rm = TRUE)
-  
-  # Heatmap
-  plot_cor <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value)) +
-    geom_tile(color = "white")
-  
-  if (include_values){
-    plot_cor <- plot_cor + geom_text(aes(label = round(value, 4)), size = 5, color = "black") 
-  }
-  
-plot_cor <- plot_cor + scale_fill_gradient2(
-      low = low_col,
-      mid = mid_col,
-      high = high_col,
-      midpoint = 0,
-      space = "Lab",
-      name = legend_name
-    ) +
-    theme_minimal() +
-    theme(
-      axis.text.x = element_text(
-        angle = 45,
-        vjust = 1,
-        hjust = 1
-      ),
-      text = element_text(size = 14, family = "Helvetica")
-    ) +
-    coord_fixed() +
-    labs(x = "", y = "")
-  
-  ggsave(output_name,
-         plot_cor,
-         bg = "white",
-         device = cairo_pdf)
-}
-
-# buffalo coop gt curves
-gt_from_pmat <- function(dps, calcabs = FALSE, output_name) {
-  
-  # loop over replicates
-  # create matrix of allele frequncy increments
-  # calculate cov matrix for increments
-  results = NULL
-  col_names <- colnames(dps[[1]])
-  for (i in 1:ncol(dps[[1]])) {
-    print(i)
-    dp = NULL
-    for (k in 1:length(dps)) {
-      print(k)
-      dp <- cbind(dp, (dps[[k]])[,i])
-    }
-    
-    # covariance matrix
-    print("Calculating covariance...")
-    covmat <- cov(dp)
-    covmat[lower.tri(covmat)] <- NA
-    
-    # plot variance covariance matrix
-    plot_var_cov_matrix(covmat, paste(output_name, "_", i, ".pdf", sep = ""))
-    
-    # variances and covar
-    print("Extracting covariances and variances...")
-    covariances <- covmat[upper.tri(covmat)]
-    variances <- diag(covmat)
-    
-    # cum sum of variances
-    print("Cumulative sum of variances...")
-    sums_var <- cumsum(variances)
-    
-    # cumulative sum of covariances
-    print("Cumulative sum of covariances...")
-    sums_cov = c(0)
-    sums_abs_cov = c(0)
-    sums_pos_cov = c(0)
-    sums_neg_cov = c(0)
-    for (j in 2:nrow(covmat)) {
-      print(j)
-      cov_sub <- covariances[1:(((j - 1) * (j)) / 2)]
-      
-      sum_abs_cov <- 2 * sum(abs(cov_sub), na.rm = T)
-      sum_cov <- 2 * sum(cov_sub, na.rm = T)
-      sum_neg_cov <- 2 * sum(abs(cov_sub[(cov_sub < 0)]), na.rm = T)
-      sum_pos_cov <- 2 * sum(cov_sub[(cov_sub > 0)], na.rm = T)
-      
-      sums_cov = c(sums_cov, sum_cov)
-      sums_abs_cov = c(sums_abs_cov, sum_abs_cov)
-      sums_pos_cov = c(sums_pos_cov, sum_pos_cov)
-      sums_neg_cov = c(sums_neg_cov, sum_neg_cov)
-    }
-    
-    # calculate gt
-    print("Calculating gt...")
-    if (calcabs == TRUE) {
-      gts = sums_abs_cov / (sums_var + sums_abs_cov)
-    } else {
-      gts = sums_cov / (sums_var + sums_cov)
-    }
-    
-    print("Saving result...")
-    result = data.frame(
-      gen = 1:nrow(covmat),
-      gt = gts,
-      sum_cov = sums_cov,
-      sum_abs_cov = sums_abs_cov,
-      sum_pos_cov = sums_pos_cov,
-      sum_neg_cov = sums_neg_cov,
-      ratio = sums_neg_cov / (sums_pos_cov + sums_neg_cov),
-      sum_var = sums_var,
-      replicate = i
-    )
-    
-    results = rbind(results, result)
-  }
-  return(results)
-}
-
-## buffalo gt curves
-gt_from_covmat <- function(covmat) {
-  covmat[lower.tri(covmat)] <- NA
-  
-  covariances <- covmat[upper.tri(covmat)]
-  variances <- diag(covmat)
-  
-  # add up variances
-  sums_var <- cumsum(variances)
-
-  # cumulative sum of covariances
-  sums_cov = c(0)
-  sums_abs_cov = c(0)
-  sums_pos_cov = c(0)
-  sums_neg_cov = c(0)
-  for(j in 2:nrow(covmat)){
-    cov_sub <- covariances[1:(((j-1)*(j))/2)]
-    
-    sum_abs_cov <- 2*sum(abs(cov_sub), na.rm = T)
-    sum_cov <- 2*sum(cov_sub, na.rm = T)
-    sum_neg_cov <- 2*sum(abs(cov_sub[(cov_sub < 0)]), na.rm = T)
-    sum_pos_cov <- 2*sum(cov_sub[(cov_sub > 0)], na.rm = T)
-    
-    sums_cov = c(sums_cov, sum_cov)
-    sums_abs_cov = c(sums_abs_cov, sum_abs_cov)
-    sums_pos_cov = c(sums_pos_cov, sum_pos_cov)
-    sums_neg_cov = c(sums_neg_cov, sum_neg_cov)
-  }
-  
-  result = data.frame(
-    gen = 1:nrow(covmat),
-    gt = sums_cov/(sums_var + sums_cov),
-    gt_abs = sums_abs_cov/(sums_var + sums_abs_cov),
-    sum_cov = sums_cov,
-    sum_abs_cov = sums_abs_cov,
-    sum_pos_cov = sums_pos_cov,
-    sum_neg_cov = sums_neg_cov,
-    sum_var = sums_var,
-    ratio = sums_pos_cov/(sums_pos_cov + sums_neg_cov)
-  )
-  
-  return(result)
-}
-
-# sample size correction
-correct_covmat_for_n <- function(pmat, n){
-  # calculate increments
-  pdiff <- pmat[, -1] - pmat[, -ncol(pmat)]
-  
-  # calculate raw covariances
-  covmat = cov(pdiff, use = "pairwise.complete.obs")
-  
-  # correct covariances of adjacent intervals
-  for(i in 1:(ncol(covmat)-1)){
-    corrected_cov <- mean(pdiff[,i] * pdiff[,i+1], na.rm = T) + mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)
-    
-    covmat[i,i+1] <- corrected_cov
-    covmat[i+1,i] <- corrected_cov
-  }
-  
-  # correct variances
-  for(i in 1:ncol(covmat)){
-    corrected_var <- mean((pdiff[,i])^2, na.rm = T) - mean(pmat[,i]*(1-pmat[,i])/(n[i] - 1), na.rm = T) - mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)
-    if(corrected_var < 0) {
-      print("Sample size correction makes variance negative. Setting variance to zero")
-      covmat[i,i] <- 0
-    } else{
-      covmat[i,i] <- corrected_var
-    }
-  }
-  return(covmat)
-}
-
-gt_n_adjust <- function(pmat, n) {
-  
-  if(ncol(pmat) != length(n)){
-    stop("Error: Must give a sample size for every timepoint.")
-  }
-  
-  # calculate increments
-  pdiff <- pmat[, -1] - pmat[, -ncol(pmat)]
-  
-  # calculate cov
-  covmat <- cov(pdiff, use = "pairwise.complete.obs")
-  
-  #print("Raw var-cov matrix:")
-  #print(covmat)
-  covmat <- correct_covmat_for_n(covmat, pmat, n)
-  #print(covmat)
-  
-  # separate out components
-  covmat[lower.tri(covmat)] <- NA
-  covariances <- covmat[upper.tri(covmat)]
-  variances <- diag(covmat)
-  
-  # add up variances
-  sums_var <- cumsum(variances)
-
-  # cumulative sum of covariances
-  sums_cov = c(0)
-  sums_abs_cov = c(0)
-  sums_pos_cov = c(0)
-  sums_neg_cov = c(0)
-  for(j in 2:nrow(covmat)){
-    cov_sub <- covariances[1:(((j-1)*(j))/2)]
-    
-    sum_abs_cov <- 2*sum(abs(cov_sub), na.rm = T)
-    sum_cov <- 2*sum(cov_sub, na.rm = T)
-    sum_neg_cov <- 2*sum(abs(cov_sub[(cov_sub < 0)]), na.rm = T)
-    sum_pos_cov <- 2*sum(cov_sub[(cov_sub > 0)], na.rm = T)
-    
-    sums_cov = c(sums_cov, sum_cov)
-    sums_abs_cov = c(sums_abs_cov, sum_abs_cov)
-    sums_pos_cov = c(sums_pos_cov, sum_pos_cov)
-    sums_neg_cov = c(sums_neg_cov, sum_neg_cov)
-  }
-  
-  result = data.frame(
-    gen = 1:nrow(covmat),
-    gt = sums_cov/(sums_var + sums_cov),
-    gt_abs = sums_abs_cov/(sums_var + sums_abs_cov),
-    sum_cov = sums_cov,
-    sum_abs_cov = sums_abs_cov,
-    sum_pos_cov = sums_pos_cov,
-    sum_neg_cov = sums_neg_cov,
-    sum_var = sums_var,
-    ratio = sums_pos_cov/(sums_pos_cov + sums_neg_cov)
-  )
-  
-  return(result)
-}
-
-# create windows, should not bleed between chromosomes
-create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
-  
-  # check that data is sorted by chrom, then pos within chrom
-  sort_check <- data %>%
-    group_by({{ chrom_col_name }}) %>%
-    summarise(is_sorted = all(diff({{ pos_col_name }}) >= 0))
-  
-  if(!all(sort_check$is_sorted)){
-    stop("Input data should be sorted by position within chromosome.")
-  }
-  
-  blocks <- data %>%
-    group_by({{ chrom_col_name }}) %>%
-    mutate(block = (row_number() - 1) %/% window_size + 1,
-           window = paste({{ chrom_col_name }}, block, sep = sep))
-  
-  return(blocks)
-}
-
-# get sample sizes for particular replicates 
-grab_sample_sizes <- function(n_data, sample_col, samples, first_n){
-    rep_n <- n_data %>% filter({{ sample_col }} %in% samples)
-    rep_n <- rbind(c(0, first_n), rep_n)
-    rep_n <- rep_n %>% arrange({{ sample_col }})
-    return(rep_n)
-}
-
-## manhattan plots
-# https://r-graph-gallery.com/101_Manhattan_plot.html
-# https://danielroelfs.com/posts/how-i-create-manhattan-plots-using-ggplot/
-plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, prefix){
-  
-  print(site)
-  
-  print("Filter data to one site...")
-  data <- data |>
-    subset(SITE == site)
-  
-  if (quick){
-    print("Subset insignificant data...") 
-    data <- data |>
-      subset(pvalue < 0.001)
-  }
-  
-  print("Compute variables...")
-  don <- data %>% 
-    # Compute chromosome size
-    group_by(CHROM) %>% 
-    summarise(chr_len=max(POS)) %>%
-    # Calculate cumulative position of each chromosome
-    mutate(tot=cumsum(chr_len)-chr_len) %>%
-    dplyr::select(-chr_len) %>%
-    # Add this info to the initial dataset
-    left_join(data, ., by=c("CHROM"="CHROM")) %>%
-    # Add a cumulative position of each SNP
-    arrange(CHROM, POS) %>%
-    mutate(BPcum=POS+tot)
-  # Add highlight and annotation information
-  #mutate(is_highlight=ifelse((CHROM == chrom) & (POS > start) & (POS < end), "yes", "no"))
-  
-  axisdf = don %>%
-    group_by(CHROM) %>%
-    summarize(center=( max(BPcum) + min(BPcum) ) / 2 )
-  
-  print("Plot...")
-  ggplot(don, aes(x=BPcum, y=-log10(pvalue))) +
-    # Show all points
-    geom_point( aes(color=as.factor(CHROM)), alpha=0.8, size=1.3, shape = 16) +
-    # Add highlighted points
-    geom_point(data=subset(don, highlight=="yes"), color="orange", size=1.5) +
-    scale_color_manual(values = rep(c("grey", "black"), 22 )) +
-    # custom X axis:
-    scale_x_continuous( label = axisdf$CHROM, breaks= axisdf$center ) +
-    scale_y_continuous(expand = c(0, 0) ) +     # remove space between plot area and x axis
-    # Custom the theme:
-    #theme_bw() +
-    theme( 
-      legend.position="none",
-      panel.border = element_blank(),
-      panel.grid.major.x = element_blank(),
-      panel.grid.minor.x = element_blank()
-    ) +
-    labs(x = "Chromosome", y = "-log10(p)", title = paste("Site #", site, sep = " "))
-  
-  # ggplot(subset(gwas_data, SITE == site), aes(x = POS, y = -log10(pvalue))) +
-  #   geom_point(shape = 16) +
-  #   facet_wrap(~CHROM, ncol = 5, labeller = "label_both", scales = "free_x") +
-  #   theme(axis.text.x = element_text(angle = 45, hjust=1)) +
-  #   labs(x = "Position", y = "-log10(p-value)")
-  
-  #print("Save pdf...")
-  #ggsave(paste("../results/", today, "/", prefix, "_", site, ".pdf", sep = ""), height = height, width = width)
-  print("Save png...")
-  ggsave(paste("../results/", today, "/", prefix, "_", site, ".jpg", sep = ""), height = height, width = width)
-}
-
+# All functions moved to box modules (R/gt.R, R/plot.R, R/utils.R)
 ```
 
 # Conceptual images
 
 ```{r}
-# functions from: https://si.biostat.washington.edu/sites/default/files/modules/Day2_AM_part1.pdf
-fitfreq = function(q, h, s){
-  p=1-q;
-  return((q^2*(1+s) + p*q*(1+h*s))/( 1 + s*q*(2*h*p+q)))
-}
-
-WF.sel=function(N, q, h, s, G){
-  t=array(,dim=G)
-  t[1] = N*q
-  for(i in 2:G){
-    t[i] = rbinom(1,N,fitfreq(t[i-1]/N, h, s[i-1]))
-  }
-  return(t)
-}
-
 gen = 100
 N = 100
 h = 0.5
@@ -1337,7 +950,7 @@ output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 unique_blocks <- unique(hapfire$block)
 
-for(b in unique_blocks[42:length(unique_blocks)]){
+for(b in unique_blocks[59:length(unique_blocks)]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -2010,28 +1623,6 @@ mean_dp_cov_by_site <- as.data.frame(melted_cov_dps %>% filter(!str_detect(Var1,
 
 mean_dp_cov_by_site <- mean_dp_cov_by_site[!duplicated(mean_dp_cov_by_site$value),]
 
-check_dp_match_dt <- function(x,y){
-  results = NULL
-  for(i in 1:nrow(x)){
-    mean_cov <- x[i,"mean_cov"]
-    int1 <- x[i,"Var1"]
-    int2 <- x[i,"Var2"]
-    site <- as.numeric(x[i,"site"])
-    
-    dT1 <- y[(y$site == site) & (y$interval == int1),"dT"]
-    
-    dT2 <- y[(y$site == site) & (y$interval == int2),"dT"]
-    
-    if(dT1*dT2 > 0){
-      results <- rbind(results, data.frame(site = site, int1 = int1, int2 = int2, match = T))
-    } else {
-      results <- rbind(results, data.frame(site = site, int1 = int1, int2 = int2, match = F))
-    }
-  }
-  print(paste("Done at : ", Sys.time()))
-  return(table(results$match))
-}
-
 # observation
 obs_dp_dt_match <- check_dp_match_dt(mean_dp_cov_by_site, clim_increments)
 
@@ -2130,21 +1721,6 @@ cat("\nAnomaly covariance matrix (TerraClim - bioclim baseline):\n")
 plot_var_cov_matrix(Cor_anom, paste("../results/", today, "/climate_anomalies_correlations.pdf", sep = ""), legend_name = "Mean\ncor(Ai, Aj)", low_col = "#023198", mid_col = "#C0E9C2", high_col = "#7E1700")
 
 # try cmip6 model
-get_1km_bbox <- function(lat, lon) {
-  half_side_km <- 0.5
-  
-  # conversions
-  dlat <- half_side_km / 111.32
-  dlon <- half_side_km / (111.32 * cos(lat * pi / 180))
-  
-  list(
-    xmin = lon - dlon,
-    xmax = lon + dlon,
-    ymin = lat - dlat,
-    ymax = lat + dlat
-  )
-}
-
 bbox <- get_1km_bbox(37.8715, -122.2730)
 
 area <- c(
@@ -3071,11 +2647,6 @@ Need:
 
 ```{r}
 
-# sum of HWE heterozygosity across all sites
-ssh <- function(x){
-  sum(2*x*(1-x))
-}
-
 # interpolation of cM position of SNP based on recombination map
 # cm_interpolation <- function(chr, pos, ref){
 #   
@@ -3088,60 +2659,6 @@ ssh <- function(x){
 #   # interpolate query point position
 #   
 # }
-
-# sample size correction
-estim_linked_selection_params <- function(pmat, n, mean_ld, weight){
-  
-  covmat <- correct_covmat_for_n(pmat, n)
-  
-  #print(covmat)
-  
-  # format cov as data frame
-  X <- melt(covmat)
-  X <- X[!duplicated(X$value),]
-
-  # grab 
-  X$t <- gsub("_", "", str_extract(X$Var1, "_.*_"))
-  X$s <- gsub("_", "", str_extract(X$Var2, "_.*_"))
-  #X$t <- X$Var1
-  #X$s <- X$Var2
-  
-  #print(X)
-  # create indicator variable
-  X$b <- as.numeric(X$t == X$s)
-  
-  #print(X)
-  # calculate sum of site heterozygosity for each time point
-  ssh_vec <- apply(pmat, MARGIN = 2, FUN = ssh)
-
-  ssh_vec <- data.frame(
-    t = names(ssh_vec),
-    ssh = ssh_vec
-  )
-
-  ssh_vec$t <- gsub("_", "", str_extract(ssh_vec$t, "_.*_"))
-  #print(ssh_vec)
-  
-  X <- merge(X, ssh_vec, by = "t")
-
-  X <- merge(X, ssh_vec, by.x = "s", by.y = "t", suffixes = c("_s", "_t"))
-
-  #print(X)
-  
-  # ratio of heterozygosity between time points
-  ssh_1 <- ssh(pmat[,1])
-  
-  X$ssh_ratio <- X$ssh_t/ssh_1
-  
-  # calculate Va covariante
-  X$a <- X$ssh_ratio*0.5*mean_ld*weight
-
-  # fit with least squares
-  # do not include intercept
-  # mod <- lm(value ~ a + b - 1, X)
-  # return(summary(mod))
-  return(X)
-}
 
 #estim_linked_selection_params(cbind(gen0$X3,p), c(1000,292,416,48,279))
 
