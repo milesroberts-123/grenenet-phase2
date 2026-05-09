@@ -1,13 +1,101 @@
 box::use(ggplot2[...])
 box::use(reshape2[melt])
 box::use(dplyr[...])
+box::use(grDevices[...])
 
+#' Title
+#'
+#' @param mat 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 get_upper_tri <- function(mat){
   mat[lower.tri(mat)]<- NA
   diag(mat) <- NA
   return(mat)
 }
 
+
+#' Title
+#'
+#' @param melted_cormat 
+#' @param Var2 
+#' @param Var1 
+#' @param value 
+#' @param include_values 
+#' @param low_col 
+#' @param mid_col 
+#' @param high_col 
+#' @param legend_name 
+#' @param output_name 
+#' @param cairo_pdf 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+plot_pairs_heatmap <- function(melted_cormat,
+                               Var2,
+                               Var1,
+                               value,
+                               include_values,
+                               low_col = "red",
+                               mid_col = "black",
+                               high_col = "blue",
+                               legend_name,
+                               output_name,
+                               cairo_pdf) {
+  
+  plot_cor <- ggplot(data = melted_cormat, aes({{ Var2 }}, {{ Var1 }}, fill = {{ value }})) +
+    geom_tile(color = "white")
+  
+  if (include_values) {
+    plot_cor <- plot_cor + geom_text(aes(label = round(value, 4)),
+                                     size = 5,
+                                     color = "black")
+  }
+  
+  plot_cor <- plot_cor + scale_fill_gradient2(
+    low = low_col,
+    mid = mid_col,
+    high = high_col,
+    midpoint = 0,
+    space = "Lab",
+    name = legend_name
+  ) +
+    theme_minimal() +
+    theme(
+      axis.text.x = element_text(
+        angle = 45,
+        vjust = 1,
+        hjust = 1
+      ),
+      text = element_text(size = 14, family = "Helvetica")
+    ) +
+    coord_fixed() +
+    labs(x = "", y = "")
+  
+  ggsave(output_name,
+         plot_cor,
+         bg = "white")
+}
+
+#' Plot heatmap from var-cov matrix
+#'
+#' @param covmat 
+#' @param output_name 
+#' @param include_values 
+#' @param low_col 
+#' @param mid_col 
+#' @param high_col 
+#' @param legend_name 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 plot_var_cov_matrix <- function(covmat, output_name, include_values = TRUE, low_col = "#65014B", mid_col = "#F5F0F0", high_col = "#0C4C00", legend_name = "Cov(\u0394pi, \u0394pj)" ){
   upper_tri <- get_upper_tri(covmat)
   melted_cormat <- melt(upper_tri, na.rm = TRUE)
@@ -45,6 +133,20 @@ plot_cor <- plot_cor + scale_fill_gradient2(
          device = cairo_pdf)
 }
 
+#' Manhattan plot from snp table of stats
+#'
+#' @param data 
+#' @param site 
+#' @param today 
+#' @param height 
+#' @param width 
+#' @param quick 
+#' @param prefix 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, prefix){
 
   print(site)

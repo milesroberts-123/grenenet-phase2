@@ -1,4 +1,15 @@
 box::use(dplyr[...])
+box::use(utils[write.table])
+
+append_table <- function(x, output_name) {
+  write.table(x, 
+              output_name, 
+              col.names=!file.exists(output_name), 
+              append = T, 
+              row.names = F, 
+              sep = ",", 
+              quote = F)
+}
 
 create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
 
@@ -37,20 +48,6 @@ WF.sel=function(N, q, h, s, G){
     t[i] = rbinom(1,N,fitfreq(t[i-1]/N, h, s[i-1]))
   }
   return(t)
-}
-
-get_1km_bbox <- function(lat, lon) {
-  half_side_km <- 0.5
-
-  dlat <- half_side_km / 111.32
-  dlon <- half_side_km / (111.32 * cos(lat * pi / 180))
-
-  list(
-    xmin = lon - dlon,
-    xmax = lon + dlon,
-    ymin = lat - dlat,
-    ymax = lat + dlat
-  )
 }
 
 check_dp_match_dt <- function(x,y){
