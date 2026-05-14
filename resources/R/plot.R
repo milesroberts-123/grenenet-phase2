@@ -25,12 +25,15 @@ get_upper_tri <- function(mat){
 #' @param Var1 
 #' @param value 
 #' @param include_values 
-#' @param low_col 
-#' @param mid_col 
-#' @param high_col 
 #' @param legend_name 
+#' @param lwr 
+#' @param upr 
+#' @param scico_palette 
+#' @param midpoint 
+#' @param direction 
+#' @param height 
+#' @param width 
 #' @param output_name 
-#' @param cairo_pdf 
 #'
 #' @return
 #' @export
@@ -40,28 +43,31 @@ plot_pairs_heatmap <- function(melted_cormat,
                                Var2,
                                Var1,
                                value,
-                               include_values,
-                               low_col = "red",
-                               mid_col = "black",
-                               high_col = "blue",
+                               include_values = F,
+                               lwr,
+                               upr,
+                               scico_palette,
+                               midpoint = 0,
+                               direction = 1,
+                               # low_col = "red",
+                               # mid_col = "black",
+                               # high_col = "blue",
+                               height,
+                               width,
                                legend_name,
-                               output_name,
-                               cairo_pdf) {
+                               output_name) {
   
-  plot_cor <- ggplot(data = melted_cormat, aes({{ Var2 }}, {{ Var1 }}, fill = {{ value }})) +
+  plot_cor <- ggplot(data = melted_cormat, 
+                     aes({{ Var2 }}, {{ Var1 }}, fill = {{ value }})) +
     geom_tile(color = "white")
   
-  if (include_values) {
-    plot_cor <- plot_cor + geom_text(aes(label = round(value, 4)),
-                                     size = 5,
-                                     color = "black")
-  }
-  
-  plot_cor <- plot_cor + scale_fill_gradient2(
-    low = low_col,
-    mid = mid_col,
-    high = high_col,
-    midpoint = 0,
+  plot_cor <- plot_cor + scale_fill_scico(
+    # low = low_col,
+    # mid = mid_col,
+    # high = high_col,
+    palette = scico_palette,
+    midpoint = midpoint,
+    direction = direction,
     space = "Lab",
     name = legend_name
   ) +
@@ -77,8 +83,17 @@ plot_pairs_heatmap <- function(melted_cormat,
     coord_fixed() +
     labs(x = "", y = "")
   
+  if(include_values){
+    plot_cor <- plot_cor + geom_text(aes(label = if_else((lwr < 0) & (upr > 0), "", "*")), 
+                                     color = "white", 
+                                     size = 8, 
+                                     vjust = 0.8) 
+  }
+  
   ggsave(output_name,
          plot_cor,
+         height = height,
+         width = width,
          bg = "white")
 }
 
@@ -191,5 +206,5 @@ plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, 
     labs(x = "Chromosome", y = "-log10(p)", title = paste("Site #", site, sep = " "))
 
   print("Save png...")
-  ggsave(paste("../results/", today, "/", prefix, "_", site, ".jpg", sep = ""), height = height, width = width)
+  ggsave(paste("../results/by-date/", today, "/", prefix, "_", site, ".jpg", sep = ""), height = height, width = width)
 }

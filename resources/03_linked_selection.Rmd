@@ -36,7 +36,7 @@ box::use(./R/misc[...])
 
 today <- Sys.Date()
 
-results_path <- paste("../results/", today, "/", sep = "")
+results_path <- paste("../results/by-date/", today, "/", sep = "")
 
 # global ggplot2 theme
 theme_set(
@@ -216,6 +216,15 @@ hapfire <- hapfire[non_abosrbing_freq,]
 
 rm(non_abosrbing_freq, sample_sizes_13, sample_sizes_45)
 gc()
+```
+
+# load site climatic data
+
+```{r}
+#load("../data/sites.clim.rda")
+load("../data/worldclim_sitesdata.rda")
+
+#sites.clim <- sites.clim[,c("SITE_CODE", paste("bio", 1:19, sep = ""))]
 ```
 
 ## feder test (LD pruned dataset)
@@ -593,14 +602,7 @@ hist(z_stats)
 shapiro.test(z_stats)
 ```
 
-## site climatic data
 
-```{r}
-#load("../data/sites.clim.rda")
-load("../data/worldclim_sitesdata.rda")
-
-#sites.clim <- sites.clim[,c("SITE_CODE", paste("bio", 1:19, sep = ""))]
-```
 
 ## temporal autocovariance
 
@@ -760,7 +762,7 @@ output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 unique_blocks <- unique(hapfire$block)
 
-for(b in unique_blocks[121:length(unique_blocks)]){
+for(b in unique_blocks[209:length(unique_blocks)]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -819,12 +821,17 @@ for(b in unique_blocks[121:length(unique_blocks)]){
 }
 
 ```
+
 ## plot GLM results
 
 ```{r}
-glm_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-04-29/glm_quasibinomial_coef_2026-04-29.txt")
+glm_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-04/glm_quasibinomial_coef.txt")
 
 names(glm_results)[c(1,2,6,7)] = c("CHROM", "POS", "pvalue", "SITE")
+
+# remove duplicates from re-running glm
+glm_results <- glm_results %>%
+  distinct(CHROM, POS, SITE, .keep_all = TRUE)
 
 glm_results$pvalue_adj <- p.adjust(glm_results$pvalue, method = "fdr")
 
@@ -2379,7 +2386,7 @@ for(w in unique(hapfire$window)){
 conv_cor_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-08/convergence_correlation_first_increment_by_block.tsv")
 
 W = length(unique(conv_cor_results$window))
-B = 200
+B = 1000
 alpha = 0.05
 
 boot_samples <- NULL
@@ -2402,7 +2409,7 @@ conv_cor_cis <- boot_samples %>%
             med = median(conv_cor),
             upr = quantile(conv_cor, 1-alpha/2))
 
-write.table(conv_cor_cis, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-08/convergence_correlation_bootstrap_intervals.txt", sep = "\t", quote = F, row.names = F)
+write.table(conv_cor_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/convergence_correlation_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
 ```
 
 # Estimate linked selection parameters
@@ -2641,7 +2648,7 @@ for(b in unique(hapfire$window)){
 va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-06/va_ne_points_for_estimation.txt")
 
 # bootstrap estimates
-B = 500 # number of bootstrap samples per site
+B = 200 # number of bootstrap samples per site
 W = 200 # number of windows in the genome
 alpha = 0.05 # ci width
 
@@ -2661,7 +2668,7 @@ for(focal_site in unique(va_ne_blocks$site)){
       #nest() %>%
       mutate(
         # Fit a linear model to each nested group
-        fit = map(data, ~ lm(abs(value) ~ a + b - 1, data = .x)),
+        fit = map(data, ~ lm(value ~ a + b - 1, data = .x)),
         # Extract tidy coefficients (intercept and slope)
         tidied = map(fit, tidy)
       ) %>%
@@ -2690,20 +2697,36 @@ avg_boot_ne <- cis %>%
          Ne_med=1/(2*med),
          Ne_lwr=1/(2*upr))
 
+avg_boot_ne$Ne_upr[(avg_boot_ne$Ne_upr < 0)] <- 1e5 # if upper bound is uninterpretable, just give it a large number
+
 ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, ymax = Ne_upr)) +
   geom_pointrange() +
   scale_y_log10() +
   labs(y = "Ne", x = "Site")
 
-ggsave(paste(results_path, "Ne_estimates_500_perms_abs_cov.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "Ne_estimates_200_boots_raw_cov.pdf"), width = 8, height = 4)
 
-ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med/15000), y = med, ymin = lwr/15000, ymax = upr/15000)) +
+# plot Va(1) estimates, set negative Va(1) estimates to zero
+
+ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lwr, ymax = upr, color = lwr > 0)) +
   geom_pointrange() +
-  labs(y = "Ne", x = "Site")
+  scale_color_manual(
+    name = "Va(1) > 0",
+    values = c("TRUE" = "forestgreen", "FALSE" = "grey")
+  ) +
+  labs(y = "Va(1)", x = "Site")
 
-#### POINT ESTIMATES ####
-# fit linear model for each site and replicate
-# can look at only absolute value of covariances
+ggsave(paste(results_path, "Va1_estimates_200_boots_raw_cov.pdf"), width = 8, height = 4)
+
+# save bootstrapping results
+write.table(cis, paste(results_path, "cis_Ne_Va1_estimates_200_boots_raw_cov.txt"), row.names = F, quote = F, sep = "\t")
+
+```
+
+### POINT ESTIMATES
+
+Fit linear model for each site and replicate. Can look at only absolute value of covariances
+```{r}
 va_ne_models <- va_ne_blocks %>%
   group_by(site, rep) %>%
   nest() %>%
@@ -2767,9 +2790,73 @@ ggsave(paste(results_path, "linked_selection_abs_with_null_200_perms.pdf"), widt
 ## Convergence correlation
 
 ```{r}
+conv_cor_cis <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-10/convergence_correlation_bootstrap_intervals.txt")
 
-plot_pairs_heatmap(conv_cor_cis, as.factor(site_a), as.factor(site_b), med, include_values = F, legend_name = "Convergence corr.", output_name = paste("../results/by-date/", today, "/convergence_correlations.pdf", sep = ""))
+env_dist <- worldclim_sitesdata %>%
+  mutate(id = row_number()) %>%
+  cross_join(., .) %>%
+  filter(site.x > site.y) %>% # Key step: keeps only one version of each pair
+  mutate(dist = abs(bio1.x - bio1.y))
 
+# conv_cor_cis$site_a <- factor(conv_cor_cis$site_a, levels = worldclim_sitesdata$site[hclust(dist(worldclim_sitesdata[,-1]))$order])
+# 
+# conv_cor_cis$site_b <- factor(conv_cor_cis$site_b, levels = worldclim_sitesdata$site[hclust(dist(worldclim_sitesdata[,-1]))$order])
+
+# convergence correaltion heatmap
+plot_pairs_heatmap(
+  conv_cor_cis,
+  as.factor(site_a),
+  as.factor(site_b),
+  med,
+  T,
+  lwr,
+  upr,
+  "cork",
+  width = 8,
+  height = 8,
+  legend_name = "Convergence\ncorrelation",
+  output_name = paste(
+    "../results/by-date/",
+    today,
+    "/convergence_correlations.pdf",
+    sep = ""
+  )
+)
+
+# temp diff heat map
+plot_pairs_heatmap(
+  env_dist,
+  as.factor(site.x),
+  as.factor(site.y),
+  dist,
+  F,
+  scico_palette = "bamako",
+  midpoint = median(env_dist$dist),
+  direction = -1,
+  height = 8,
+  width = 8,
+  legend_name = "|bio1(x) - bio1(y)|",
+  output_name = paste(
+    "../results/by-date/",
+    today,
+    "/pairwise_temp_diff.pdf",
+    sep = ""
+  )
+)
+
+# plotting convergence vs temp difference
+env_dist$site_pair <- paste(env_dist$site.y, "_", env_dist$site.x, sep = "")
+conv_cor_cis$site_pair <- paste(conv_cor_cis$site_a, "_", conv_cor_cis$site_b, sep = "")
+
+conv_cor_vs_env_dist <- merge(conv_cor_cis, env_dist, by = "site_pair")
+
+ggplot(conv_cor_vs_env_dist, aes(x = dist, y = med)) +
+  geom_smooth(method = "lm", color = "red") +
+  stat_cor(method = "spearman", label.x.npc = "middle", cor.coef.name = "rho") +
+  geom_point(shape = 16) +
+  labs(x = "|bio1(a) - bio1(b)|", y = "Median convergence correlation\n(1000 bootstrap samples)")
+
+ggsave(paste(results_path, "convergence_correlation_vs_environment_distance.pdf"), width = 6, height = 5)
 ```
 
 ## Conceptual images
