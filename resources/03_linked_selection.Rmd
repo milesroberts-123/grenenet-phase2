@@ -2668,7 +2668,8 @@ for(focal_site in unique(va_ne_blocks$site)){
       #nest() %>%
       mutate(
         # Fit a linear model to each nested group
-        fit = map(data, ~ lm(value ~ a + b - 1, data = .x)),
+        #fit = map(data, ~ lm(value ~ a + b - 1, data = .x)),
+        fit = map(data, ~ lm(value ~ b - 1, data = .x)),
         # Extract tidy coefficients (intercept and slope)
         tidied = map(fit, tidy)
       ) %>%
@@ -2704,19 +2705,20 @@ ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, y
   scale_y_log10() +
   labs(y = "Ne", x = "Site")
 
-ggsave(paste(results_path, "Ne_estimates_200_boots_raw_cov.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "Ne_estimates_200_boots_raw_cov_multicolinearity.pdf"), width = 8, height = 4)
 
 # plot Va(1) estimates, set negative Va(1) estimates to zero
 
-ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lwr, ymax = upr, color = lwr > 0)) +
+ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med/15000, ymin = lwr/15000, ymax = upr/15000, color = lwr > 0)) +
   geom_pointrange() +
   scale_color_manual(
-    name = "Va(1) > 0",
+    name = "VA(1) > 0",
     values = c("TRUE" = "forestgreen", "FALSE" = "grey")
   ) +
-  labs(y = "Va(1)", x = "Site")
+  scale_y_log10() +
+  labs(y = "VA(1)", x = "Site")
 
-ggsave(paste(results_path, "Va1_estimates_200_boots_raw_cov.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "VA1_estimates_200_boots_raw_cov_multicolinearity.pdf"), width = 8, height = 4)
 
 # save bootstrapping results
 write.table(cis, paste(results_path, "cis_Ne_Va1_estimates_200_boots_raw_cov.txt"), row.names = F, quote = F, sep = "\t")
