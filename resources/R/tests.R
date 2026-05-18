@@ -10,13 +10,13 @@ describe("fitfreq", {
     expect_equal(misc$fitfreq(0.5, 0.5, 0), 0.5)
   })
 
-  it("returns the same allele frequency when s=0 regardless of h", {
+  it("returns q when s=0 regardless of h", {
     expect_equal(misc$fitfreq(0.2, 0.0, 0), 0.2)
     expect_equal(misc$fitfreq(0.8, 1.0, 0), 0.8)
   })
 
-  it("returns q when h=0 and s!=0 (dominance coefficient is zero)", {
-    expect_equal(misc$fitfreq(0.3, 0, 0.1), 0.3)
+  it("returns q1>q0 when h=0 and s!=0 (dominance coefficient is zero)", {
+    expect_gt(misc$fitfreq(0.3, 0, 0.1), 0.3)
   })
 
   it("throws error or returns valid value for q in [0,1]", {
@@ -28,11 +28,11 @@ describe("fitfreq", {
 describe("freq_increments", {
   it("correctly computes differences between adjacent generations", {
     pmat <- matrix(c(0.1, 0.2, 0.3, 0.4,
-                     0.2, 0.3, 0.4, 0.5), nrow = 2, ncol = 4)
+                     0.2, 0.3, 0.4, 0.5), nrow = 2, ncol = 4, byrow = T)
     expected <- matrix(c(0.1, 0.1, 0.1,
-                         0.1, 0.1, 0.1), nrow = 2, ncol = 3)
+                         0.1, 0.1, 0.1), nrow = 2, ncol = 3, byrow = T)
     result <- gt$freq_increments(pmat)
-    expect_true(all(result == expected))
+    expect_true(all(abs(result  - expected) < 1e-9))
   })
 
   it("returns a matrix with one fewer column than input", {
@@ -45,20 +45,21 @@ describe("freq_increments", {
   it("handles 1-row matrix", {
     pmat <- matrix(c(0.1, 0.3, 0.6), nrow = 1)
     result <- gt$freq_increments(pmat)
-    expect_equal(result, matrix(c(0.2, 0.3), nrow = 1))
+    expected <- matrix(c(0.2, 0.3), nrow = 1)
+    expect_true(all(abs(result - expected) < 1e-9))
   })
 })
 
-describe("ssh", {
+describe("sum_of_het", {
   it("correctly computes sum of 2*x*(1-x) for a vector", {
-    expect_equal(gt$ssh(c(0.5)), 0.5)
-    expect_equal(gt$ssh(c(0.0, 1.0)), 0)
-    expect_equal(gt$ssh(c(1/3, 1/3, 1/3)), 2 * (1/3) * (2/3) * 3)
+    expect_equal(gt$sum_of_het(c(0.5)), 0.5)
+    expect_equal(gt$sum_of_het(c(0.0, 1.0)), 0)
+    expect_equal(gt$sum_of_het(c(1/3, 1/3, 1/3)), 2 * (1/3) * (2/3) * 3)
   })
 
   it("returns zero for fixation states (all 0 or all 1)", {
-    expect_equal(gt$ssh(c(0, 0, 0)), 0)
-    expect_equal(gt$ssh(c(1, 1, 1)), 0)
+    expect_equal(gt$sum_of_het(c(0, 0, 0)), 0)
+    expect_equal(gt$sum_of_het(c(1, 1, 1)), 0)
   })
 })
 

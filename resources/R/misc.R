@@ -1,6 +1,38 @@
 box::use(dplyr[...])
 box::use(utils[write.table])
 
+#' Little simulation, testing if no-multicollinearity == unbiased estimates
+#'
+#' @param n 
+#' @param a 
+#' @param b 
+#'
+#' @return
+#' @export
+#'
+#' @examples hist(replicate(1000, lm_sim(100, -10, 10)))
+lm_sim <- function(n, a, b) {
+  
+  x1 <- sample(1:100, size = n, replace = T)
+  x2 <- sample(1:100, size = n, replace = T)
+  
+  e <- rnorm(n)
+  
+  y = a*x1 + b*x2 + e
+  
+  coefficients(lm(y ~ x1))[2]
+}
+
+
+#' Append row to table, good for for loops
+#'
+#' @param x 
+#' @param output_name 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 append_table <- function(x, output_name) {
   write.table(x, 
               output_name, 

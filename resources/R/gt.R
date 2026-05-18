@@ -1,6 +1,8 @@
-box::use(reshape2[melt])
-box::use(stringr[str_extract])
-box::use(./plot)
+box::use(reshape2[melt],
+         stringr[str_extract],
+         ./plot,
+         stats[cov],
+         )
 
 #' Calculate linked selection ratios from covariance matrix
 #'
@@ -148,7 +150,7 @@ covmat_from_pmat <- function(pmat, n, correct_for_n = T){
   pdiff <- freq_increments(pmat)
 
   # covariance matrices
-  covmat <- cov(pdiff, use = "pairwise.complete.obs")
+  covmat <- stats::cov(pdiff, use = "pairwise.complete.obs")
 
   # correct for sample size, if needed
   if(correct_for_n){
@@ -263,11 +265,97 @@ gt_n_adjust <- function(pmat, n) {
   return(result)
 }
 
-ssh <- function(x){
+#' Sum of heterozygosity 
+#'
+#' @param x vector of allele frequencies, one per locus
+#'
+#' @return single number
+#' @export
+#'
+#' @examples
+sum_of_het <- function(x){
   sum(2*x*(1-x))
 }
 
-estim_linked_selection_params <- function(pmat, n, mean_ld, weight){
+
+#' Linear interpolation of recombination map 
+#'
+#' @param x0 vector of positions in bp of target loci
+#' @param x1 position in bp, left ref locus
+#' @param y1 postion in cM, left ref locus
+#' @param x2 position in bp, right ref locus
+#' @param y2 position in cM, right ref locus
+#'
+#' @return vector of position in cM of target loci
+#' @export
+#'
+#' @examples
+linear_interpolation <- function(x0, x1, y1, x2, y2) {
+  
+  # check input format
+  if(any(c(x1,y1,x2,y2) < 0)){
+    stop("Ref points should all be positive numbers.")
+  }
+  
+  if(x2 < x1){
+    stop("x2 should be > x1")
+  }
+  
+  if(y2 < y1){
+    stop("y2 should be > y1")
+  }
+  
+  if(any(x0 < x1) | any(x0 > x2)){
+    stop("x0 is outsite of [x1, x2]")
+  }
+  
+  # slope
+  m = (y2 - y1)/(x2 - x1)
+  
+  # solve for intercept
+  b = y1 - m*x1
+  
+  # now interpolate
+  y0 = m*x0 + b
+  
+  return(y0)
+}
+
+
+#' Title
+#'
+#' @param pmat 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+sum_of_het_by_t <- function(pmat){
+  
+  sum_of_het_vec <- apply(pmat, MARGIN = 2, FUN = sum_of_het)
+  
+  sum_of_het_vec <- data.frame(
+    t = names(sum_of_het_vec),
+    sum_of_het = sum_of_het_vec
+  )
+  
+  sum_of_het_vec$t <- gsub("_", "", str_extract(sum_of_het_vec$t, "_.*_"))
+  
+  return(sum_of_het_vec)
+}
+
+#' Compile table of values in windows for Buffalo and Coop 2019 Ne and VA(1) estimation
+#'
+#' @param pmat 
+#' @param n 
+#' @param mean_ld 
+#' @param weight 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+estim_linked_selection_params <- function(pmat, sum_of_het_vec, n, mean_ld, weight){
 
   covmat <- covmat_from_pmat(pmat, n)
 
@@ -279,24 +367,15 @@ estim_linked_selection_params <- function(pmat, n, mean_ld, weight){
 
   X$b <- as.numeric(X$t == X$s)
 
-  ssh_vec <- apply(pmat, MARGIN = 2, FUN = ssh)
+  X <- merge(X, sum_of_het_vec, by = "t")
 
-  ssh_vec <- data.frame(
-    t = names(ssh_vec),
-    ssh = ssh_vec
-  )
+  X <- merge(X, sum_of_het_vec, by.x = "s", by.y = "t", suffixes = c("_s", "_t"))
 
-  ssh_vec$t <- gsub("_", "", str_extract(ssh_vec$t, "_.*_"))
+  sum_of_het_1 <- sum_of_het(pmat[,1])
 
-  X <- merge(X, ssh_vec, by = "t")
+  X$sum_of_het_ratio <- X$sum_of_het_t/sum_of_het_1
 
-  X <- merge(X, ssh_vec, by.x = "s", by.y = "t", suffixes = c("_s", "_t"))
-
-  ssh_1 <- ssh(pmat[,1])
-
-  X$ssh_ratio <- X$ssh_t/ssh_1
-
-  X$a <- X$ssh_ratio*0.5*mean_ld*weight
+  X$a <- X$sum_of_het_ratio*0.5*mean_ld*weight
 
   return(X)
 }

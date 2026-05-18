@@ -17,23 +17,23 @@ gc()
 
 ```{r}
 library(ggplot2)
-
 library(scico)
-
 library(reshape2)
-
 library(tidyverse)
-
 library(vroom)
-
 library(broom)
-
 library(data.table)
+library(testthat)
 
-box::use(./R/gt[...])
-box::use(./R/plot[...])
-box::use(./R/misc[...])
+box::use(./R/gt[...],
+         ./R/plot[...],
+         ./R/misc[...],
+         )
 
+# test modules
+test_file("./R/tests.R")
+
+# file paths
 today <- Sys.Date()
 
 results_path <- paste("../results/by-date/", today, "/", sep = "")
@@ -52,32 +52,6 @@ theme_set(
       strip.text = element_text(colour = "black")
     )
 )
-```
-
-## DEPRECATED: Manhattan plots of sweep statistics in founders
-
-```{r eval=FALSE, include=FALSE}
-
-sweeps <- read.table("../data/sweeps.txt", header = T, sep = "\t")
-
-sweeps <- melt(sweeps, id = c("Contig", "Var_Start", "Var_Stop", "Pos_Start", "Pos_Stop"))
-
-sweeps <- sweeps[!(sweeps$variable %in% c("Theta_W", "Theta_Pi")),]
-
-# manhattan plots of 
-sweeps$variable <- gsub("_", " ", sweeps$variable)
-
-sweeps$Contig <- as.factor(sweeps$Contig)
-
-sweeps$Contig <- revalue(sweeps$Contig, c("0" = "1", "1" = "2", "2" = "3", "3" = "4", "4" = "5"))
-
-ggplot(sweeps, aes(x = (Pos_Start + Pos_Stop)/2, y = value)) +
-  geom_point(shape = 16) +
-  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust=1)) +
-  facet_wrap(variable~Contig, ncol = 5, nrow = 5, scales = "free") +
-  labs(x = "Position", y = "Statistic")
-
-ggsave(paste("../results/", today, "/sweep_stats.pdf", sep = ""), height = 11, width = 13)
 ```
 
 # Prepare allele frequencies
@@ -2480,6 +2454,7 @@ ggplot(recom_map, aes(x = pos, y = cm)) +
 ```
 
 ## calculate average ld or average ld decay by block
+
 ```{r}
 
 # output file
@@ -2496,7 +2471,7 @@ blocks <- blocks %>%
   group_by(window) %>% 
   summarize(chr = unique(X1), start = min(X2), end = max(X2))
 
-for(i in 99:nrow(blocks)){
+for(i in 1:nrow(blocks)){
   print(i)
   print(Sys.time())
   
@@ -2590,43 +2565,48 @@ output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projec
 # loop over genomic blocks
 num_blocks <- length(unique(hapfire$window))
 
-for(b in unique(hapfire$window)){
-  print(paste("Window:", b))
-  hap_block <- hapfire %>% filter(window == b)
-  for(site in unique(sites)){
-    print(paste("Site:", site))
-    hap_site <- hap_block %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
-    gen0_block <- blocks %>% filter(window == b)
+for(site in unique(sites)){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")), window)
+  
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")), window)
     
-    mean_ld_block <- mean_ld_blocks %>% filter(window == b)
+    if(ncol(hap_rep) <= 2){
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
     
-    for(exprep in 1:12){
-      hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
-      if(ncol(hap_rep) <= 1){
-        print("Need at least two increments. Skipping to next replicate...")
-        next
-      }
+    sum_of_het_vec <- sum_of_het_by_t(hap_rep %>% dplyr::select(-window))
+    
+    for(b in unique(hapfire$window)){
+      
+      hap_block <- hap_rep %>% filter(window == b) %>% dplyr::select(-window)
+      
+      gen0_block <- blocks %>% filter(window == b)
+      
+      mean_ld_block <- mean_ld_blocks %>% filter(window == b)
       
       # get sample sizes
-      rep_n <- sample_sizes[(sample_sizes$site_gen_plot %in% colnames(hap_rep)),]
+      rep_n <- sample_sizes[(sample_sizes$site_gen_plot %in% colnames(hap_block)),]
       rep_n <- rbind(c(0, 1e3), rep_n)
       rep_n <- rep_n %>% arrange(site_gen_plot)
       
       # sort names to be in order of generation
-      hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+      hap_block <- hap_block %>% relocate(all_of(sort(colnames(hap_block))))
       
-      hap_rep <- cbind(gen0_block$X3, hap_rep)
+      hap_block <- cbind(gen0_block$X3, hap_block)
       
-      names(hap_rep)[1] = 0
+      names(hap_block)[1] = 0
       
       # create table of linked selection covariates for linear model
-      linked_param_block <- estim_linked_selection_params(hap_rep, rep_n$n, mean_ld_block$mean.R2., 1/num_blocks)
-      
+      linked_param_block <- estim_linked_selection_params(hap_block, sum_of_het_vec, rep_n$n, mean_ld_block$mean.R2., 1/num_blocks)
       
       linked_param_block$site = site
       linked_param_block$rep = exprep
       linked_param_block$block = b
-      linked_param_block$S = nrow(hap_rep)
+      linked_param_block$S = nrow(hap_block)
       
       write.table(linked_param_block, output_linked_params, col.names=!file.exists(output_linked_params), append = T, row.names = F, sep = ",", quote = F)
       
@@ -2645,7 +2625,10 @@ for(b in unique(hapfire$window)){
 
 ```{r}
 
-va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-06/va_ne_points_for_estimation.txt")
+# first attempt, observed multicollinearity between Ne and VA(1)
+#va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-06/va_ne_points_for_estimation.txt")
+
+va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-17/va_ne_points_for_estimation.txt")
 
 # bootstrap estimates
 B = 200 # number of bootstrap samples per site
@@ -2667,14 +2650,16 @@ for(focal_site in unique(va_ne_blocks$site)){
       # group_by(site) %>%
       #nest() %>%
       mutate(
+        #cor_a_b = map(data, ~ cor(.x$a, .x$b)),
         # Fit a linear model to each nested group
-        #fit = map(data, ~ lm(value ~ a + b - 1, data = .x)),
-        fit = map(data, ~ lm(value ~ b - 1, data = .x)),
+        fit = map(data, ~ lm(value ~ a + b - 1, data = .x)),
+        #fit = map(data, ~ lm(value ~ a - 1, data = .x)),
         # Extract tidy coefficients (intercept and slope)
         tidied = map(fit, tidy)
       ) %>%
       # Expand the tidied results into a standard data frame
       unnest(tidied) %>% 
+      #unnest(cor_a_b)
       dplyr::select(c(-data, -fit))
     
     boot_samples <- rbind(boot_samples, boot_sample)
@@ -2691,6 +2676,13 @@ for(focal_site in unique(va_ne_blocks$site)){
   cis <- rbind(cis, ci)
 }
 
+# check for multi-collinearity
+va_ne_blocks %>%
+      group_by(site, rep) %>%
+      summarize(
+        cor_a_b = cor(a, b)
+      )
+        
 # convert to Ne
 avg_boot_ne <- cis %>%
   subset(term == "b") %>%
@@ -2705,20 +2697,22 @@ ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, y
   scale_y_log10() +
   labs(y = "Ne", x = "Site")
 
-ggsave(paste(results_path, "Ne_estimates_200_boots_raw_cov_multicolinearity.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "Ne_estimates_200_boots.pdf"), width = 8, height = 4)
 
 # plot Va(1) estimates, set negative Va(1) estimates to zero
 
-ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med/15000, ymin = lwr/15000, ymax = upr/15000, color = lwr > 0)) +
+cis[(cis < 0)] <- 0 # if upper bound is uninterpretable, just give it a large number
+
+ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lwr, ymax = upr, color = lwr > 0)) +
   geom_pointrange() +
   scale_color_manual(
     name = "VA(1) > 0",
     values = c("TRUE" = "forestgreen", "FALSE" = "grey")
   ) +
-  scale_y_log10() +
+  #scale_y_log10() +
   labs(y = "VA(1)", x = "Site")
 
-ggsave(paste(results_path, "VA1_estimates_200_boots_raw_cov_multicolinearity.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "VA1_estimates_200_boots.pdf"), width = 8, height = 4)
 
 # save bootstrapping results
 write.table(cis, paste(results_path, "cis_Ne_Va1_estimates_200_boots_raw_cov.txt"), row.names = F, quote = F, sep = "\t")
