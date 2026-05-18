@@ -2522,21 +2522,6 @@ Need:
 
 ```{r}
 
-# interpolation of cM position of SNP based on recombination map
-# cm_interpolation <- function(chr, pos, ref){
-#   
-#   ref <- ref %>% filter(CHR == chr)
-#   
-#   # find two closest reference points to query point
-#   
-#   # if query falls before first reference point or last reference point, we can't interpolate
-#   
-#   # interpolate query point position
-#   
-# }
-
-#estim_linked_selection_params(cbind(gen0$X3,p), c(1000,292,416,48,279))
-
 # load mean ld
 mean_ld_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-05/mean_ld_by_block.tsv")
 
@@ -2628,7 +2613,7 @@ for(site in unique(sites)){
 # first attempt, observed multicollinearity between Ne and VA(1)
 #va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-06/va_ne_points_for_estimation.txt")
 
-va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-17/va_ne_points_for_estimation.txt")
+va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-18/va_ne_points_for_estimation.txt")
 
 # bootstrap estimates
 B = 200 # number of bootstrap samples per site
@@ -2715,8 +2700,7 @@ ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lw
 ggsave(paste(results_path, "VA1_estimates_200_boots.pdf"), width = 8, height = 4)
 
 # save bootstrapping results
-write.table(cis, paste(results_path, "cis_Ne_Va1_estimates_200_boots_raw_cov.txt"), row.names = F, quote = F, sep = "\t")
-
+write.table(cis, paste(results_path, "cis_Ne_Va1_estimates_200_boots.txt"), row.names = F, quote = F, sep = "\t")
 ```
 
 ### POINT ESTIMATES
