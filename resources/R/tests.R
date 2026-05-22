@@ -74,9 +74,9 @@ describe("get_upper_tri", {
   it("preserves upper triangle values", {
     mat <- matrix(c(1, 2, 0, 4, 5, 6, 7, 8, 9), nrow = 3)
     result <- plot$get_upper_tri(mat)
-    expect_true(result[1, 3] == 6)
-    expect_true(result[2, 3] == 9)
-    expect_true(result[1, 2] == 2)
+    expect_true(result[1, 2] == 4)
+    expect_true(result[1, 3] == 7)
+    expect_true(result[2, 3] == 8)
   })
 })
 
@@ -90,10 +90,10 @@ describe("gt_from_covmat", {
   })
 
   it("handles symmetric covariance matrix", {
-    covmat <- matrix(c(4, 1, 0.5, 9), nrow = 2)
+    covmat <- matrix(c(4, 1, 1, 9), nrow = 2)
     result <- gt$gt_from_covmat(covmat)
     expect_equal(result$sum_var[2], 13)  # 4+9
-    expect_equal(result$sum_cov[2], 1)
+    expect_equal(result$sum_cov[2], 2)
     expect_equal(result$sum_abs_cov[2], 2)
   })
 })

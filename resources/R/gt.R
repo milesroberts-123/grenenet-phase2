@@ -274,7 +274,7 @@ gt_n_adjust <- function(pmat, n) {
 #'
 #' @examples
 sum_of_het <- function(x){
-  sum(2*x*(1-x))
+  sum(2*x*(1-x), na.rm = T)
 }
 
 
@@ -322,7 +322,7 @@ linear_interpolation <- function(x0, x1, y1, x2, y2) {
 }
 
 
-#' Title
+#' sum of heterozygosity across sites, 
 #'
 #' @param pmat 
 #'
@@ -350,32 +350,94 @@ sum_of_het_by_t <- function(pmat){
 #' @param n 
 #' @param mean_ld 
 #' @param weight 
+#' @param sum_of_het_vec 
+#' @param sum_of_het_1 
 #'
 #' @return
 #' @export
 #'
 #' @examples
-estim_linked_selection_params <- function(pmat, sum_of_het_vec, n, mean_ld, weight){
+estim_linked_selection_params <- function(pmat, sum_of_het_vec, sum_of_het_1, n, mean_ld, weight){
 
   covmat <- covmat_from_pmat(pmat, n)
 
   X <- melt(covmat)
   X <- X[!duplicated(X$value),]
 
-  X$t <- gsub("_", "", str_extract(X$Var1, "_.*_"))
-  X$s <- gsub("_", "", str_extract(X$Var2, "_.*_"))
+  X$t <- gsub("_", "", str_extract(X$Var2, "_.*_"))
+  X$s <- gsub("_", "", str_extract(X$Var1, "_.*_"))
 
   X$b <- as.numeric(X$t == X$s)
 
   X <- merge(X, sum_of_het_vec, by = "t")
 
-  X <- merge(X, sum_of_het_vec, by.x = "s", by.y = "t", suffixes = c("_s", "_t"))
+  X <- merge(X, sum_of_het_vec, by.x = "s", by.y = "t", suffixes = c("_t", "_s"))
 
-  sum_of_het_1 <- sum_of_het(pmat[,1])
+  #sum_of_het_1 <- sum_of_het(pmat[,1])
 
-  X$sum_of_het_ratio <- X$sum_of_het_t/sum_of_het_1
+  #X$sum_of_het_ratio <- X$sum_of_het_s/sum_of_het_1
+  
+  X$sum_of_het_ratio <- X$sum_of_het_s/X$sum_of_het_t
 
   X$a <- X$sum_of_het_ratio*0.5*mean_ld*weight
+  
+  X$mean_ld <- mean_ld
+  
+  X$weight <- weight
 
   return(X)
+}
+
+#' Nc/Ne ratio from selfing rate, Pollak 1987
+#'
+#' @param s 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+ncne <- function(s){
+  stopifnot(is.numeric(s), s >= 0, s <= 1)
+  1/(1-s/2)
+}
+
+fc <- function(p0, pt) {
+  stopifnot(length(p0) == length(pt),
+            all(p0 >= 0),
+            all(pt >= 0),
+            all(p0 <= 1),
+            all(pt <= 1),
+            all(!is.na(p0)),
+            all(!is.na(pt)))
+  
+  L <- length(p0)
+  
+  q0 <- 1 - p0
+  
+  qt <- 1 - pt
+  
+  fsum <- ((p0 - pt) ^ 2) / ((p0 + pt) / 2 - p0 * pt) + ((q0 - qt) ^ 2) /
+    ((q0 + qt) / 2 - q0 * qt)
+  
+  #return(fsum)
+  return(sum(fsum, na.rm = T) / sum(!is.nan(fsum)))
+}
+
+#' Estimate Ne, given estimate of N/Ne from selfing rate, Waples 1989
+#'
+#' @param s_low 
+#' @param s_high 
+#' @param Fc 
+#' @param t 
+#' @param S0 
+#' @param St 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+waples_ne <- function(s_low, s_high, Fc, t, S0, St){
+  r <- c(ncne(s_low), ncne(s_high))
+  ne <- (r*t - 2)/(2*r*(Fc - 1/(2*S0) - 1/(2*St)))
+  return(ne)
 }

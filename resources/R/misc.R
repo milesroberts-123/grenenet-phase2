@@ -24,6 +24,48 @@ lm_sim <- function(n, a, b) {
 }
 
 
+#' Simulation to test how multi-collinearity affects estimates
+#'
+#' @param mu1 
+#' @param mu2 
+#' @param covmat 
+#' @param seed 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+multicol_sim <- function(n, mu1, mu2, b0, b1, b2, covmat){
+  
+  # Generate 1,000 random samples
+  bivariate_data <- mvrnorm(n = n, mu = c(mu1, mu2), Sigma = covmat)
+  
+  # Convert to a data frame for easier use
+  df <- as.data.frame(bivariate_data)
+  colnames(df) <- c("X1", "X2")
+  
+  # make linear model
+  epsilon <- rnorm(n)
+  df$Y <- b0 + b1*df$X1 + b2*df$X2 + epsilon
+  
+  # estimate parameters
+  modf <- melt(coefficients(lm(Y ~ X2 + X1, data = df)))
+  modf$type <- "joint"
+  
+  mod1 <- melt(coefficients(lm(Y ~ X1, data = df)))
+  mod1$type <- "single"
+  
+  mod2 <- melt(coefficients(lm(Y ~ X2, data = df)))
+  mod2$type <- "single"
+  
+  all_mod <- rbind(modf, mod1, mod2)
+  all_mod$term <- gsub("X11", "X1", rownames(all_mod))
+  all_mod$term <- gsub("X21", "X2", all_mod$term)
+  all_mod$term <- gsub(").", ")", all_mod$term)
+  
+  return(all_mod)
+}
+
 #' Append row to table, good for for loops
 #'
 #' @param x 
@@ -43,6 +85,17 @@ append_table <- function(x, output_name) {
               quote = F)
 }
 
+#' Block data by chromosome and position
+#'
+#' @param data 
+#' @param chrom_col_name 
+#' @param pos_col_name 
+#' @param window_size 
+#' @param sep 
+#'
+#' @return
+#' @export
+#'
 create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
 
   sort_check <- data %>%
@@ -61,6 +114,16 @@ create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
   return(blocks)
 }
 
+#' Grab sample sizes for a subset of samples
+#'
+#' @param n_data 
+#' @param sample_col 
+#' @param samples 
+#' @param first_n
+#'
+#' @return
+#' @export
+#'
 grab_sample_sizes <- function(n_data, sample_col, samples, first_n){
     rep_n <- n_data %>% filter({{ sample_col }} %in% samples)
     rep_n <- rbind(c(0, first_n), rep_n)
@@ -68,12 +131,21 @@ grab_sample_sizes <- function(n_data, sample_col, samples, first_n){
     return(rep_n)
 }
 
-fitfreq = function(q, h, s){
+#' Fit allele frequency under selection
+#'
+#' @param q 
+#' @param h 
+#' @param s 
+#'
+#' @return
+#' @export
+#'
+fitfreq <- function(q, h, s){
   p=1-q;
   return((q^2*(1+s) + p*q*(1+h*s))/( 1 + s*q*(2*h*p+q)))
 }
 
-WF.sel=function(N, q, h, s, G){
+WF.sel <- function(N, q, h, s, G){
   t=array(,dim=G)
   t[1] = N*q
   for(i in 2:G){

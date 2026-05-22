@@ -20,8 +20,8 @@ library(ggplot2)
 library(scico)
 library(reshape2)
 library(tidyverse)
-library(vroom)
-library(broom)
+# library(vroom)
+# library(broom)
 library(data.table)
 library(testthat)
 
@@ -183,13 +183,17 @@ gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phas
 #gc()
 hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_switched.csv", data.table = F)
 
-# omit allele frequencies near abosrbing boundaries
+# omit allele frequencies that start near abosrbing boundaries
 non_abosrbing_freq <- (gen0$X3 >= 1/231) & (gen0$X3 <= 1 - 1/231)
 gen0 <- gen0[non_abosrbing_freq,]
 hapfire <- hapfire[non_abosrbing_freq,]
 
 rm(non_abosrbing_freq, sample_sizes_13, sample_sizes_45)
 gc()
+
+# omit allele frequencies that later reach absorbing boundaries
+# it is possible that measurement errors cause frequency to reach 1 and then come back down
+hapfire[(hapfire <= 0) | (hapfire >= 1)] <- NA
 ```
 
 # load site climatic data
@@ -2545,10 +2549,13 @@ sites <- sites[c(-30, -32)]
 
 linked_params <- NULL
 
-output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation.txt", sep = "")
+output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation_no_fix.txt", sep = "")
 
 # loop over genomic blocks
 num_blocks <- length(unique(hapfire$window))
+
+# initial sum of site heterozygosity
+sum_of_het_1 <- sum_of_het(gen0[,"X3"])
 
 for(site in unique(sites)){
   print(paste("Site:", site))
@@ -2574,9 +2581,11 @@ for(site in unique(sites)){
       mean_ld_block <- mean_ld_blocks %>% filter(window == b)
       
       # get sample sizes
-      rep_n <- sample_sizes[(sample_sizes$site_gen_plot %in% colnames(hap_block)),]
-      rep_n <- rbind(c(0, 1e3), rep_n)
-      rep_n <- rep_n %>% arrange(site_gen_plot)
+      # rep_n <- sample_sizes[(sample_sizes$site_gen_plot %in% colnames(hap_block)),]
+      # rep_n <- rbind(c(0, 1e3), rep_n)
+      # rep_n <- rep_n %>% arrange(site_gen_plot)
+      
+      rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_block), 1000)
       
       # sort names to be in order of generation
       hap_block <- hap_block %>% relocate(all_of(sort(colnames(hap_block))))
@@ -2586,14 +2595,16 @@ for(site in unique(sites)){
       names(hap_block)[1] = 0
       
       # create table of linked selection covariates for linear model
-      linked_param_block <- estim_linked_selection_params(hap_block, sum_of_het_vec, rep_n$n, mean_ld_block$mean.R2., 1/num_blocks)
+      linked_param_block <- estim_linked_selection_params(hap_block, sum_of_het_vec, sum_of_het_1, rep_n$n, mean_ld_block$mean.R2., 1/num_blocks)
       
       linked_param_block$site = site
       linked_param_block$rep = exprep
       linked_param_block$block = b
       linked_param_block$S = nrow(hap_block)
       
-      write.table(linked_param_block, output_linked_params, col.names=!file.exists(output_linked_params), append = T, row.names = F, sep = ",", quote = F)
+      #write.table(linked_param_block, output_linked_params, col.names=!file.exists(output_linked_params), append = T, row.names = F, sep = ",", quote = F)
+      
+      append_table(linked_param_block, output_linked_params)
       
       #linked_params <- rbind(linked_params, linked_param_block)
     }
@@ -2613,7 +2624,30 @@ for(site in unique(sites)){
 # first attempt, observed multicollinearity between Ne and VA(1)
 #va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-06/va_ne_points_for_estimation.txt")
 
-va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-18/va_ne_points_for_estimation.txt")
+# second attempt, fixed summation in SSH(s) but not SSH(1)
+#va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-18/va_ne_points_for_estimation.txt")
+
+# third attempt, fixed summation in SSH(1) too
+#va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-20/va_ne_points_for_estimation.txt")
+va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-21/va_ne_points_for_estimation.txt")
+
+# quick plot of ssh over time
+ggplot(va_ne_blocks, aes(x = t, y = sum_of_het_s, color = rep, group = interaction(site, rep, block))) +
+  geom_line(alpha = 0.2) +
+  facet_wrap(.~site) +
+  labs(y = "SSH", x = "t")
+
+ggsave(paste(results_path, "SSH_time_series.pdf", sep = ""), width = 8, height = 8)
+
+# check for multi-collinearity
+va_ne_blocks %>%
+  #filter(s <= 3 & t <= 3) %>%
+      group_by(site) %>%
+      summarize(
+        cor_a_y = cor(a, value),
+        cor_b_y = cor(b, value),
+        cor_a_b = cor(a, b)
+      )
 
 # bootstrap estimates
 B = 200 # number of bootstrap samples per site
@@ -2623,29 +2657,36 @@ alpha = 0.05 # ci width
 cis <- NULL
 
 for(focal_site in unique(va_ne_blocks$site)){
+  
   print(focal_site)
   boot_samples = NULL
+  boot_site <- va_ne_blocks %>%
+    filter(site == focal_site)
+  
   for(b in 1:B){
-    boot_sample <- va_ne_blocks %>%
-      filter(site == focal_site) %>%
+    
+    boot_sample <- boot_site %>%
       nest_by(rep, block) %>% # Group and nest into a list-column
       ungroup() %>%
-      slice_sample(n = W, replace = TRUE) %>%  # Sample groups with replacement
-      #unnest(data) %>% 
-      # group_by(site) %>%
-      #nest() %>%
-      mutate(
-        #cor_a_b = map(data, ~ cor(.x$a, .x$b)),
-        # Fit a linear model to each nested group
-        fit = map(data, ~ lm(value ~ a + b - 1, data = .x)),
-        #fit = map(data, ~ lm(value ~ a - 1, data = .x)),
-        # Extract tidy coefficients (intercept and slope)
-        tidied = map(fit, tidy)
-      ) %>%
-      # Expand the tidied results into a standard data frame
-      unnest(tidied) %>% 
-      #unnest(cor_a_b)
-      dplyr::select(c(-data, -fit))
+      slice_sample(n = W, replace = TRUE) %>%  # Sample blocks with replacement
+      dplyr::select(rep, block, data) %>%
+      unnest(cols = c(data)) %>%
+      lm(value ~ b + a - 1, data = .) %>%
+      tidy()
+    
+    #mutate(
+    #cor_a_b = map(data, ~ cor(.x$a, .x$b)),
+    # Fit a linear model to each nested group
+    #fit = map(data, ~ lm(abs(value) ~ a + b - 1, data = .x)),
+    #fit = map(data, ~ lm(value ~ b + a - 1, data = .x)),
+    #fit = map(data, ~ lm(value ~ a - 1, data = .x)),
+    #fit = map(data, ~ lm(value ~ b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    #tidied = map(fit, tidy)
+    #) %>%
+    # Expand the tidied results into a standard data frame
+    #unnest(tidied) %>% 
+    #dplyr::select(c(-data, -fit))
     
     boot_samples <- rbind(boot_samples, boot_sample)
   }
@@ -2657,17 +2698,11 @@ for(focal_site in unique(va_ne_blocks$site)){
               upr = quantile(estimate, 1-alpha/2))
   
   ci$site <- focal_site
+  ci$rep <- exprep
   
   cis <- rbind(cis, ci)
 }
 
-# check for multi-collinearity
-va_ne_blocks %>%
-      group_by(site, rep) %>%
-      summarize(
-        cor_a_b = cor(a, b)
-      )
-        
 # convert to Ne
 avg_boot_ne <- cis %>%
   subset(term == "b") %>%
@@ -2675,32 +2710,37 @@ avg_boot_ne <- cis %>%
          Ne_med=1/(2*med),
          Ne_lwr=1/(2*upr))
 
-avg_boot_ne$Ne_upr[(avg_boot_ne$Ne_upr < 0)] <- 1e5 # if upper bound is uninterpretable, just give it a large number
+#avg_boot_ne$Ne_upr[(avg_boot_ne$Ne_upr < 0)] <- 1e5 # if upper bound is uninterpretable, just give it a large number
 
 ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, ymax = Ne_upr)) +
   geom_pointrange() +
+  # scale_color_manual(
+  #   name = "Ne upr bound?",
+  #   values = c("TRUE" = "black", "FALSE" = "red")
+  # ) +
   scale_y_log10() +
   labs(y = "Ne", x = "Site")
 
-ggsave(paste(results_path, "Ne_estimates_200_boots.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "Ne_estimates_200_boots.pdf", sep = ""), width = 8, height = 4)
 
 # plot Va(1) estimates, set negative Va(1) estimates to zero
 
-cis[(cis < 0)] <- 0 # if upper bound is uninterpretable, just give it a large number
+#cis[(cis < 0)] <- 0 # if upper bound is uninterpretable, just give it a large number
 
-ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lwr, ymax = upr, color = lwr > 0)) +
+ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lwr, ymax = upr)) +
   geom_pointrange() +
-  scale_color_manual(
-    name = "VA(1) > 0",
-    values = c("TRUE" = "forestgreen", "FALSE" = "grey")
-  ) +
+  geom_hline(yintercept = 0, lty = 2) +
+  # scale_color_manual(
+  #   name = "VA(1) > 0",
+  #   values = c("TRUE" = "forestgreen", "FALSE" = "grey")
+  # ) +
   #scale_y_log10() +
   labs(y = "VA(1)", x = "Site")
 
-ggsave(paste(results_path, "VA1_estimates_200_boots.pdf"), width = 8, height = 4)
+ggsave(paste(results_path, "VA1_estimates_200_boots.pdf", sep = ""), width = 8, height = 4)
 
 # save bootstrapping results
-write.table(cis, paste(results_path, "cis_Ne_Va1_estimates_200_boots.txt"), row.names = F, quote = F, sep = "\t")
+write.table(cis, paste(results_path, "VA1_Ne_estimates_200_boots.txt", sep = ""), row.names = F, quote = F, sep = "\t")
 ```
 
 ### POINT ESTIMATES
@@ -2720,9 +2760,14 @@ va_ne_models <- va_ne_blocks %>%
   unnest(tidied) %>% 
   dplyr::select(c(-data, -fit))
 
-va_ne_site_means <- va_ne_models %>% 
-  group_by(site, term) %>% 
-  summarize(mean_est = mean(estimate), sd_est = sd(estimate), n = n(), se_est = sd_est/n)
+va_ne_site_means <- va_ne_models %>%
+  group_by(site, term) %>%
+  summarize(
+    mean_est = mean(estimate),
+    sd_est = sd(estimate),
+    n = n(),
+    se_est = sd_est / n
+  )
 
 ggplot(va_ne_models, aes(x = estimate)) +
   geom_histogram() +
@@ -2738,6 +2783,22 @@ avg_ne <- va_ne_models %>%
 
 ```
 
+# multicollinearity simulations
+
+```{r}
+
+b0 = 0
+b1 = 13
+b2 = -13
+
+sims <- do.call("rbind", replicate(100, multicol_sim(1000, 10, 10, b0, b1, b2, matrix(c(50,5,5,50), nrow = 2)), simplify = F))
+
+ggplot(sims, aes(x = value, color = term)) +
+  geom_vline(xintercept = c(b0, b1, b2), lty = 2) +
+  geom_density() +
+  facet_wrap(.~type+term, scales = "free")
+```
+
 # Final figures
 
 ## linked selection
@@ -2751,7 +2812,7 @@ avg_ne <- va_ne_models %>%
 gabs_null <- fread("../results/2026-05-02/gt_abs_permutation_intervals_200.txt")
 
 # bootstrapping-based confidence intervals
-gabs_cis <- read.table("../results/2026-04-15/gt_abs_confidence_intervals.txt")
+gabs_cis <- read.table("../results/by-date/2026-04-15/gt_abs_bootstrap_intervals.txt")
 
 gabs_cis <- merge(gabs_cis, worldclim_sitesdata, by = "site")
   
@@ -2765,6 +2826,25 @@ ggplot(gabs_cis, aes(x = gen, y = med, group = site, color = bio1)) +
   labs(x = "Generation", y = expression(G[abs]), color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
 
 ggsave(paste(results_path, "linked_selection_abs_with_null_200_perms.pdf"), width = 6, height = 4)
+```
+
+## Ne and VA(1) estimates
+
+## linked selection vs Ne, VA(1)
+
+Hypothesis: A rapid increase in Gabs(t) should correspond to a high VA(1). Also, a low Ne should correspond to a low repeatability.
+
+```{r}
+
+va_cis <- read.table("../results/by-date/2026-05-19/Va1_estimates_200_boots.txt", header = T)
+
+gabs_cis$term <- "va"
+
+gabs_va <- merge(gabs_cis, va_cis, by = "site")
+
+ggplot(gabs_va %>% filter(gen == 2), aes(x = med.x, y = med.y)) +
+  geom_point()
+
 ```
 
 ## Convergence correlation
