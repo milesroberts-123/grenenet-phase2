@@ -56,7 +56,7 @@ theme_set(
 
 # Prepare allele frequencies
 
-## randomly switch tracked allele frequencies
+## randomly switch tracked allele
 
 ```{r}
 set.seed(1111)
@@ -73,7 +73,7 @@ gen0 <- vroom("/global/scratch/users/milesroberts/tmp/average_seedmix_p0.txt", d
 idx <- sample(c(T,F), size = nrow(gen0), replace = T)
 gen0[idx,"X3"] <- 1 - gen0[idx,"X3"]
 
-write.csv(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", quote = F, row.names = F)
+write.csv(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch.csv", quote = F, row.names = F)
 
 #hapfire_phase1 <- read_csv("/global/scratch/users/milesroberts/tmp/merged_hapFIRE_allele_frequency.csv")
 
@@ -120,7 +120,7 @@ read_csv_chunked(
     process_one_minus(
       idx,
       5000,
-      "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_switched.csv"
+      "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch.csv"
     )
   ),
   chunk_size = 5000
@@ -140,10 +140,54 @@ read_csv_chunked(
 # )
 ```
 
+## remove fixed and lost loci
+
+```{r}
+# initial generation
+# tracked allele randomly switched
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch.csv", data.table = F)
+
+# later gen
+# tracked allele randomly switched
+hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch.csv", data.table = F)
+
+# omit allele frequencies that start near abosrbing boundaries
+non_abosrbing_freq <- (gen0$X3 >= 1/231) & (gen0$X3 <= 1 - 1/231)
+gen0 <- gen0[non_abosrbing_freq,]
+hapfire <- hapfire[non_abosrbing_freq,]
+
+rm(non_abosrbing_freq, sample_sizes_13, sample_sizes_45)
+gc()
+
+# output filtered seedmix frequencies
+write.table(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", row.names = F, sep = ",", quote = F)
+
+# omit allele frequencies that later reach absorbing boundaries
+# it is possible that measurement errors cause frequency to reach 1 and then come back down
+hapfire[(hapfire <= 0) | (hapfire >= 1)] <- NA
+
+print("Percentage of frequencies at loss/fixation:")
+sum(is.na(hapfire))/prod(dim(hapfire)) * 100
+
+# loop over site - replicate combinations
+# remove allele frequency trajectory after first fixation/loss 
+
+# output filtered hapfire frequencies
+write.table(hapfire, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", row.names = F, sep = ",", quote = F)
+```
+
 # load allele frequencies
 
 ```{r}
 #gen0 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", delim = ",", col_names = T)
+
+# initial generation
+# tracked allele randomly switched
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F)
+
+# later gen
+# tracked allele randomly switched
+hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", data.table = F)
 
 # year 1-3 sample sizes
 sample_sizes_13 <- fread("/global/home/users/milesroberts/moi_lab_projects/grenenet-phase2/data/samples_data_fix57.csv")
@@ -166,9 +210,6 @@ sample_sizes <- rbind(sample_sizes_13, sample_sizes_45)
 sample_sizes$n <- 2*sample_sizes$n
 all(sample_sizes$n > 1)
 
-# first generation
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", data.table = F)
-
 #hapfire_phase1 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_hapfire_allele_frequency_rng_switched.csv", delim = ",")
 
 #hapfire_phase1 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_hapfire_allele_frequency_rng_switched.csv", data.table = F)
@@ -181,19 +222,7 @@ gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phas
 
 #rm(hapfire_phase1, hapfire_phase2)
 #gc()
-hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_switched.csv", data.table = F)
 
-# omit allele frequencies that start near abosrbing boundaries
-non_abosrbing_freq <- (gen0$X3 >= 1/231) & (gen0$X3 <= 1 - 1/231)
-gen0 <- gen0[non_abosrbing_freq,]
-hapfire <- hapfire[non_abosrbing_freq,]
-
-rm(non_abosrbing_freq, sample_sizes_13, sample_sizes_45)
-gc()
-
-# omit allele frequencies that later reach absorbing boundaries
-# it is possible that measurement errors cause frequency to reach 1 and then come back down
-hapfire[(hapfire <= 0) | (hapfire >= 1)] <- NA
 ```
 
 # load site climatic data
@@ -740,7 +769,7 @@ output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 unique_blocks <- unique(hapfire$block)
 
-for(b in unique_blocks[209:length(unique_blocks)]){
+for(b in unique_blocks[355:length(unique_blocks)]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -2629,7 +2658,10 @@ for(site in unique(sites)){
 
 # third attempt, fixed summation in SSH(1) too
 #va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-20/va_ne_points_for_estimation.txt")
-va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-21/va_ne_points_for_estimation.txt")
+#va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-21/va_ne_points_for_estimation.txt")
+
+# fourth attempt, fixed sites marked as NA
+va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-21/va_ne_points_for_estimation_no_fix.txt")
 
 # quick plot of ssh over time
 ggplot(va_ne_blocks, aes(x = t, y = sum_of_het_s, color = rep, group = interaction(site, rep, block))) +
@@ -2637,7 +2669,16 @@ ggplot(va_ne_blocks, aes(x = t, y = sum_of_het_s, color = rep, group = interacti
   facet_wrap(.~site) +
   labs(y = "SSH", x = "t")
 
-ggsave(paste(results_path, "SSH_time_series.pdf", sep = ""), width = 8, height = 8)
+ggsave(paste(results_path, "SSH_time_series_no_fix.pdf", sep = ""), width = 8, height = 8)
+
+# plot predictors vs response
+ggplot(subset(va_ne_blocks, a > 1e-5), aes(x = a, y = abs(value), color = as.factor(b))) +
+  geom_point(shape = 16, alpha = 0.2) +
+  facet_wrap(.~site, scales = "free") +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
+  labs(x = "1/2 SSH(s)/SSH(1) A(R,t,s)", y = "Variance/Covariance value", color = "Var/Cov")
+
+ggsave(paste(results_path, "cov_vs_ssh.pdf", sep = ""), width = 10, height = 10)
 
 # check for multi-collinearity
 va_ne_blocks %>%
@@ -2671,6 +2712,8 @@ for(focal_site in unique(va_ne_blocks$site)){
       slice_sample(n = W, replace = TRUE) %>%  # Sample blocks with replacement
       dplyr::select(rep, block, data) %>%
       unnest(cols = c(data)) %>%
+      filter(value > 1e-5) %>%
+      #lm(value ~ b + a - 1, data = .) %>%
       lm(value ~ b + a - 1, data = .) %>%
       tidy()
     
@@ -2698,7 +2741,7 @@ for(focal_site in unique(va_ne_blocks$site)){
               upr = quantile(estimate, 1-alpha/2))
   
   ci$site <- focal_site
-  ci$rep <- exprep
+  #ci$rep <- exprep
   
   cis <- rbind(cis, ci)
 }
@@ -2721,7 +2764,7 @@ ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, y
   scale_y_log10() +
   labs(y = "Ne", x = "Site")
 
-ggsave(paste(results_path, "Ne_estimates_200_boots.pdf", sep = ""), width = 8, height = 4)
+ggsave(paste(results_path, "Ne_estimates_200_boots_separate.pdf", sep = ""), width = 8, height = 4)
 
 # plot Va(1) estimates, set negative Va(1) estimates to zero
 
@@ -2737,15 +2780,16 @@ ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lw
   #scale_y_log10() +
   labs(y = "VA(1)", x = "Site")
 
-ggsave(paste(results_path, "VA1_estimates_200_boots.pdf", sep = ""), width = 8, height = 4)
+ggsave(paste(results_path, "VA1_estimates_200_boots_separate.pdf", sep = ""), width = 8, height = 4)
 
 # save bootstrapping results
-write.table(cis, paste(results_path, "VA1_Ne_estimates_200_boots.txt", sep = ""), row.names = F, quote = F, sep = "\t")
+write.table(cis, paste(results_path, "VA1_Ne_estimates_200_boots_separate.txt", sep = ""), row.names = F, quote = F, sep = "\t")
 ```
 
 ### POINT ESTIMATES
 
 Fit linear model for each site and replicate. Can look at only absolute value of covariances
+
 ```{r}
 va_ne_models <- va_ne_blocks %>%
   group_by(site, rep) %>%
@@ -2852,11 +2896,55 @@ ggplot(gabs_va %>% filter(gen == 2), aes(x = med.x, y = med.y)) +
 ```{r}
 conv_cor_cis <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-10/convergence_correlation_bootstrap_intervals.txt")
 
+conv_cor_cis_copy <- conv_cor_cis
+names(conv_cor_cis_copy)[1:2] <-c("site_b", "site_a")
+
+conv_cor_cis_diagonal <- data.frame(
+  site_a = unique(c(conv_cor_cis$site_a, conv_cor_cis$site_b)),
+  site_b = unique(c(conv_cor_cis$site_a, conv_cor_cis$site_b)),
+  lwr = 1,
+  med = 1,
+  upr = 1
+)
+
+conv_cor_cis_mat <- rbind(conv_cor_cis, conv_cor_cis_copy, conv_cor_cis_diagonal) %>%
+  dplyr::select(site_a, site_b, med) %>%
+  pivot_wider(names_from = site_a, values_from = med) %>%
+  arrange(site_b)  %>%
+  as.data.frame()
+
+rownames(conv_cor_cis_mat) <- conv_cor_cis_mat$site_b
+
+conv_cor_cis_mat <- conv_cor_cis_mat[,-1]
+
+# create environment distance matrix
 env_dist <- worldclim_sitesdata %>%
   mutate(id = row_number()) %>%
   cross_join(., .) %>%
-  filter(site.x > site.y) %>% # Key step: keeps only one version of each pair
+  #filter(site.x > site.y) %>% # Key step: keeps only one version of each pair
   mutate(dist = abs(bio1.x - bio1.y))
+
+env_dist_mat <- env_dist %>%
+  dplyr::select(site.x, site.y, dist) %>%
+  pivot_wider(names_from = site.x, values_from = dist) %>%
+  as.data.frame()
+
+rownames(env_dist_mat) <- env_dist_mat$site.y
+
+env_dist_mat <- env_dist_mat[,-1]
+
+# do mantel test
+# hyp: convergence correlation decays with temperature
+env_dist_bool <- rownames(env_dist_mat) %in% rownames(conv_cor_cis_mat)
+
+env_dist_mat <- env_dist_mat[env_dist_bool,env_dist_bool]
+
+ecodist::mantel(as.dist(env_dist_mat) ~ as.dist(conv_cor_cis_mat))
+
+# what about all the environmental variables?
+worldclim_subset <- worldclim_sitesdata[worldclim_sitesdata$site %in% unique(c(conv_cor_cis$site_a, conv_cor_cis$site_b)),]
+
+ecodist::mantel(as.dist(conv_cor_cis_mat) ~ dist(worldclim_subset[,-1]))
 
 # conv_cor_cis$site_a <- factor(conv_cor_cis$site_a, levels = worldclim_sitesdata$site[hclust(dist(worldclim_sitesdata[,-1]))$order])
 # 
@@ -2912,9 +3000,9 @@ conv_cor_vs_env_dist <- merge(conv_cor_cis, env_dist, by = "site_pair")
 
 ggplot(conv_cor_vs_env_dist, aes(x = dist, y = med)) +
   geom_smooth(method = "lm", color = "red") +
-  stat_cor(method = "spearman", label.x.npc = "middle", cor.coef.name = "rho") +
+  stat_cor(method = "pearson", label.x.npc = "middle") +
   geom_point(shape = 16) +
-  labs(x = "|bio1(a) - bio1(b)|", y = "Median convergence correlation\n(1000 bootstrap samples)")
+  labs(x = "|bio1(site a) - bio1(site b)|", y = "Median convergence correlation\n(1000 bootstrap samples)")
 
 ggsave(paste(results_path, "convergence_correlation_vs_environment_distance.pdf"), width = 6, height = 5)
 ```

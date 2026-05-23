@@ -375,15 +375,17 @@ estim_linked_selection_params <- function(pmat, sum_of_het_vec, sum_of_het_1, n,
 
   #sum_of_het_1 <- sum_of_het(pmat[,1])
 
-  #X$sum_of_het_ratio <- X$sum_of_het_s/sum_of_het_1
+  X$sum_of_het_ratio <- X$sum_of_het_s/sum_of_het_1
   
-  X$sum_of_het_ratio <- X$sum_of_het_s/X$sum_of_het_t
+  #X$sum_of_het_ratio <- X$sum_of_het_s/X$sum_of_het_t
 
   X$a <- X$sum_of_het_ratio*0.5*mean_ld*weight
   
   X$mean_ld <- mean_ld
   
   X$weight <- weight
+  
+  X$sum_of_het_1 <- sum_of_het_1
 
   return(X)
 }

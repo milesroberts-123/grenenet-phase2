@@ -66,6 +66,25 @@ multicol_sim <- function(n, mu1, mu2, b0, b1, b2, covmat){
   return(all_mod)
 }
 
+
+#' Mark entries after first NA as also NA
+#'
+#' @param x 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+rm_na_after_na <- function(x){
+  
+  # get first na in sequence
+  first_na <- min(which(is.na(x)))
+  
+  # mark instances after first na as also na
+  x[first_na:length(x)] <- NA
+} 
+
+
 #' Append row to table, good for for loops
 #'
 #' @param x 
