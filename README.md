@@ -17,4 +17,14 @@ workflow/           Snakemake pipeline including Snakefile, rules, environments,
   scripts/           Standalone helper scripts (Python, SLiM simulations, pyslim utilities)
 ```
 
+## Analyses
 
+### Snakemake workflow
+
+### R notebooks
+
+## Results
+
+### by-date
+
+### by-analysis
