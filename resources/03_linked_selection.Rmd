@@ -10,7 +10,7 @@ output:
 ```{r}
 rm(list = ls())
 gc()
-.rs.restartR()
+.rs.restartR(clean = TRUE)
 ```
 
 # packages
@@ -21,7 +21,7 @@ library(scico)
 library(reshape2)
 library(tidyverse)
 # library(vroom)
-# library(broom)
+library(broom)
 library(data.table)
 library(testthat)
 
@@ -176,7 +176,7 @@ sum(is.na(hapfire))/prod(dim(hapfire)) * 100
 write.table(hapfire, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", row.names = F, sep = ",", quote = F)
 ```
 
-# load allele frequencies
+# load allele frequencies and sample sizes
 
 ```{r}
 #gen0 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", delim = ",", col_names = T)
@@ -209,20 +209,6 @@ sample_sizes <- rbind(sample_sizes_13, sample_sizes_45)
 # number of chromosomes = 2*flower count
 sample_sizes$n <- 2*sample_sizes$n
 all(sample_sizes$n > 1)
-
-#hapfire_phase1 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_hapfire_allele_frequency_rng_switched.csv", delim = ",")
-
-#hapfire_phase1 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_hapfire_allele_frequency_rng_switched.csv", data.table = F)
-
-#hapfire_phase2 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_2_hapfire_allele_frequency_rng_switched.csv", delim = ",")
-
-#hapfire_phase2 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_2_hapfire_allele_frequency_rng_switched.csv", data.table = F)
-
-#hapfire <- cbind(hapfire_phase1, hapfire_phase2)
-
-#rm(hapfire_phase1, hapfire_phase2)
-#gc()
-
 ```
 
 # load site climatic data
@@ -749,7 +735,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # for now, ignore sites that lack reps with contiguous generations
 #sites <- sites[c(1,3,5:17,19:21,23,25:29,31)]
-sites <- sites[-30]
+sites <- sites[c(-30,-32)]
 
 # number of snps per window
 window_size <- 3000
@@ -769,7 +755,7 @@ output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 unique_blocks <- unique(hapfire$block)
 
-for(b in unique_blocks[355:length(unique_blocks)]){
+for(b in unique_blocks[846:length(unique_blocks)]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -825,6 +811,7 @@ for(b in unique_blocks[355:length(unique_blocks)]){
     write.table(mod_res, output_glm, col.names=!file.exists(output_glm), append = T, row.names = F, sep = "\t", quote = F)
     print(Sys.time())
   }
+  gc()
 }
 
 ```
