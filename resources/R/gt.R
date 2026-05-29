@@ -214,6 +214,48 @@ covmat_pop_pair <- function(pmat1, pmat2, pop1, pop2, gen0){
 }
 
 
+#' Pairwise geometric mean
+#'
+#' @param my_vector 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+geom_pairwise_mean <- function(my_vector) {
+  stopifnot(length(my_vector)>1, is.numeric(my_vector))
+  n <- length(my_vector)
+  var_sum <- 0
+  for (i in 1:(n - 1)) {
+    var_a <- my_vector[i]
+    for (j in (i + 1):n) {
+      var_b <- my_vector[j]
+      var_sum <- var_sum + sqrt(var_a*var_b)
+    }
+  }
+  var_mean <- var_sum/((n^2 - n)/2)
+  return(var_mean)
+}
+
+#' Calculate convergence correlation within environment
+#'
+#' @param pdiff frequency increments for all replicates of one site, one time point
+#'
+#' @return
+#' @export
+#'
+#' @examples
+conv_cor_wn_env <- function(pdiff){
+  stopifnot(ncol(pdiff) > 1, nrow(pdiff) > 1)
+  covmat <- cov(pdiff, use = "pairwise.complete.obs")
+  rep_var <- diag(covmat)
+  rep_cov <- covmat[upper.tri(covmat)]
+  numerator <- sum(2*rep_cov, na.rm = T)/(2*length(rep_cov))
+  denominator <- geom_pairwise_mean(rep_var)
+  stopifnot(denominator > 0, abs(numerator) <= denominator)
+  return(c(numerator,denominator))
+}
+
 gt_n_adjust <- function(pmat, n) {
 
   if(ncol(pmat) != length(n)){
@@ -390,6 +432,51 @@ estim_linked_selection_params <- function(pmat, sum_of_het_vec, sum_of_het_1, n,
   return(X)
 }
 
+
+#' Allele frequency trajectory simulation, THE SIGNATURE OF POSITIVE SELECTION ON STANDING GENETIC VARIATION (PRZEWORSKI 2005)
+#'
+#' @param p0 
+#' @param N 
+#' @param s 
+#' @param t 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+simulate_freq_traj <- function(p0, N, s, t){
+ traj <- c(p0)
+ p_i <- p0
+ dt <- 1/(4*N)
+ for(i in 1:t){
+   rng <- runif(1)
+   if(rng > 0.5){
+     p_next <- p_i + 2*N*s*p_i*(1 - p_i)*dt - sqrt(p_i*(1-p_i)*dt)
+   } else{
+     p_next <- p_i + 2*N*s*p_i*(1 - p_i)*dt + sqrt(p_i*(1-p_i)*dt)
+   }
+   traj <- c(traj, p_next)
+   p_i <- p_next
+ }
+ return(traj)
+}
+
+#' Simulate allele frequency estimation, Buffalo and Coop 2020 PNAS
+#'
+#' @param p0 
+#' @param n 
+#' @param d 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+simulate_af_est <- function(p0, n, d){
+  d_est <- rpois(1, d)
+  x_est <- rbinom(1, size = n, prob = p0)
+  p_est <- rbinom(1, size = d, prob = x/n)
+}
+
 #' Nc/Ne ratio from selfing rate, Pollak 1987
 #'
 #' @param s 
@@ -403,6 +490,15 @@ ncne <- function(s){
   1/(1-s/2)
 }
 
+#' Estimating standardized variance from allele frequencies
+#'
+#' @param p0 
+#' @param pt 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 fc <- function(p0, pt) {
   stopifnot(length(p0) == length(pt),
             all(p0 >= 0),
@@ -418,11 +514,13 @@ fc <- function(p0, pt) {
   
   qt <- 1 - pt
   
-  fsum <- ((p0 - pt) ^ 2) / ((p0 + pt) / 2 - p0 * pt) + ((q0 - qt) ^ 2) /
-    ((q0 + qt) / 2 - q0 * qt)
+  fsum_num <- ((p0 - pt) ^ 2) + ((q0 - qt) ^ 2)
   
+  fsum_denom <- ((p0 + pt) / 2 - p0 * pt) + ((q0 + qt) / 2 - q0 * qt)
+  
+  return(mean(fsum_num, na.rm = T)/mean(fsum_denom, na.rm = T))
   #return(fsum)
-  return(sum(fsum, na.rm = T) / sum(!is.nan(fsum)))
+  #return(sum(fsum, na.rm = T) / sum(!is.nan(fsum)))
 }
 
 #' Estimate Ne, given estimate of N/Ne from selfing rate, Waples 1989
@@ -438,8 +536,9 @@ fc <- function(p0, pt) {
 #' @export
 #'
 #' @examples
-waples_ne <- function(s_low, s_high, Fc, t, S0, St){
+waples_ne <- function(s_low, s_high, p0, pt, S0, St, t){
   r <- c(ncne(s_low), ncne(s_high))
+  Fc <- fc(p0, pt)
   ne <- (r*t - 2)/(2*r*(Fc - 1/(2*S0) - 1/(2*St)))
   return(ne)
 }

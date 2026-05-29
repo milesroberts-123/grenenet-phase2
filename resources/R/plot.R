@@ -2,6 +2,8 @@ box::use(ggplot2[...])
 box::use(reshape2[melt])
 box::use(dplyr[...])
 box::use(grDevices[...])
+box::use(scico[...])
+box::use(ggpubr[...])
 
 #' Title
 #'

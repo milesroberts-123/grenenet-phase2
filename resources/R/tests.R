@@ -5,6 +5,20 @@ box::use(./misc)
 box::use(./gt)
 box::use(./plot)
 
+describe("geom_pairwise_mean", {
+  it("rejects vector with 1 element", {
+    expect_error(gt$geom_pairwise_mean(c(10)))
+  })
+  
+  it("rejects non-numeric vector", {
+    expect_error(gt$geom_pairwise_mean(c("hello", "world", "blake")))
+  })
+  
+  it("returns 1 when input is all 1's", {
+    expect_equal(gt$geom_pairwise_mean(rep(1, times = 10)), 1)
+  })
+})
+
 describe("fitfreq", {
   it("returns 0.5 when q=0.5, h=0.5, s=0", {
     expect_equal(misc$fitfreq(0.5, 0.5, 0), 0.5)

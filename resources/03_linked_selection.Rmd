@@ -755,7 +755,7 @@ output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 unique_blocks <- unique(hapfire$block)
 
-for(b in unique_blocks[846:length(unique_blocks)]){
+for(b in unique_blocks[986:length(unique_blocks)]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -831,7 +831,7 @@ glm_results$pvalue_adj <- p.adjust(glm_results$pvalue, method = "fdr")
 
 glm_results$highlight <- "no"
 
-glm_results$highlight[(glm_results$pvalue < 1e-14)] <- "yes"
+glm_results$highlight[(glm_results$pvalue_adj < 1e-14)] <- "yes"
 
 for(site in unique(glm_results$SITE)){
   plot_manhattan_by_site(glm_results, site = site, today = today, height = 7, width = 7, prefix = "glm_manhattan")
@@ -2325,7 +2325,7 @@ write.table(perm_int, paste(results_path, "gt_abs_permutation_intervals_200.txt"
 
 # Convergence correlations
 
-## first generation
+## between environments, first generation
 
 ```{r}
 
@@ -2373,7 +2373,8 @@ for(w in unique(hapfire$window)){
 }
 
 ```
-## bootstrap intervals
+
+### bootstrap intervals
 
 ```{r}
 
@@ -2404,6 +2405,89 @@ conv_cor_cis <- boot_samples %>%
             upr = quantile(conv_cor, 1-alpha/2))
 
 write.table(conv_cor_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/convergence_correlation_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
+```
+
+## convergence correlation within environment
+
+```{r}
+if(!exists("pdiffs")){
+  pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T)
+}
+
+# loop over pairs of sites
+sites <- unique(gsub("_.*", "", colnames(pdiffs)))
+
+conv_cor_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+
+pdiffs$window = conv_cor_blocks$window
+
+output_conv_cor <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/convergence_correlation_first_increment_by_block_wn_env.tsv", sep = "")
+
+for (i in seq_along(sites)) {
+  a <- sites[i]
+  pdiffs_site <- pdiffs %>% 
+    dplyr::select(starts_with(paste(a, "_1_", sep = "")), window)
+  
+  print(paste("Site:", a))
+  
+  if(ncol(pdiffs_site) <= 2){
+    print("Too few increments. Skipping to next site.")
+    next
+  }
+  
+  for(w in unique(pdiffs$window)){
+    #print(paste("Window:", w))
+    pdiffs_block <- pdiffs_site %>% filter(window == w) %>% dplyr::select(-window)
+    gen0_block <- conv_cor_blocks %>% filter(window == w)
+    
+    conv_cor <- conv_cor_wn_env(pdiffs_block)
+    
+    conv_cor_row <- data.frame(
+      window = w,
+      site = a,
+      S = nrow(pdiffs_block),
+      conv_cor_numer = conv_cor[1],
+      conv_cor_denom = conv_cor[2]
+    )
+    
+    append_table(conv_cor_row, output_conv_cor)
+  }
+}
+
+
+```
+
+### bootstrap intervals
+
+```{r}
+
+conv_cor_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-28/convergence_correlation_first_increment_by_block_wn_env.tsv")
+
+W = length(unique(conv_cor_results$window))
+B = 1000
+alpha = 0.05
+
+boot_samples <- NULL
+
+for(b in 1:B){
+  
+boot_sample <- conv_cor_results %>% 
+  group_by(site) %>%
+  slice_sample(n = W, replace = TRUE) %>% 
+  summarize(
+      conv_cor = mean(conv_cor)
+    )
+  
+  boot_samples <- rbind(boot_samples, boot_sample)
+}
+
+conv_cor_cis <- boot_samples %>% 
+  group_by(site_a, site_b) %>% 
+  summarize(lwr = quantile(conv_cor, alpha/2), 
+            med = median(conv_cor),
+            upr = quantile(conv_cor, 1-alpha/2))
+
+write.table(conv_cor_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/convergence_correlation_wn_env_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
 ```
 
 # Estimate linked selection parameters
@@ -2880,6 +2964,8 @@ ggplot(gabs_va %>% filter(gen == 2), aes(x = med.x, y = med.y)) +
 
 ## Convergence correlation
 
+### between environments, first generation
+
 ```{r}
 conv_cor_cis <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-10/convergence_correlation_bootstrap_intervals.txt")
 
@@ -2987,11 +3073,17 @@ conv_cor_vs_env_dist <- merge(conv_cor_cis, env_dist, by = "site_pair")
 
 ggplot(conv_cor_vs_env_dist, aes(x = dist, y = med)) +
   geom_smooth(method = "lm", color = "red") +
-  stat_cor(method = "pearson", label.x.npc = "middle") +
+  #stat_cor(method = "pearson", label.x.npc = "middle") +
   geom_point(shape = 16) +
   labs(x = "|bio1(site a) - bio1(site b)|", y = "Median convergence correlation\n(1000 bootstrap samples)")
 
 ggsave(paste(results_path, "convergence_correlation_vs_environment_distance.pdf"), width = 6, height = 5)
+```
+
+### within environments, first generation
+
+```{r}
+
 ```
 
 ## Conceptual images
