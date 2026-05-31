@@ -1,7 +1,7 @@
 box::use(reshape2[melt],
          stringr[str_extract],
          ./plot,
-         stats[cov],
+         stats[...],
          )
 
 #' Calculate linked selection ratios from covariance matrix
@@ -471,10 +471,13 @@ simulate_freq_traj <- function(p0, N, s, t){
 #' @export
 #'
 #' @examples
-simulate_af_est <- function(p0, n, d){
-  d_est <- rpois(1, d)
-  x_est <- rbinom(1, size = n, prob = p0)
-  p_est <- rbinom(1, size = d, prob = x/n)
+simulate_af_est <- function(p, n, d){
+  d_obs <- rpois(1, d)
+  x_obs <- rbinom(1, size = n, prob = p)
+  r_obs <- rbinom(1, size = d, prob = x_obs/n)
+  p_obs <- r_obs/d_obs
+  if(p_obs > 1){p_obs <- 1}
+  return(p_obs)
 }
 
 #' Nc/Ne ratio from selfing rate, Pollak 1987

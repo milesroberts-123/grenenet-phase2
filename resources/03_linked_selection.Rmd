@@ -2475,14 +2475,14 @@ boot_sample <- conv_cor_results %>%
   group_by(site) %>%
   slice_sample(n = W, replace = TRUE) %>% 
   summarize(
-      conv_cor = mean(conv_cor)
+      conv_cor = weighted.mean(conv_cor_numer, S)/weighted.mean(conv_cor_denom, S)
     )
   
   boot_samples <- rbind(boot_samples, boot_sample)
 }
 
 conv_cor_cis <- boot_samples %>% 
-  group_by(site_a, site_b) %>% 
+  group_by(site) %>% 
   summarize(lwr = quantile(conv_cor, alpha/2), 
             med = median(conv_cor),
             upr = quantile(conv_cor, 1-alpha/2))
@@ -3083,7 +3083,17 @@ ggsave(paste(results_path, "convergence_correlation_vs_environment_distance.pdf"
 ### within environments, first generation
 
 ```{r}
+conv_cor_cis <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-28/convergence_correlation_wn_env_bootstrap_intervals.txt")
 
+ggplot(conv_cor_cis, aes(x = reorder(site, -med), y = med)) +
+  # 1. Draw the range lines first (colored grey)
+  geom_linerange(aes(ymin = lwr, ymax = upr), color = "darkgrey", linewidth = 1) +
+  # 2. Draw the center points on top (colored red)
+  geom_point(color = "red", size = 3, pch = 1) +
+  labs(x = "Site", y = "Convergence correlation\nin 1st increment")
+
+
+ggsave(paste(results_path, "convergence_correlation_wn_env_first_increment.pdf"), width = 6, height = 5)
 ```
 
 ## Conceptual images
@@ -3274,6 +3284,46 @@ ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), he
 ```
 
 
+# Pool-seq power analysis simulations
+```{r}
+a = 0.05
+r = 36
+t = 3
+p0 = 0.1
+N = 1000
+s = 0.1
+n = 250
+d = 10000
+
+all_mod_res <- NULL
+
+for(i in 1:2000){
+  
+  # sampling size variation over time
+  sampling_sizes <- rpois(t+1, n)
+  
+  # allele frequency trajectory
+  true_freq_traj <- reshape2::melt(replicate(r, simulate_freq_traj(p0, N, s, t)))
+  
+  # assuming constant depth across time points
+  obs_freq_traj <- mapply(simulate_af_est, true_freq_traj$value, sampling_sizes, MoreArgs = list(d = d))
+  
+  # create 
+  frame_freq_traj <- true_freq_traj
+  frame_freq_traj$p_obs <- obs_freq_traj
+  frame_freq_traj$n <- sampling_sizes
+  
+  mod <- glm(p_obs ~ Var1, data = frame_freq_traj, weights = n, family = quasibinomial(link = "logit"))
+  
+  mod_res <- tidy(mod) %>% filter(term == "Var1")
+  
+  all_mod_res <- rbind(all_mod_res, mod_res)
+}
+
+all_mod_res$detect = (all_mod_res$p.value < a)
+
+all_mod_res %>% summarize(sum(detect))
+```
 
 # Fst 
 
