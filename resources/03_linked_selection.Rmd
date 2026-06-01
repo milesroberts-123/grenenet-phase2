@@ -156,7 +156,7 @@ non_abosrbing_freq <- (gen0$X3 >= 1/231) & (gen0$X3 <= 1 - 1/231)
 gen0 <- gen0[non_abosrbing_freq,]
 hapfire <- hapfire[non_abosrbing_freq,]
 
-rm(non_abosrbing_freq, sample_sizes_13, sample_sizes_45)
+rm(non_abosrbing_freq)
 gc()
 
 # output filtered seedmix frequencies
@@ -166,14 +166,39 @@ write.table(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-
 # it is possible that measurement errors cause frequency to reach 1 and then come back down
 hapfire[(hapfire <= 0) | (hapfire >= 1)] <- NA
 
-print("Percentage of frequencies at loss/fixation:")
-sum(is.na(hapfire))/prod(dim(hapfire)) * 100
+write.table(hapfire, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", row.names = F, sep = ",", quote = F)
 
 # loop over site - replicate combinations
 # remove allele frequency trajectory after first fixation/loss 
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+hapfire_nas <- NULL
+for(site in unique(sites)){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    
+    if(ncol(hap_rep) > 1){
+      hap_rep_na <- t(apply(hap_rep, MARGIN = 1, rm_na_after_na))
+      colnames(hap_rep_na) <- colnames(hap_rep_na)
+    } else {
+      hap_rep_na <- hap_rep
+    }
+    
+    hapfire_nas <- cbind(hapfire_nas, hap_rep_na)
+  }
+}
+
+# summary of frequencies that were removed
+print("Percentage of frequencies at loss/fixation:")
+sum(is.na(hapfire_nas))/prod(dim(hapfire_nas)) * 100
 
 # output filtered hapfire frequencies
-write.table(hapfire, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", row.names = F, sep = ",", quote = F)
+write.table(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrmtrajectory.csv", row.names = F, sep = ",", quote = F)
 ```
 
 # load allele frequencies and sample sizes
@@ -1980,40 +2005,6 @@ boolean_cov_pdiffs <- (unbiased_cov_pdiffs > cov_pdiffs)
 write.table(cov_pdiffs, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/unbiased_increment_covariances.tsv", row.names = T, col.names = T, quote = F, sep = "\t")
 ```
 
-### plot covariances by site
-
-````{r}
-
-for(site in sites){
-  
-  site_pattern <- paste("^", site, "_", sep = "")
-  
-  melt_cov <- reshape::melt(unbiased_cov_pdiffs[grep(site_pattern, rownames(unbiased_cov_pdiffs)), grep(site_pattern, colnames(unbiased_cov_pdiffs))])
-  
-  melt_cov <- melt_cov[(melt_cov$X1 != melt_cov$X2),]
-  
-  melt_cov <- melt_cov[!duplicated(melt_cov$value),]
-  
-  melt_cov$tmin <- pmin(as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X1), "_.*_"))),as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X2), "_.*_"))))
-  
-  melt_cov$tmax <- pmax(as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X1), "_.*_"))),as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X2), "_.*_"))))
-  
-  melt_cov <- melt_cov[gsub(".*_", "", melt_cov$X1) == gsub(".*_", "", melt_cov$X2),]
-  
-  melt_cov$rep <- gsub(".*_", "", melt_cov$X1)
-  
-  ggplot(melt_cov, aes(x = as.factor(tmax), y = value, group = interaction(tmin, rep), color = as.factor(tmin))) +
-    geom_point() +
-    scale_color_scico_d(palette = "turku", begin = 0.1, end = 0.9) +
-    geom_line() +
-    theme(legend.position = "top") +
-    labs(x = "t", y = "Cov(\u0394ps, \u0394pt)", color = "s", title = paste("Site #", site, sep = ""))
-  
-  ggsave(paste(results_path, "genome_wide_covariances_site_", site, ".pdf", sep = ""), device = cairo_pdf)
-}
-
-````
-
 ### block covariances across all replicates
 
 ```{r}
@@ -2297,7 +2288,6 @@ for (site in sites[26:30]) {
     mean_gt_perm$site = site
     
     write.table(mean_gt_perm, output_gt_perm, col.names=!file.exists(output_gt_perm), append = T, row.names = F, sep = ",", quote = F)
-    #mean_gt_perms = rbind(mean_gt_perms, mean_gt_perm)
   }
 }
 
@@ -2407,7 +2397,9 @@ conv_cor_cis <- boot_samples %>%
 write.table(conv_cor_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/convergence_correlation_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
 ```
 
-## convergence correlation within environment
+## within environment, first generation
+
+This should be nearly identical to the repeatability analysis from the Phase 1 science paper, except here I do a ratio of averages instead of an average of ratios.
 
 ```{r}
 if(!exists("pdiffs")){
@@ -2488,6 +2480,63 @@ conv_cor_cis <- boot_samples %>%
             upr = quantile(conv_cor, 1-alpha/2))
 
 write.table(conv_cor_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/convergence_correlation_wn_env_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
+```
+
+# Replicate G(t)
+
+```{r}
+
+if(!exists("pdiffs")){
+  pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T)
+}
+
+# loop over pairs of sites
+sites <- unique(gsub("_.*", "", colnames(pdiffs)))
+
+rep_gt_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+
+pdiffs$window = rep_gt_blocks$window
+
+output_rep_gt <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env.tsv", sep = "")
+
+n <- length(sites)
+
+for (site in sites) {
+    
+  print(paste("Site:", site))
+  
+    pdiffs_site <- pdiffs %>% 
+      dplyr::select(starts_with(paste(site, "_", sep = "")), window)
+    
+    rep_labels <- gsub(".*_", "", colnames(pdiffs_site))
+    rep_labels <- rep_labels[-length(rep_labels)]
+    
+    time_labels <- gsub("_", "", str_extract(colnames(pdiffs_site), "_.*_"))
+    time_labels <- time_labels[-length(time_labels)]
+ 
+    if( (length(unique(time_labels)) <= 2) | (length(unique(rep_labels)) <= 2)){
+      print("Too few time points or replicates. Skipping to next site...")
+      next
+    }
+    
+    #for(w in unique(pdiffs$window)){
+      #print(paste("Window:", w))
+      #pdiffs_block <- pdiffs_site %>% filter(window == w) %>% dplyr::select(-window)
+      
+      #rep_gt <- replicate_gt(pdiffs_block, rep_labels, time_labels)
+      rep_gt <- replicate_gt(pdiffs_site, rep_labels, time_labels)
+      rep_gt_row <- cbind(
+        data.frame(
+          window = w,
+          site = site,
+          S = nrow(pdiffs_block)
+        ), 
+        rep_gt)
+      
+      append_table(rep_gt_row, output_rep_gt)
+    }
+  }
+
 ```
 
 # Estimate linked selection parameters
@@ -2770,91 +2819,66 @@ cis <- NULL
 
 for(focal_site in unique(va_ne_blocks$site)){
   
-  print(focal_site)
+  print(paste("Site:", focal_site))
   boot_samples = NULL
   boot_site <- va_ne_blocks %>%
     filter(site == focal_site)
   
-  for(b in 1:B){
+  for(focal_rep in 1:12){
+    print(paste("Rep:", focal_rep))
+    boot_rep <- boot_site %>%
+      filter(rep == focal_rep)
     
-    boot_sample <- boot_site %>%
-      nest_by(rep, block) %>% # Group and nest into a list-column
-      ungroup() %>%
-      slice_sample(n = W, replace = TRUE) %>%  # Sample blocks with replacement
-      dplyr::select(rep, block, data) %>%
-      unnest(cols = c(data)) %>%
-      filter(value > 1e-5) %>%
-      #lm(value ~ b + a - 1, data = .) %>%
-      lm(value ~ b + a - 1, data = .) %>%
-      tidy()
+    if(nrow(boot_rep) == 0){
+      print("No replicate found. Skipping to next replicate...")
+      next
+    }
     
-    #mutate(
-    #cor_a_b = map(data, ~ cor(.x$a, .x$b)),
-    # Fit a linear model to each nested group
-    #fit = map(data, ~ lm(abs(value) ~ a + b - 1, data = .x)),
-    #fit = map(data, ~ lm(value ~ b + a - 1, data = .x)),
-    #fit = map(data, ~ lm(value ~ a - 1, data = .x)),
-    #fit = map(data, ~ lm(value ~ b - 1, data = .x)),
-    # Extract tidy coefficients (intercept and slope)
-    #tidied = map(fit, tidy)
-    #) %>%
-    # Expand the tidied results into a standard data frame
-    #unnest(tidied) %>% 
-    #dplyr::select(c(-data, -fit))
+    for(b in 1:B){
+      
+      boot_sample <- boot_rep %>%
+        nest_by(block) %>% # Group and nest into a list-column
+        ungroup() %>%
+        slice_sample(n = W, replace = TRUE) %>%  # Sample blocks with replacement
+        dplyr::select(block, data) %>%
+        unnest(cols = c(data)) %>%
+        #filter(value > 1e-5) %>%
+        #lm(value ~ b + a - 1, data = .) %>%
+        lm(abs(value) ~ b + a - 1, data = .) %>%
+        tidy()
+      
+      #mutate(
+      #cor_a_b = map(data, ~ cor(.x$a, .x$b)),
+      # Fit a linear model to each nested group
+      #fit = map(data, ~ lm(abs(value) ~ a + b - 1, data = .x)),
+      #fit = map(data, ~ lm(value ~ b + a - 1, data = .x)),
+      #fit = map(data, ~ lm(value ~ a - 1, data = .x)),
+      #fit = map(data, ~ lm(value ~ b - 1, data = .x)),
+      # Extract tidy coefficients (intercept and slope)
+      #tidied = map(fit, tidy)
+      #) %>%
+      # Expand the tidied results into a standard data frame
+      #unnest(tidied) %>% 
+      #dplyr::select(c(-data, -fit))
+      
+      boot_samples <- rbind(boot_samples, boot_sample)
+    }
     
-    boot_samples <- rbind(boot_samples, boot_sample)
+    ci <- boot_samples %>% 
+      group_by(term) %>% 
+      summarize(lwr = quantile(estimate, alpha/2), 
+                med = median(estimate), 
+                upr = quantile(estimate, 1-alpha/2))
+    
+    ci$site <- focal_site
+    ci$rep <- focal_rep
+    
+    cis <- rbind(cis, ci)
   }
-  
-  ci <- boot_samples %>% 
-    group_by(term) %>% 
-    summarize(lwr = quantile(estimate, alpha/2), 
-              med = median(estimate), 
-              upr = quantile(estimate, 1-alpha/2))
-  
-  ci$site <- focal_site
-  #ci$rep <- exprep
-  
-  cis <- rbind(cis, ci)
 }
 
-# convert to Ne
-avg_boot_ne <- cis %>%
-  subset(term == "b") %>%
-  mutate(Ne_upr=1/(2*lwr),
-         Ne_med=1/(2*med),
-         Ne_lwr=1/(2*upr))
-
-#avg_boot_ne$Ne_upr[(avg_boot_ne$Ne_upr < 0)] <- 1e5 # if upper bound is uninterpretable, just give it a large number
-
-ggplot(avg_boot_ne, aes(x = reorder(site, -Ne_med), y = Ne_med, ymin = Ne_lwr, ymax = Ne_upr)) +
-  geom_pointrange() +
-  # scale_color_manual(
-  #   name = "Ne upr bound?",
-  #   values = c("TRUE" = "black", "FALSE" = "red")
-  # ) +
-  scale_y_log10() +
-  labs(y = "Ne", x = "Site")
-
-ggsave(paste(results_path, "Ne_estimates_200_boots_separate.pdf", sep = ""), width = 8, height = 4)
-
-# plot Va(1) estimates, set negative Va(1) estimates to zero
-
-#cis[(cis < 0)] <- 0 # if upper bound is uninterpretable, just give it a large number
-
-ggplot(subset(cis, term == "a"), aes(x = reorder(site, -med), y = med, ymin = lwr, ymax = upr)) +
-  geom_pointrange() +
-  geom_hline(yintercept = 0, lty = 2) +
-  # scale_color_manual(
-  #   name = "VA(1) > 0",
-  #   values = c("TRUE" = "forestgreen", "FALSE" = "grey")
-  # ) +
-  #scale_y_log10() +
-  labs(y = "VA(1)", x = "Site")
-
-ggsave(paste(results_path, "VA1_estimates_200_boots_separate.pdf", sep = ""), width = 8, height = 4)
-
 # save bootstrapping results
-write.table(cis, paste(results_path, "VA1_Ne_estimates_200_boots_separate.txt", sep = ""), row.names = F, quote = F, sep = "\t")
+write.table(cis, paste(results_path, "VA1_Ne_estimates_200_boots_abs.txt", sep = ""), row.names = F, quote = F, sep = "\t")
 ```
 
 ### POINT ESTIMATES
@@ -2916,7 +2940,54 @@ ggplot(sims, aes(x = value, color = term)) +
 
 # Final figures
 
-## linked selection
+## covariance
+
+### global summary of covariance
+
+```{r}
+
+
+```
+
+### covariances by site
+
+```{r}
+
+if(!exists(unbiased_cov_pdiffs)){
+  unbiased_cov_pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/unbiased_increment_covariances.tsv")
+}
+
+for(site in sites){
+  
+  site_pattern <- paste("^", site, "_", sep = "")
+  
+  melt_cov <- reshape::melt(unbiased_cov_pdiffs[grep(site_pattern, rownames(unbiased_cov_pdiffs)), grep(site_pattern, colnames(unbiased_cov_pdiffs))])
+  
+  melt_cov <- melt_cov[(melt_cov$X1 != melt_cov$X2),]
+  
+  melt_cov <- melt_cov[!duplicated(melt_cov$value),]
+  
+  melt_cov$tmin <- pmin(as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X1), "_.*_"))),as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X2), "_.*_"))))
+  
+  melt_cov$tmax <- pmax(as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X1), "_.*_"))),as.numeric(gsub("_", "", str_extract(as.character(melt_cov$X2), "_.*_"))))
+  
+  melt_cov <- melt_cov[gsub(".*_", "", melt_cov$X1) == gsub(".*_", "", melt_cov$X2),]
+  
+  melt_cov$rep <- gsub(".*_", "", melt_cov$X1)
+  
+  ggplot(melt_cov, aes(x = as.factor(tmax), y = value, group = interaction(tmin, rep), color = as.factor(tmin))) +
+    geom_point() +
+    scale_color_scico_d(palette = "turku", begin = 0.1, end = 0.9) +
+    geom_line() +
+    theme(legend.position = "top") +
+    labs(x = "t", y = "Cov(\u0394ps, \u0394pt)", color = "s", title = paste("Site #", site, sep = ""))
+  
+  ggsave(paste(results_path, "genome_wide_covariances_site_", site, ".pdf", sep = ""), device = cairo_pdf)
+}
+
+```
+
+## G(t): linked selection
 
 ```{r}
 # permutation-based null distributions
@@ -2943,7 +3014,94 @@ ggplot(gabs_cis, aes(x = gen, y = med, group = site, color = bio1)) +
 ggsave(paste(results_path, "linked_selection_abs_with_null_200_perms.pdf"), width = 6, height = 4)
 ```
 
-## Ne and VA(1) estimates
+## Ne and VA(1)
+
+```{r}
+
+if(!exists(cis)){
+  cis <- fread("../results/by-date/2026-05-31/VA1_Ne_estimates_200_boots_abs.txt")
+}
+
+# convert to Ne
+avg_boot_ne <- cis %>%
+  subset(term == "b") %>%
+  mutate(Ne_upr=1/(2*lwr),
+         Ne_med=1/(2*med),
+         Ne_lwr=1/(2*upr)) %>%
+  group_by(site) %>%
+  filter((Ne_lwr > 1) &
+                (Ne_upr > 1) & 
+                (Ne_med > 1)) %>%
+  mutate(site_Ne_med = median(Ne_med)) %>%
+  arrange(desc(site_Ne_med))
+
+#avg_boot_ne$Ne_upr[(avg_boot_ne$Ne_upr < 0)] <- 1e5 # if upper bound is uninterpretable, just give it a large number
+#dodge_width <- position_jitter(width = 0.1, height = 0)
+avg_boot_ne$site <- factor(avg_boot_ne$site, levels = unique(avg_boot_ne$site))
+
+ggplot(avg_boot_ne,
+       aes(
+         x = as.factor(rep),
+         y = Ne_med,
+         ymin = Ne_lwr,
+         ymax = Ne_upr
+       )) +
+  geom_pointrange(size = 0.1) +
+  geom_hline(aes(yintercept = site_Ne_med), avg_boot_ne, lty = 2, color = "red") +
+  facet_wrap(. ~ site, nrow = 1, scales = "free_x") +
+  scale_y_log10() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) +
+  labs(y = "Ne", x = "Replicate", title = "Site")
+
+ggsave(paste(results_path, "Ne_estimates_200_boots_abs.pdf", sep = ""), width = 11, height = 3)
+
+# plot Va(1) estimates, set negative Va(1) estimates to zero
+
+#cis[(cis < 0)] <- 0 # if upper bound is uninterpretable, just give it a large number
+
+avg_boot_va1 <- cis %>%
+  subset(term == "a") %>%
+  group_by(site) %>%
+  filter((lwr > 0) &
+                (upr > 0) &
+                (med > 0)) %>%
+  mutate(site_VA1_med = median(med)) %>%
+  arrange(desc(site_VA1_med))
+
+avg_boot_va1$site <- factor(avg_boot_va1$site, levels = levels(avg_boot_ne$site))
+
+ggplot(avg_boot_va1,
+       aes(
+         x = as.factor(rep),
+         y = med,
+         ymin = lwr,
+         ymax = upr
+       )) +
+  geom_pointrange(size = 0.1) +
+  geom_hline(aes(yintercept = site_VA1_med),
+             avg_boot_va1,
+             lty = 2,
+             color = "red") +
+  facet_wrap(. ~ site, nrow = 1, scales = "free_x") +
+  scale_y_log10() +
+  theme(
+    axis.title.x = element_blank(),
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    panel.grid.major.x = element_blank()
+  ) +
+  labs(y = "VA(1)", title = "Site")
+
+ggsave(paste(results_path, "VA1_estimates_200_boots_abs.pdf", sep = ""), width = 11, height = 3)
+
+```
 
 ## linked selection vs Ne, VA(1)
 

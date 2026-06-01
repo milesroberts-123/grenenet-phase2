@@ -256,6 +256,65 @@ conv_cor_wn_env <- function(pdiff){
   return(c(numerator,denominator))
 }
 
+
+#' Title
+#'
+#' @param pdiff 
+#' @param rep_labels 
+#' @param time_labels 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+replicate_gt <- function(pdiff, rep_labels, time_labels){
+  stopifnot(ncol(pdiff) > 1, 
+            nrow(pdiff) > 1, 
+            length(rep_labels) == ncol(pdiff), 
+            length(time_labels) == ncol(pdiff),
+            length(unique(rep_labels)) >= 2,
+            length(unique(time_labels)) >= 2)
+  
+  n <- length(unique(rep_labels))
+  
+  rep_eq_bool_mat <- outer(rep_labels, rep_labels, "==")
+  
+  rep_neq_bool_mat <- outer(rep_labels, rep_labels, "!=")
+  
+  time_neq_bool_mat <- outer(time_labels, time_labels, "!=")
+  
+  covmat <- cov(pdiff, use = "pairwise.complete.obs")
+  
+  # total variance within replicates
+  total_var <- sum( covmat[rep_eq_bool_mat] )
+  
+  # for(rep_label in rep_list){
+  #   rep_cov <- covmat[(rep_labels == rep_label),(rep_labels == rep_label)]
+  #   total_var <- total_var + sum(rep_cov, na.rm = T)
+  #   n_var <- n_var + 1
+  # }
+  
+  # total covariance across different replicates AND time points
+  total_covar <- sum( covmat[(rep_neq_bool_mat) & (time_neq_bool_mat)] )
+  n_covar <- (n^2 - n)/2
+  
+  mean_var = total_var/n
+  mean_covar = total_covar/n_covar
+  
+  stopifnot(abs(mean_covar) <= mean_var, mean_var >= 0)
+  
+  return(data.frame(
+    mean_var = mean_var,
+    mean_covar = mean_covar,
+    total_var = total_var,
+    total_covar = total_covar,
+    n_var = n,
+    n_covar = n_covar
+  ))
+
+}
+
+
 gt_n_adjust <- function(pmat, n) {
 
   if(ncol(pmat) != length(n)){

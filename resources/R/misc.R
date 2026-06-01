@@ -69,19 +69,19 @@ multicol_sim <- function(n, mu1, mu2, b0, b1, b2, covmat){
 
 #' Mark entries after first NA as also NA
 #'
-#' @param x 
+#' @param x time series of allele frequences, assumed ordered from 0, 1, 2,..., t
 #'
 #' @return
 #' @export
 #'
 #' @examples
 rm_na_after_na <- function(x){
-  
-  # get first na in sequence
-  first_na <- min(which(is.na(x)))
-  
-  # mark instances after first na as also na
-  x[first_na:length(x)] <- NA
+  y <- which(is.na(x))
+  if(length(y) > 0){
+    first_na <- min(y) # get first na in sequence
+    x[first_na:length(x)] <- NA # mark instances after first na as also na
+  }
+  return(x)
 } 
 
 
