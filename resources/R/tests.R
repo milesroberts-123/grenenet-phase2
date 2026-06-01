@@ -5,6 +5,18 @@ box::use(./misc)
 box::use(./gt)
 box::use(./plot)
 
+describe("replicate_gt", {
+  it("denominator of expectation scales with replicates", {
+    set.seed(123)
+    pdiff <- matrix(runif(30*10, min = -1, max = 1), nrow = 30, ncol = 10)
+    rep_labels <- c(1,1,2,2,3,3,4,4,5,5)
+    time_labels <- c(1,2,1,2,1,2,1,2,1,2)
+    result <- replicate_gt(pdiff, rep_labels, time_labels)
+    expect_equal(result$n_covar, 10)
+    expect_equal(result$n_var, 5)
+  })
+})
+
 describe("geom_pairwise_mean", {
   it("rejects vector with 1 element", {
     expect_error(gt$geom_pairwise_mean(c(10)))

@@ -257,7 +257,7 @@ conv_cor_wn_env <- function(pdiff){
 }
 
 
-#' Title
+#' Replicate G(t): proportion of variance in dp due to shared selection pressure
 #'
 #' @param pdiff 
 #' @param rep_labels 
@@ -275,40 +275,47 @@ replicate_gt <- function(pdiff, rep_labels, time_labels){
             length(unique(rep_labels)) >= 2,
             length(unique(time_labels)) >= 2)
   
-  n <- length(unique(rep_labels))
-  
   rep_eq_bool_mat <- outer(rep_labels, rep_labels, "==")
   
-  rep_neq_bool_mat <- outer(rep_labels, rep_labels, "!=")
-  
-  time_neq_bool_mat <- outer(time_labels, time_labels, "!=")
+  time_eq_bool_mat <- outer(time_labels, time_labels, "==")
   
   covmat <- cov(pdiff, use = "pairwise.complete.obs")
   
   # total variance within replicates
-  total_var <- sum( covmat[rep_eq_bool_mat] )
-  
-  # for(rep_label in rep_list){
-  #   rep_cov <- covmat[(rep_labels == rep_label),(rep_labels == rep_label)]
-  #   total_var <- total_var + sum(rep_cov, na.rm = T)
-  #   n_var <- n_var + 1
-  # }
+  var_only_mat <- covmat[rep_eq_bool_mat]
+  total_var <- sum(var_only_mat)
+  total_var_abs <- sum(abs(var_only_mat))
+  n_var <- length(unique(rep_labels))
   
   # total covariance across different replicates AND time points
-  total_covar <- sum( covmat[(rep_neq_bool_mat) & (time_neq_bool_mat)] )
-  n_covar <- (n^2 - n)/2
+  cov_only_mat <- covmat[(!rep_eq_bool_mat) & (!time_eq_bool_mat)]
+  total_covar <- sum(cov_only_mat)
+  total_covar_abs <- sum(abs(cov_only_mat))
+  n_covar <- (n_var^2 - n_var)/2
   
-  mean_var = total_var/n
+  mean_var = total_var/n_var
+  mean_var_abs = total_var_abs/n_var
   mean_covar = total_covar/n_covar
+  mean_covar_abs = total_covar_abs/n_covar
   
-  stopifnot(abs(mean_covar) <= mean_var, mean_var >= 0)
+  stopifnot(total_covar < sum(abs(covmat)), 
+            total_var < sum(abs(covmat)),
+            total_covar <= total_covar_abs,
+            all.equal(sum(var_only_mat)+sum(covmat[!rep_eq_bool_mat]), 
+                      sum(covmat)),
+            mean_var >= 0, 
+            total_var >= 0)
   
   return(data.frame(
     mean_var = mean_var,
+    mean_var_abs = mean_var_abs,
     mean_covar = mean_covar,
+    mean_covar_abs = mean_covar_abs,
     total_var = total_var,
+    total_var_abs = total_var_abs,
     total_covar = total_covar,
-    n_var = n,
+    total_covar_abs = total_covar_abs,
+    n_var = n_var,
     n_covar = n_covar
   ))
 

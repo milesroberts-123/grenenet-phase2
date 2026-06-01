@@ -2519,12 +2519,13 @@ for (site in sites) {
       next
     }
     
-    #for(w in unique(pdiffs$window)){
+    for(w in unique(pdiffs$window)){
       #print(paste("Window:", w))
-      #pdiffs_block <- pdiffs_site %>% filter(window == w) %>% dplyr::select(-window)
+      pdiffs_block <- pdiffs_site %>% filter(window == w) %>% dplyr::select(-window)
+      #pdiffs_site <- pdiffs_site %>% dplyr::select(-window)
       
-      #rep_gt <- replicate_gt(pdiffs_block, rep_labels, time_labels)
-      rep_gt <- replicate_gt(pdiffs_site, rep_labels, time_labels)
+      rep_gt <- replicate_gt(pdiffs_block, rep_labels, time_labels)
+      #rep_gt <- replicate_gt(pdiffs_site, rep_labels, time_labels)
       rep_gt_row <- cbind(
         data.frame(
           window = w,
@@ -2535,8 +2536,40 @@ for (site in sites) {
       
       append_table(rep_gt_row, output_rep_gt)
     }
-  }
+}
 
+```
+
+## bootstrap intervals
+
+```{r}
+rep_gt_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-31/replicate_gt_by_block_wn_env.tsv")
+
+W = length(unique(rep_gt_results$window))
+B = 1000
+alpha = 0.05
+
+boot_samples <- NULL
+
+for(b in 1:B){
+  
+boot_sample <- rep_gt_results %>% 
+  group_by(site) %>%
+  slice_sample(n = W, replace = TRUE) %>% 
+  summarize(
+      rep_gt = weighted.mean(mean_covar, S)/weighted.mean(mean_var, S)
+    )
+  
+  boot_samples <- rbind(boot_samples, boot_sample)
+}
+
+rep_gt_cis <- boot_samples %>% 
+  group_by(site) %>% 
+  summarize(lwr = quantile(rep_gt, alpha/2), 
+            med = median(rep_gt),
+            upr = quantile(rep_gt, 1-alpha/2))
+
+write.table(rep_gt_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
 ```
 
 # Estimate linked selection parameters
