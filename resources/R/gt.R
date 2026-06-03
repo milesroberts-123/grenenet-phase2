@@ -155,7 +155,7 @@ covmat_from_pmat <- function(pmat, n, correct_for_n = T){
   # correct for sample size, if needed
   if(correct_for_n){
       if(any(n < 2)){
-        stop("Error: n must be >= 2")
+        stop("All n must be >= 2")
       }
       
       if(length(n) != (ncol(covmat) + 1)){
@@ -268,6 +268,7 @@ conv_cor_wn_env <- function(pdiff){
 #'
 #' @examples
 replicate_gt <- function(pdiff, rep_labels, time_labels){
+  
   stopifnot(ncol(pdiff) > 1, 
             nrow(pdiff) > 1, 
             length(rep_labels) == ncol(pdiff), 
@@ -284,42 +285,107 @@ replicate_gt <- function(pdiff, rep_labels, time_labels){
   # total variance within replicates
   var_only_mat <- covmat[rep_eq_bool_mat]
   total_var <- sum(var_only_mat)
+  total_var_pos <- sum(var_only_mat[(var_only_mat > 0)])
   total_var_abs <- sum(abs(var_only_mat))
+  var_trace <- covmat[(rep_eq_bool_mat & time_eq_bool_mat)]
+  total_var_trace <- sum(var_trace)
   n_var <- length(unique(rep_labels))
   
   # total covariance across different replicates AND time points
   cov_only_mat <- covmat[(!rep_eq_bool_mat) & (!time_eq_bool_mat)]
   total_covar <- sum(cov_only_mat)
   total_covar_abs <- sum(abs(cov_only_mat))
+  total_covar_pos <- sum(cov_only_mat[(cov_only_mat > 0)])
   n_covar <- (n_var^2 - n_var)/2
   
   mean_var = total_var/n_var
+  mean_var_pos = total_var_pos/n_var
   mean_var_abs = total_var_abs/n_var
+  mean_var_trace = total_var_trace/n_var
   mean_covar = total_covar/n_covar
+  mean_covar_pos = total_covar_pos/n_covar
   mean_covar_abs = total_covar_abs/n_covar
   
-  stopifnot(total_covar < sum(abs(covmat)), 
+  stopifnot(total_covar <= total_covar_pos,
+            mean_covar <= mean_covar_pos,
+            total_var_pos <= total_var_abs,
+            total_covar < sum(abs(covmat)), 
             total_var < sum(abs(covmat)),
             total_covar <= total_covar_abs,
             all.equal(sum(var_only_mat)+sum(covmat[!rep_eq_bool_mat]), 
                       sum(covmat)),
             mean_var >= 0, 
-            total_var >= 0)
+            total_var >= 0,
+            total_var_trace >= 0,
+            mean_var_trace >= 0)
   
   return(data.frame(
     mean_var = mean_var,
+    mean_var_pos = mean_var_pos,
     mean_var_abs = mean_var_abs,
+    mean_var_trace = mean_var_trace,
     mean_covar = mean_covar,
+    mean_covar_pos = mean_covar_pos,
     mean_covar_abs = mean_covar_abs,
     total_var = total_var,
+    total_var_pos = total_var_pos,
     total_var_abs = total_var_abs,
+    total_var_trace = total_var_trace,
     total_covar = total_covar,
+    total_covar_pos = total_covar_pos,
     total_covar_abs = total_covar_abs,
     n_var = n_var,
     n_covar = n_covar
   ))
 
 }
+
+
+#' Rolling sum of matrix, starting from top left, sum matrix elements in nested squares
+#'
+#' @param mat 
+#'
+#' @return 
+#' @export
+#'
+#' @examples
+rolling_matrix_sum <- function(mat){
+  stopifnot(nrow(mat) == ncol(mat))
+  rolling_sum <- c()
+  for(i in 1:ncol(mat)){
+    rolling_sum <- c(rolling_sum, sum(mat[1:i,1:i]))
+  }
+  stopifnot(length(rolling_sum) == ncol(mat))
+  return(rolling_sum)
+}
+
+#' G statistic, corrected for selection increasing variance in allele frequency change
+#'
+#' @param t 
+#' @param p0 
+#' @param N 
+#' @param pmat 
+#' @param n 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+g_prime <- function(times, pmat, N, n, take_abs = F){
+  stopifnot(all(times >= 0), N > 2)
+  covmat <- covmat_from_pmat(pmat, n)
+  ep0 <- mean(pmat[,1]*(1-pmat[,1]), na.rm = T)
+  if(take_abs){
+    var_roll <- rolling_matrix_sum(abs(covmat))
+  } else {
+    var_roll <- rolling_matrix_sum(covmat)
+  }
+  stopifnot(length(times) == length(var_roll))
+  return(1 - (times*ep0)/(2*N*var_roll))
+}
+
+
+
 
 
 gt_n_adjust <- function(pmat, n) {

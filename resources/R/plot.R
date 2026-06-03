@@ -113,41 +113,92 @@ plot_pairs_heatmap <- function(melted_cormat,
 #' @export
 #'
 #' @examples
-plot_var_cov_matrix <- function(covmat, output_name, include_values = TRUE, low_col = "#65014B", mid_col = "#F5F0F0", high_col = "#0C4C00", legend_name = "Cov(\u0394pi, \u0394pj)" ){
+plot_var_cov_matrix <- function(covmat,
+                                output_name,
+                                include_values = TRUE,
+                                low_col = "#65014B",
+                                mid_col = "#F5F0F0",
+                                high_col = "#0C4C00",
+                                legend_name = "Cov(\u0394pi, \u0394pj)",
+                                include_tick_labels = TRUE,
+                                width = 7,
+                                height = 7,
+                                tile_or_raster = "tile",
+                                discrete_or_continuous = "continuous") {
+  
   upper_tri <- get_upper_tri(covmat)
+  
   melted_cormat <- melt(upper_tri, na.rm = TRUE)
-
-  plot_cor <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value)) +
-    geom_tile(color = "white")
-
-  if (include_values){
-    plot_cor <- plot_cor + geom_text(aes(label = round(value, 4)), size = 5, color = "black")
+  
+  plot_cor <- ggplot(data = melted_cormat, aes(Var2, Var1, fill = value))
+  
+  if (tile_or_raster == "tile") {
+    plot_cor <- plot_cor + geom_tile(color = "white")
+  } else if (tile_or_raster == "raster") {
+    plot_cor <- plot_cor + geom_raster()
+  } else {
+    stop("tile_or_raster invalid.")
   }
-
-plot_cor <- plot_cor + scale_fill_gradient2(
+  
+  if (include_values) {
+    plot_cor <- plot_cor + geom_text(aes(label = round(value, 4)),
+                                     size = 5,
+                                     color = "black")
+  }
+  
+  if (discrete_or_continuous == "discrete") {
+    plot_cor <- plot_cor + scale_fill_scico_d(
+      palette = "bam",
+      begin = 0.1,
+      end = 0.9,
+      name = legend_name
+    )
+  } else if (discrete_or_continuous == "continuous") {
+    plot_cor <- plot_cor + scale_fill_gradient2(
       low = low_col,
       mid = mid_col,
       high = high_col,
       midpoint = 0,
       space = "Lab",
       name = legend_name
-    ) +
-    theme_minimal() +
-    theme(
+    )
+  } else {
+    stop("discrete_or_continuous invalid.")
+  }
+  
+  plot_cor <- plot_cor + theme_minimal()
+  
+  if (include_tick_labels) {
+    plot_cor <- plot_cor + theme(
       axis.text.x = element_text(
         angle = 45,
         vjust = 1,
         hjust = 1
       ),
       text = element_text(size = 14, family = "Helvetica")
-    ) +
-    coord_fixed() +
+    )
+  } else {
+    plot_cor <- plot_cor +
+      theme(axis.text.x = element_blank(), 
+            axis.text.y = element_blank(),
+            panel.background = element_blank(),
+            panel.grid.major = element_blank(),
+            panel.grid.minor = element_blank(),
+            panel.border = element_blank())
+  }
+  
+  # remove axis names
+  plot_cor <- plot_cor + coord_fixed() +
     labs(x = "", y = "")
-
-  ggsave(output_name,
-         plot_cor,
-         bg = "white",
-         device = cairo_pdf)
+  
+  ggsave(
+    output_name,
+    plot_cor,
+    bg = "white",
+    device = cairo_pdf,
+    width = width,
+    height = height
+  )
 }
 
 #' Manhattan plot from snp table of stats

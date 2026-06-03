@@ -5,8 +5,21 @@ box::use(./misc)
 box::use(./gt)
 box::use(./plot)
 
+
+describe("rolling_matrix_sum", {
+  it("starts at top-left square and sums successively larger sub-squares", {
+    set.seed(456)
+    mat <- matrix(runif(10*10, min = -1, max = 1), nrow = 10, ncol = 10)
+    result <- rolling_matrix_sum(mat)
+    expect_equal(result[1], sum(mat[1,1]))
+    expect_equal(result[2], sum(mat[1:2,1:2]))
+    expect_equal(result[3], sum(mat[1:3,1:3]))
+    expect_equal(result[length(result)], sum(mat))
+  })
+})
+
 describe("replicate_gt", {
-  it("denominator of expectation scales with replicates", {
+  it("correctly scales denominator of expectation with replicates", {
     set.seed(123)
     pdiff <- matrix(runif(30*10, min = -1, max = 1), nrow = 30, ncol = 10)
     rep_labels <- c(1,1,2,2,3,3,4,4,5,5)

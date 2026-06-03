@@ -164,6 +164,18 @@ fitfreq <- function(q, h, s){
   return((q^2*(1+s) + p*q*(1+h*s))/( 1 + s*q*(2*h*p+q)))
 }
 
+#' Wright-fisher allele frequency trajectory
+#'
+#' @param N 
+#' @param q 
+#' @param h 
+#' @param s 
+#' @param G 
+#'
+#' @return
+#' @export
+#'
+#' @examples
 WF.sel <- function(N, q, h, s, G){
   t=array(,dim=G)
   t[1] = N*q

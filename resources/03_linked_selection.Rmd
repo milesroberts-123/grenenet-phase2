@@ -234,11 +234,8 @@ sample_sizes <- rbind(sample_sizes_13, sample_sizes_45)
 # number of chromosomes = 2*flower count
 sample_sizes$n <- 2*sample_sizes$n
 all(sample_sizes$n > 1)
-```
 
 # load site climatic data
-
-```{r}
 #load("../data/sites.clim.rda")
 load("../data/worldclim_sitesdata.rda")
 
@@ -780,7 +777,12 @@ output_glm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 unique_blocks <- unique(hapfire$block)
 
-for(b in unique_blocks[986:length(unique_blocks)]){
+# need to wrap function to handle cases when the data for a snp is all NA
+safe_glm <- possibly(.f = function(df) {
+  glm(value ~ t, data = df, weights = n, family = quasibinomial(link = "logit"))
+}, otherwise = NULL)
+
+for(b in unique_blocks[320:418]){
   print(paste("Window:", b))
   hap_block <- hapfire %>% filter(block == b)
   for(site in unique(sites)){
@@ -821,7 +823,8 @@ for(b in unique_blocks[986:length(unique_blocks)]){
         # Fit the model to each nested data frame (.x)
         #model = map(data, ~glm(value ~ t - 1 + offset(rep(fixed_intercept_logit, length(value))), data = .x, weights = n, family = quasibinomial(link = "logit"))),
         # fit glm, but don't force fixed intercept
-        model = map(data, ~glm(value ~ t, data = .x, weights = n, family = quasibinomial(link = "logit"))),
+        #model = map(data, ~glm(value ~ t, data = .x, weights = n, family = quasibinomial(link = "logit"))),
+        model = map(data, ~safe_glm(.x)),
         # Extract coefficients in a tidy format
         tidied = map(model, tidy)
       ) %>%
@@ -2484,6 +2487,8 @@ write.table(conv_cor_cis, paste("/global/scratch/users/milesroberts/moi_lab_proj
 
 # Replicate G(t)
 
+## calculate numerator and denominator in windows
+
 ```{r}
 
 if(!exists("pdiffs")){
@@ -2498,8 +2503,6 @@ rep_gt_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
 pdiffs$window = rep_gt_blocks$window
 
 output_rep_gt <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env.tsv", sep = "")
-
-n <- length(sites)
 
 for (site in sites) {
     
@@ -2543,7 +2546,7 @@ for (site in sites) {
 ## bootstrap intervals
 
 ```{r}
-rep_gt_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-31/replicate_gt_by_block_wn_env.tsv")
+rep_gt_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-01/replicate_gt_by_block_wn_env.tsv")
 
 W = length(unique(rep_gt_results$window))
 B = 1000
@@ -2557,7 +2560,9 @@ boot_sample <- rep_gt_results %>%
   group_by(site) %>%
   slice_sample(n = W, replace = TRUE) %>% 
   summarize(
-      rep_gt = weighted.mean(mean_covar, S)/weighted.mean(mean_var, S)
+      rep_gt = weighted.mean(mean_covar, S)/weighted.mean(mean_var, S),
+      rep_gt_pos = weighted.mean(mean_covar_pos, S)/weighted.mean(mean_var_pos, S),
+      rep_gt_abs = weighted.mean(mean_covar_abs, S)/weighted.mean(mean_var_abs, S),
     )
   
   boot_samples <- rbind(boot_samples, boot_sample)
@@ -2568,6 +2573,18 @@ rep_gt_cis <- boot_samples %>%
   summarize(lwr = quantile(rep_gt, alpha/2), 
             med = median(rep_gt),
             upr = quantile(rep_gt, 1-alpha/2))
+
+rep_gt_abs_cis <- boot_samples %>% 
+  group_by(site) %>% 
+  summarize(lwr = quantile(rep_gt_abs, alpha/2), 
+            med = median(rep_gt_abs),
+            upr = quantile(rep_gt_abs, 1-alpha/2))
+
+rep_gt_pos_cis <- boot_samples %>% 
+  group_by(site) %>% 
+  summarize(lwr = quantile(rep_gt_pos, alpha/2), 
+            med = median(rep_gt_pos),
+            upr = quantile(rep_gt_pos, 1-alpha/2))
 
 write.table(rep_gt_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
 ```
@@ -2958,7 +2975,6 @@ avg_ne <- va_ne_models %>%
 # multicollinearity simulations
 
 ```{r}
-
 b0 = 0
 b1 = 13
 b2 = -13
@@ -2971,6 +2987,93 @@ ggplot(sims, aes(x = value, color = term)) +
   facet_wrap(.~type+term, scales = "free")
 ```
 
+# Estimate G prime
+
+```{r}
+# ne estimates
+ne_estimates <- fread("/global/home/users/milesroberts/moi_lab_projects/grenenet-phase2/results/by-date/2026-05-31/VA1_Ne_estimates_200_boots_abs.txt")
+
+ne_estimates <- ne_estimates %>% 
+  filter(term == "b") %>% mutate(Ne = 1/(2*med)) %>%
+  dplyr::select(site, rep, Ne) %>%
+  as.data.frame()
+
+# make list of sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+sites <- sites[c(-30, -32)]
+
+output_gp <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/gprime_point_esitmates.txt", sep = "")
+
+for(site in as.numeric(unique(sites))){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    
+    if(ncol(hap_rep) <= 2){
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    
+    # sample sizes
+    rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 1000)
+    
+    # combine 
+    hap_rep <- cbind(gen0$X3, hap_rep)
+    names(hap_rep)[1] = 0
+    
+    # grab times
+    times <- as.numeric(gsub("_", "", str_extract(colnames(hap_rep), "_.*_")))
+    times <- times[-1]
+    
+    # grab Ne estimate
+    Ne <- ne_estimates[(ne_estimates$site == site) & (ne_estimates$rep == exprep), "Ne"]
+    
+    if(Ne <= 2){
+      print("Ne should be >= 2 Skipping to next replicate...")
+      next
+    }
+    
+    # estimate G prime
+    gp_result <- data.frame(
+      site = site,
+      rep = exprep,
+      gen = c(0, times),
+      gp_values = c(0, g_prime(times, hap_rep, Ne, rep_n$n, take_abs = T))
+      
+    )
+    
+    append_table(gp_result, output_gp)
+  }
+}
+
+
+
+```
+
+## average g prime across replicates
+
+```{r}
+gp <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-02/gprime_point_esitmates.txt")
+
+gp <- gp %>% 
+  group_by(site, gen) %>% 
+  summarize(gp = median(gp_values))
+
+ggplot(gp, aes(x = gen, y = gp, group = site)) +
+  geom_point() +
+  geom_line() +
+  facet_zoom(ylim = c(0,1), show.area = T) +
+  labs(x = "Generation", y = "Median G' across replicates")
+
+  ggsave(paste(results_path, "median_g_prime_across_reps.pdf", sep = ""), device = cairo_pdf, width = 8, height = 5)
+```
+
 # Final figures
 
 ## covariance
@@ -2978,7 +3081,40 @@ ggplot(sims, aes(x = value, color = term)) +
 ### global summary of covariance
 
 ```{r}
+if(!exists(unbiased_cov_pdiffs)){
+  unbiased_cov_pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/unbiased_increment_covariances.tsv")
+  unbiased_cov_pdiffs_mat <- as.matrix(unbiased_cov_pdiffs[,-1])
+  rownames(unbiased_cov_pdiffs_mat) <- unbiased_cov_pdiffs$V1
+  rm(unbiased_cov_pdiffs)
+}
 
+# plot the entire matrix as a heatmap
+plot_var_cov_matrix(cov2cor(unbiased_cov_pdiffs_mat), paste(results_path, "unbiased_cor_mat_heatmap.pdf"), include_values = F, include_tick_labels = F, width = 7, height = 7, tile_or_raster = "raster")
+
+plot_var_cov_matrix(sign(unbiased_cov_pdiffs_mat) == 1, paste(results_path, "unbiased_var_cov_mat_heatmap.pdf"), include_values = F, include_tick_labels = F, width = 7, height = 7, tile_or_raster = "raster", discrete_or_continuous = "discrete")
+
+# Try doing a PCA from bias-corrected increment covariances
+cor_matrix   <- cov2cor(unbiased_cov_pdiffs_mat)
+eigen_decomp <- eigen(cor_matrix)
+
+eigenvalues  <- eigen_decomp$values   # Variance of each component
+eigenvectors <- eigen_decomp$vectors  # The projection matrix (V)
+
+# 3. Standardize the raw data
+# This step is critical to match the correlation-based eigenvectors
+scaled_data <- scale(pdiffs, center = TRUE, scale = TRUE)
+
+# 4. Project data into PCA space using matrix multiplication (%*%)
+pca_scores <- scaled_data %*% eigenvectors
+
+# Optional: Add column names for clarity
+colnames(pca_scores) <- paste0("PC", 1:ncol(pca_scores))
+
+# plot pca, randomize plotting order
+ggplot(pca_scores, aes(x = PC1, y = PC2)) +
+  #geom_point()
+geom_density_2d_filled(alpha = 0.8) +
+theme(legend.position = "none") # Removes massive color legend
 
 ```
 
@@ -3290,6 +3426,8 @@ ggsave(paste(results_path, "convergence_correlation_wn_env_first_increment.pdf")
 ## Conceptual images
 
 ```{r}
+
+#### selection, drift, fluctuating selection ####
 gen = 100
 N = 100
 h = 0.5
@@ -3318,7 +3456,34 @@ ggplot(plotdata, aes(x = gen, y = value)) +
   facet_wrap(~variable, labeller = as_labeller(c("selection" = "Directional\nselection", "drift" = "Drift", "fluct" = "Fluctuating\nselection"))) +
   labs(x = "Generation", y = "Allele frequency")
 
-ggsave(paste("../results/", today, "/allele_frequency_changes.pdf", sep = ""), height = 4, width = 8)
+ggsave(paste("../results/by-date/", today, "/allele_frequency_changes.pdf", sep = ""), height = 4, width = 8)
+
+#### Replicate covariances ####
+set.seed(123)
+
+plotdata <- data.frame(
+  gen = 0:gen,
+  selection_1 = c(q0, WF.sel(N, q0, h, rep(s, times = gen), gen)/N),
+  selection_2 = c(q0, WF.sel(N, q0, h, rep(s, times = gen), gen)/N),
+  drift_1 = c(q0, WF.sel(N, q0, h, rep(0, times = gen), gen)/N),
+  drift_2 = c(q0, WF.sel(N, q0, h, rep(0, times = gen), gen)/N)
+)
+
+plotdata <- reshape2::melt(plotdata, id = "gen")
+
+plotdata$mech <- gsub("_.*", "", plotdata$variable)
+plotdata$rep <- gsub(".*_", "", plotdata$variable)
+
+ggplot(plotdata, aes(x = gen, y = value, group = rep)) +
+  geom_abline(slope = 0, intercept = q0, lty = 2) +
+  geom_point() +
+  geom_line(lwd = 1.1) +
+  facet_wrap(~mech, labeller = as_labeller(c("selection" = "Directional\nselection", "drift" = "Drift"))) +
+  labs(x = "Generation", y = "Allele frequency")
+
+ggsave(paste("../results/by-date/", today, "/replicate_covariances.pdf", sep = ""), height = 4, width = 8)
+
+#### Many replicates of drift ####
 
 plotdata2 <- data.frame(
   gen = 0:gen,
@@ -3345,7 +3510,7 @@ ggplot(plotdata2, aes(x = gen, y = value, group = variable)) +
 ggsave(paste("../results/", today, "/neutral_examples.pdf", sep = ""), height = 4, width = 7)
 
 
-# matching allele frequency increments with environmental increments
+#### allele frequency vs environmental increments ####
 dT_vs_dp <- data.frame(
   t = 1:3,
   p = c(0.5, 0.7, 0.75, 0.5, 0.4, 0.55),
@@ -3476,14 +3641,20 @@ ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), he
 
 
 # Pool-seq power analysis simulations
+
 ```{r}
+
 a = 0.05
-r = 36
+r = 64
+#r = 6
 t = 3
-p0 = 0.1
+#t = 60
+p0 = 0.2
 N = 1000
-s = 0.1
-n = 250
+#N = 300
+s = 0.03
+n = 500
+#n = 250
 d = 10000
 
 all_mod_res <- NULL
@@ -3504,16 +3675,34 @@ for(i in 1:2000){
   frame_freq_traj$p_obs <- obs_freq_traj
   frame_freq_traj$n <- sampling_sizes
   
-  mod <- glm(p_obs ~ Var1, data = frame_freq_traj, weights = n, family = quasibinomial(link = "logit"))
+  frame_freq_traj$p_obs[(frame_freq_traj$p_obs >= 1) | (frame_freq_traj$p_obs == 0)] = NA
   
-  mod_res <- tidy(mod) %>% filter(term == "Var1")
+  # mod_glm <- glm(p_obs ~ Var1, data = frame_freq_traj, weights = n, family = quasibinomial(link = "logit"))
+  
+  intercept_vector <- rep(log(p0/(1-p0)), nrow(frame_freq_traj))
+                          
+  mod_lm <- lm(log(p_obs/(1-p_obs)) ~ 0 + Var1 + offset(intercept_vector), data = frame_freq_traj)
+  
+  mod_res <- tidy(mod_lm) %>% filter(term == "Var1")
   
   all_mod_res <- rbind(all_mod_res, mod_res)
 }
 
 all_mod_res$detect = (all_mod_res$p.value < a)
 
-all_mod_res %>% summarize(sum(detect))
+all_mod_res %>% 
+  summarize(sum(detect)) / 2000
+
+# Power of about 0.77 (80 %) with these parameters:
+# a = 0.05
+# r = 32
+# t = 3
+# p0 = 0.2
+# N = 1000
+# s = 0.03
+# n = 1000
+# d = 10000
+
 ```
 
 # Fst 
