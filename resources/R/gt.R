@@ -386,7 +386,28 @@ g_prime <- function(times, pmat, N, n, take_abs = F){
 
 
 
-
+#' Sign permute a block of allele frequencies
+#'
+#' @param pdiff 
+#'
+#' @returns
+#' @export
+#'
+#' @examples
+sign_permute_increments <- function(pdiff){
+  stopifnot(ncol(pdiff)>=2)
+  
+  # draw whether an increment will be flipped or not 
+  sign_permutations <- sample(c(-1,1), size = ncol(pdiff), replace = T)
+  
+  # Create the diagonal matrix from vector
+  P <- diag(sign_permutations)
+  
+  # Perform matrix multiplication to flip all increments at once
+  pdiff_perm <- pdiff %*% P
+  
+  return(pdiff_perm)
+}
 
 gt_n_adjust <- function(pmat, n) {
 
@@ -605,10 +626,10 @@ simulate_freq_traj <- function(p0, N, s, t){
 #' @examples
 simulate_af_est <- function(p, n, d){
   d_obs <- rpois(1, d)
-  x_obs <- rbinom(1, size = n, prob = p)
-  r_obs <- rbinom(1, size = d, prob = x_obs/n)
+  if (d_obs == 0) return(NA_real_)
+  x_obs <- rbinom(1, size = 2*n, prob = p)
+  r_obs <- rbinom(1, size = d_obs, prob = x_obs/(2*n))
   p_obs <- r_obs/d_obs
-  if(p_obs > 1){p_obs <- 1}
   return(p_obs)
 }
 

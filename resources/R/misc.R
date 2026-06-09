@@ -1,6 +1,44 @@
 box::use(dplyr[...])
 box::use(utils[write.table])
 
+
+#' Allele frequency after one generation of selection
+#'
+#' @param q 
+#' @param h 
+#' @param s 
+#'
+#' @return
+#' @export
+#'
+fitfreq <- function(q, h, s){
+  p=1-q;
+  wbar <- (1)*p^2 + (1+h*s)*2*p*q + (1+s)*q^2 
+  return((q^2*(1+s) + p*q*(1+h*s))/wbar)
+}
+
+#' Allele frequency trajectory over time: apply selection, then drift comes from rbinom
+#'
+#' @param N 
+#' @param q 
+#' @param h 
+#' @param s 
+#' @param G 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+WF.sel <- function(N, q, h, s, G){
+  t=array(,dim=G)
+  t[1] = N*q
+  for(i in 2:G){
+    t[i] = rbinom(1,N,fitfreq(t[i-1]/N, h, s[i-1]))
+  }
+  return(t/N)
+}
+
+
 #' Little simulation, testing if no-multicollinearity == unbiased estimates
 #'
 #' @param n 
@@ -150,40 +188,6 @@ grab_sample_sizes <- function(n_data, sample_col, samples, first_n){
     return(rep_n)
 }
 
-#' Fit allele frequency under selection
-#'
-#' @param q 
-#' @param h 
-#' @param s 
-#'
-#' @return
-#' @export
-#'
-fitfreq <- function(q, h, s){
-  p=1-q;
-  return((q^2*(1+s) + p*q*(1+h*s))/( 1 + s*q*(2*h*p+q)))
-}
-
-#' Wright-fisher allele frequency trajectory
-#'
-#' @param N 
-#' @param q 
-#' @param h 
-#' @param s 
-#' @param G 
-#'
-#' @return
-#' @export
-#'
-#' @examples
-WF.sel <- function(N, q, h, s, G){
-  t=array(,dim=G)
-  t[1] = N*q
-  for(i in 2:G){
-    t[i] = rbinom(1,N,fitfreq(t[i-1]/N, h, s[i-1]))
-  }
-  return(t)
-}
 
 check_dp_match_dt <- function(x,y){
   results = NULL

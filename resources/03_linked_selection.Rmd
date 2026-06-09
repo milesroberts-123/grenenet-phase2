@@ -35,7 +35,6 @@ test_file("./R/tests.R")
 
 # file paths
 today <- Sys.Date()
-
 results_path <- paste("../results/by-date/", today, "/", sep = "")
 
 # global ggplot2 theme
@@ -2495,14 +2494,14 @@ if(!exists("pdiffs")){
   pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T)
 }
 
+
+# output file name
+output_rep_gt <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env.tsv", sep = "")
+
 # loop over pairs of sites
 sites <- unique(gsub("_.*", "", colnames(pdiffs)))
-
 rep_gt_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
-
 pdiffs$window = rep_gt_blocks$window
-
-output_rep_gt <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env.tsv", sep = "")
 
 for (site in sites) {
     
@@ -2587,6 +2586,76 @@ rep_gt_pos_cis <- boot_samples %>%
             upr = quantile(rep_gt_pos, 1-alpha/2))
 
 write.table(rep_gt_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
+```
+
+## sign-permuted null distribution
+
+```{r}
+
+if(!exists("pdiffs")){
+  pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T)
+}
+
+# Number of sign permutations
+perms = 1000
+
+# loop over pairs of sites
+sites <- unique(gsub("_.*", "", colnames(pdiffs)))
+rep_gt_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+pdiffs$window = rep_gt_blocks$window
+
+output_rep_gt_perm <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env_permutations.tsv", sep = "")
+
+for (site in sites) {
+  
+  print(paste("Site:", site))
+  
+  pdiffs_site <- pdiffs %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = "")), window)
+  
+  rep_labels <- gsub(".*_", "", colnames(pdiffs_site))
+  rep_labels <- rep_labels[-length(rep_labels)]
+  
+  time_labels <- gsub("_", "", str_extract(colnames(pdiffs_site), "_.*_"))
+  time_labels <- time_labels[-length(time_labels)]
+  
+  if( (length(unique(time_labels)) <= 2) | (length(unique(rep_labels)) <= 2)){
+    print("Too few time points or replicates. Skipping to next site...")
+    next
+  }
+  
+  for(w in unique(pdiffs$window)){
+    pdiffs_block <- pdiffs_site %>% filter(window == w) %>% dplyr::select(-window)
+    
+    for(perm in 1:perms){
+      
+      # draw whether an increment will be flipped or not 
+      sign_permutations <- sample(c(-1,1), size = ncol(pdiffs_block), replace = T)
+      
+      # Create the diagonal matrix from vector
+      P <- diag(sign_permutations)
+      
+      # Perform matrix multiplication to flip all increments at once
+      pdiffs_block_perm <- pdiffs_block %*% P
+      
+      # calculate replicate G(t)
+      rep_gt <- replicate_gt(pdiffs_block_perm, rep_labels, time_labels)
+      
+      # save results
+      rep_gt_row <- cbind(
+        data.frame(
+          window = w,
+          site = site,
+          perm = perm,
+          S = nrow(pdiffs_block)
+        ), 
+        rep_gt)
+      
+      append_table(rep_gt_row, output_rep_gt_perm)
+    }
+  }
+}
+
 ```
 
 # Estimate linked selection parameters
@@ -2831,7 +2900,8 @@ for(site in unique(sites)){
 #va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-21/va_ne_points_for_estimation.txt")
 
 # fourth attempt, fixed sites marked as NA
-va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-21/va_ne_points_for_estimation_no_fix.txt")
+#va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-21/va_ne_points_for_estimation_no_fix.txt")
+va_ne_blocks <- fread("../results/by-date/2026-05-21/va_ne_points_for_estimation_no_fix.txt")
 
 # quick plot of ssh over time
 ggplot(va_ne_blocks, aes(x = t, y = sum_of_het_s, color = rep, group = interaction(site, rep, block))) +
@@ -2842,7 +2912,7 @@ ggplot(va_ne_blocks, aes(x = t, y = sum_of_het_s, color = rep, group = interacti
 ggsave(paste(results_path, "SSH_time_series_no_fix.pdf", sep = ""), width = 8, height = 8)
 
 # plot predictors vs response
-ggplot(subset(va_ne_blocks, a > 1e-5), aes(x = a, y = abs(value), color = as.factor(b))) +
+ggplot(va_ne_blocks, aes(x = a, y = value, color = as.factor(b))) +
   geom_point(shape = 16, alpha = 0.2) +
   facet_wrap(.~site, scales = "free") +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
@@ -2852,13 +2922,20 @@ ggsave(paste(results_path, "cov_vs_ssh.pdf", sep = ""), width = 10, height = 10)
 
 # check for multi-collinearity
 va_ne_blocks %>%
-  #filter(s <= 3 & t <= 3) %>%
       group_by(site) %>%
+  filter(value != 0) %>%
       summarize(
-        cor_a_y = cor(a, value),
-        cor_b_y = cor(b, value),
-        cor_a_b = cor(a, b)
+        cor_a_y = cor(a, abs(value), method = "spearman"),
+        cor_b_y = cor(b, abs(value), method = "spearman"),
+        cor_a_b = cor(a, b, method = "spearman")
       )
+
+ggplot(va_ne_blocks, aes(x = as.factor(b), y = a)) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+  facet_wrap(.~site) +
+  labs(y = "1/2 SSH(s)/SSH(1) A(R,t,s)", x = "Variance/Covariance value")
+
+ggsave(paste(results_path, "ne_va1_multicollinearity_check.pdf", sep = ""), width = 10, height = 10)
 
 # bootstrap estimates
 B = 200 # number of bootstrap samples per site
@@ -2895,6 +2972,8 @@ for(focal_site in unique(va_ne_blocks$site)){
         #filter(value > 1e-5) %>%
         #lm(value ~ b + a - 1, data = .) %>%
         lm(abs(value) ~ b + a - 1, data = .) %>%
+        #lm(abs(value) ~ b + a, data = .) %>%
+        #vif()
         tidy()
       
       #mutate(
@@ -3187,7 +3266,7 @@ ggsave(paste(results_path, "linked_selection_abs_with_null_200_perms.pdf"), widt
 
 ```{r}
 
-if(!exists(cis)){
+if(!exists("cis")){
   cis <- fread("../results/by-date/2026-05-31/VA1_Ne_estimates_200_boots_abs.txt")
 }
 
@@ -3269,6 +3348,16 @@ ggplot(avg_boot_va1,
   labs(y = "VA(1)", title = "Site")
 
 ggsave(paste(results_path, "VA1_estimates_200_boots_abs.pdf", sep = ""), width = 11, height = 3)
+
+# plot correlation between Ne and VA1
+ne_vs_va1 <- merge(avg_boot_ne[,c("site", "rep", "Ne_med")], avg_boot_va1[,c("site", "rep", "med")], by = c("site", "rep"))
+
+ggplot(ne_vs_va1, aes(x = Ne_med, y = med)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  scale_x_log10() +
+  scale_y_log10() +
+  labs(x = "Median Ne estimate", y = "Median VA(1) estimate")
 
 ```
 
@@ -3644,54 +3733,52 @@ ggsave(paste("../results/", today, "/bin2d_greneNet_vs_freqk.pdf", sep = ""), he
 
 ```{r}
 
-a = 0.05
-r = 64
-#r = 6
-t = 3
-#t = 60
-p0 = 0.2
-N = 1000
-#N = 300
-s = 0.03
-n = 500
-#n = 250
-d = 10000
+# Parameters ===========================================
+a = 0.05 # confidence 
+r = 12*4*3 # number of replicates (replicates per location, per treatment)
+t = 60 # number of time points (2 generations per year, for 3 years)
+p0 = 0.125 # minimum minor allele frequency
+N = 100000 # number of diploids in population
+s = 0.001 # selection coefficient
+n = 250 # average pool size in number of individuals
+d = 10000 # high depth, because of reconstruction
+h = 0.5
 
+r*t*n # want to target 100,000 survivors
+
+# Simulation loop ======================================
 all_mod_res <- NULL
 
-for(i in 1:2000){
+num_sims <- 1000
+
+for(i in 1:num_sims){
   
   # sampling size variation over time
-  sampling_sizes <- rpois(t+1, n)
+  sampling_sizes <- 2*rpois(t, n)
   
   # allele frequency trajectory
-  true_freq_traj <- reshape2::melt(replicate(r, simulate_freq_traj(p0, N, s, t)))
+  true_freq_traj <- reshape2::melt(replicate(r, WF.sel(2*N, p0, h, rep(s, times = t), t)))
   
   # assuming constant depth across time points
   obs_freq_traj <- mapply(simulate_af_est, true_freq_traj$value, sampling_sizes, MoreArgs = list(d = d))
   
-  # create 
+  # create dataframe of observations
   frame_freq_traj <- true_freq_traj
   frame_freq_traj$p_obs <- obs_freq_traj
   frame_freq_traj$n <- sampling_sizes
+
+  # fit linear model                     
+  mod_lm <- lm(log(p_obs/(1-p_obs)) ~ Var1, data = frame_freq_traj)
   
-  frame_freq_traj$p_obs[(frame_freq_traj$p_obs >= 1) | (frame_freq_traj$p_obs == 0)] = NA
-  
-  # mod_glm <- glm(p_obs ~ Var1, data = frame_freq_traj, weights = n, family = quasibinomial(link = "logit"))
-  
-  intercept_vector <- rep(log(p0/(1-p0)), nrow(frame_freq_traj))
-                          
-  mod_lm <- lm(log(p_obs/(1-p_obs)) ~ 0 + Var1 + offset(intercept_vector), data = frame_freq_traj)
-  
+  # create dataframe of observations
   mod_res <- tidy(mod_lm) %>% filter(term == "Var1")
-  
   all_mod_res <- rbind(all_mod_res, mod_res)
 }
 
+# calculate power: number of significant slopes detected
 all_mod_res$detect = (all_mod_res$p.value < a)
-
 all_mod_res %>% 
-  summarize(sum(detect)) / 2000
+  summarize(sum(detect)) / num_sims
 
 # Power of about 0.77 (80 %) with these parameters:
 # a = 0.05
@@ -3702,6 +3789,129 @@ all_mod_res %>%
 # s = 0.03
 # n = 1000
 # d = 10000
+
+# Power of about 0.9 with these parameters:
+# a = 0.05
+# r = 144
+# t = 6 # 2 generations per year
+# p0 = 0.1
+# N = 1000
+# s = 0.03
+# n = 200
+# d = 10000
+
+ggplot(true_freq_traj, aes(x = Var1, y = value, group = Var2)) +
+  geom_point() + 
+  geom_line() +
+  geom_hline(yintercept = p0)
+
+true_freq_traj %>% group_by(Var1) %>% summarize(p = mean(value))
+```
+## claude attempt
+
+```{r}
+
+ 
+## ---- core functions --------------------------------------------------------
+ 
+#' Allele frequency after one generation of selection (diploid, q = selected allele).
+#' AA = 1, Aa = 1 + h*s, aa = 1 + s.
+fitfreq <- function(q, h, s) {
+  p   <- 1 - q
+  num <- q^2 * (1 + s) + p * q * (1 + h * s)
+  den <- 1 + s * q * (2 * h * p + q)
+  qp  <- num / den
+  pmin(pmax(qp, 0), 1)
+}
+ 
+#' Wright-Fisher trajectory under selection.
+#' N here is the number of GENE COPIES (chromosomes). Pass 2 * N_diploid.
+#' s, h may be scalars or length-(G-1) vectors. Returns a length-G frequency vector.
+WF.sel <- function(N, q, h, s, G) {
+  if (length(s) == 1) s <- rep(s, G - 1)
+  if (length(h) == 1) h <- rep(h, G - 1)
+  cnt    <- numeric(G)
+  cnt[1] <- round(N * q)                 # start exactly at q (gen 0)
+  for (i in 2:G) {
+    p_sel  <- fitfreq(cnt[i - 1] / N, h[i - 1], s[i - 1])
+    cnt[i] <- rbinom(1, N, p_sel)
+  }
+  cnt / N
+}
+ 
+#' Pool-seq allele-frequency estimate (Buffalo & Coop 2020 PNAS structure).
+#' p = true frequency; n = pool size in INDIVIDUALS (2*n chromosomes sampled);
+#' d = mean read depth. One consistent realized depth d_obs is used throughout.
+simulate_af_est <- function(p, n, d) {
+  d_obs <- rpois(1, d)
+  if (d_obs == 0) return(NA_real_)
+  chroms <- 2 * n                                  # diploid pool
+  x_obs  <- rbinom(1, size = chroms, prob = p)     # allele count in the pool
+  r_obs  <- rbinom(1, size = d_obs, prob = x_obs / chroms)  # reads carrying allele
+  (r_obs + 0.5) / (d_obs + 1)                      # continuity correction -> (0,1)
+}
+ 
+## ---- parameters ------------------------------------------------------------
+ 
+a       <- 0.05          # significance threshold
+r       <- 12 * 4 * 3    # number of replicate cages
+t       <- 6             # number of sampled time points (generations 0 .. t-1)
+p0      <- 0.125         # starting allele frequency
+N_dip   <- 1000          # diploid population size
+s       <- 0.02          # selection coefficient
+h       <- 0.5           # dominance
+n       <- 250           # pool size in INDIVIDUALS per sample
+d       <- 10000         # mean read depth
+one_sided <- FALSE        # directional test (we expect s > 0)
+ 
+num_sims <- 1000
+ 
+## ---- simulation loop -------------------------------------------------------
+ 
+set.seed(1)
+all_mod_res <- vector("list", num_sims)
+ 
+for (i in seq_len(num_sims)) {
+ 
+  ## allele frequency trajectories: t x r matrix -> long (Var1 = gen, Var2 = rep)
+  traj <- replicate(r, WF.sel(2 * N_dip, p0, h, rep(s, t), t))
+  df   <- reshape2::melt(traj)              # columns: Var1, Var2, value
+  names(df)[names(df) == "value"] <- "p_true"
+ 
+  ## per-(generation, replicate) pool sizes; mean n, Poisson variation
+  df$n_pool <- rpois(nrow(df), n)
+ 
+  ## observed pool-seq frequency estimate, one realized depth each
+  df$p_obs <- mapply(simulate_af_est, df$p_true, df$n_pool, MoreArgs = list(d = d))
+ 
+  ## generation clock starts at 0 so intercept corresponds to p0
+  df$gen <- df$Var1 - 1
+ 
+  ## quasibinomial GLM on observed frequency, weighted by realized pool chromosomes.
+  ## (weights approximate the sampling precision of each point.)
+  df_fit <- df[!is.na(df$p_obs), ]
+  mod <- glm(p_obs ~ gen, data = df_fit,
+             weights = 2 * n_pool,
+             family = quasibinomial(link = "logit"))
+ 
+  res <- broom::tidy(mod) %>% filter(term == "gen")
+ 
+  ## one-sided p-value for H1: slope > 0
+  if (one_sided) {
+    res$p.value <- pt(res$statistic, df = mod$df.residual, lower.tail = FALSE)
+  }
+ 
+  all_mod_res[[i]] <- res
+}
+ 
+all_mod_res <- bind_rows(all_mod_res)
+all_mod_res$detect <- all_mod_res$p.value < a
+ 
+power <- mean(all_mod_res$detect)
+cat(sprintf("Estimated power: %.3f\n", power))
+cat(sprintf("Mean slope estimate: %.4f (true per-gen logit signal ~ %.4f)\n",
+            mean(all_mod_res$estimate), s * (h + (1 - 2 * h) * p0)))
+
 
 ```
 
