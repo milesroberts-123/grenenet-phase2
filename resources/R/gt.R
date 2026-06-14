@@ -657,12 +657,10 @@ ncne <- function(s){
 #' @examples
 fc <- function(p0, pt) {
   stopifnot(length(p0) == length(pt),
-            all(p0 >= 0),
-            all(pt >= 0),
-            all(p0 <= 1),
-            all(pt <= 1),
-            all(!is.na(p0)),
-            all(!is.na(pt)))
+            all(p0 >= 0, na.rm = T),
+            all(pt >= 0, na.rm = T),
+            all(p0 <= 1, na.rm = T),
+            all(pt <= 1, na.rm = T))
   
   L <- length(p0)
   
@@ -692,9 +690,10 @@ fc <- function(p0, pt) {
 #' @export
 #'
 #' @examples
-waples_ne <- function(s_low, s_high, p0, pt, S0, St, t){
-  r <- c(ncne(s_low), ncne(s_high))
+waples_ne <- function(r_low, r_high, p0, pt, S0, St, t){
+  #r <- c(ncne(s_low), ncne(s_high))
+  r <- c(r_low, r_high)
   Fc <- fc(p0, pt)
-  ne <- (r*t - 2)/(2*r*(Fc - 1/(2*S0) - 1/(2*St)))
+  ne <- (r*t - 2)/(2*r*(Fc - 1/(S0) - 1/(St)))
   return(ne)
 }

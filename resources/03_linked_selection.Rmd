@@ -1351,9 +1351,10 @@ for (site in sites) {
       gt_perm <- gt_from_covmat(cov_pdiffs_perm)
       
       # save result
-      gt_perm$rep = exprep
+      gt_perm$rep <- exprep
       gt_perms <- rbind(gt_perms, gt_perm)
     }
+    
     # average across replicates to get one permutation sample
     if(is.null(gt_perms)){
       next
@@ -1673,7 +1674,7 @@ rep_gt_pos_cis <- boot_samples %>%
             med = median(rep_gt_pos),
             upr = quantile(rep_gt_pos, 1-alpha/2))
 
-write.table(rep_gt_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
+write.table(rep_gt_abs_cis, paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/replicate_gt_by_block_wn_env_bootstrap_intervals.txt", sep = ""), sep = "\t", quote = F, row.names = F)
 ```
 
 ## sign-permuted null distribution
@@ -1685,7 +1686,7 @@ if(!exists("pdiffs")){
 }
 
 # Number of sign permutations
-perms = 1000
+perms <- 50
 
 # loop over pairs of sites
 sites <- unique(gsub("_.*", "", colnames(pdiffs)))
@@ -1724,7 +1725,7 @@ for (site in sites) {
       P <- diag(sign_permutations)
       
       # Perform matrix multiplication to flip all increments at once
-      pdiffs_block_perm <- pdiffs_block %*% P
+      pdiffs_block_perm <- as.matrix(pdiffs_block) %*% P
       
       # calculate replicate G(t)
       rep_gt <- replicate_gt(pdiffs_block_perm, rep_labels, time_labels)
@@ -1743,6 +1744,16 @@ for (site in sites) {
     }
   }
 }
+
+rep_gt_perm <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-13/replicate_gt_by_block_wn_env_permutations.tsv", sep = ",", header = T)
+
+rep_gt_perm %>% 
+  group_by(site) %>%
+  summarize(
+      rep_gt = weighted.mean(mean_covar, S)/weighted.mean(mean_var, S),
+      rep_gt_pos = weighted.mean(mean_covar_pos, S)/weighted.mean(mean_var_pos, S),
+      rep_gt_abs = weighted.mean(mean_covar_abs, S)/weighted.mean(mean_var_abs, S),
+    )
 
 ```
 
@@ -2154,6 +2165,76 @@ ggplot(sims, aes(x = value, color = term)) +
   facet_wrap(.~type+term, scales = "free")
 ```
 
+# Waples 1989 Ne estimator
+
+```{r}
+# loop over each replicate
+# get two furthest time points, separated by at least 2 generations
+
+# make list of sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+sites <- sites[c(-30)]
+
+output_ne <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/waples_1989_ne_esitmates.txt", sep = "")
+
+for(site in as.numeric(unique(sites))){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    
+    if(ncol(hap_rep) == 0){
+      print("No observations. Skipping replicate...")
+      next
+    }
+    
+    # get last column == last generation
+    pt <- hap_rep[,ncol(hap_rep)]
+    
+    # sample sizes
+    rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 1000)
+    
+    # check for minimum separation to avoid negative Ne estimates
+    rep_time <- as.numeric(gsub("_", "", str_extract(colnames(hap_rep), "_._")))
+    rep_time <- rep_time[length(rep_time)]
+    
+    if(rep_time < 2){
+      print("Too close to t too close to 0. Skipping replicate...")
+      next
+    }
+    
+    # calculate Ne
+    ne_estimate <- waples_ne(1.8, 20, gen0$X3, pt, 1000, rep_n$n[nrow(rep_n)], rep_time)
+    
+    ne_result <- data.frame(
+      site = site,
+      rep = exprep,
+      ne_low = ne_estimate[1],
+      ne_high = ne_estimate[2],
+      t = rep_time
+    )
+    
+    append_table(ne_result, output_ne)
+  }
+}
+
+
+ne_estimates <- read.csv(output_ne)
+
+ne_estimates %>%
+  filter(ne_low > 0) %>%
+  group_by(site) %>%
+  summarize(ne_low = mean(ne_low),
+            ne_high = mean(ne_high),
+            tmin = min(t),
+            tmax = max(t))
+```
+
 # G' (G prime)
 
 ```{r}
@@ -2550,6 +2631,13 @@ ggplot(gabs_cis, aes(x = gen, y = med, group = site, color = bio1)) +
 ggsave(paste(results_path, "linked_selection_abs_with_null_200_perms.pdf"), width = 6, height = 4)
 ```
 
+## Replicate G(t)
+
+```{r}
+
+
+```
+
 ## Ne and VA(1)
 
 ```{r}
@@ -2686,7 +2774,7 @@ ggplot(gabs_va %>% filter(gen == 2), aes(x = med.x, y = med.y)) +
 
 ## Convergence correlation
 
-### between environments, first generation
+### between environments, first generation, TO-DO: CORRELATE WITH CLIMATE
 
 ```{r}
 conv_cor_cis <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-05-10/convergence_correlation_bootstrap_intervals.txt")

@@ -52,7 +52,7 @@ rule all_poolseq:
 
 include: "rules/freqk.smk"
 include: "rules/fastp.smk"
-include: "rules/msprime.smk"
+include: "rules/slim.smk"
 include: "rules/fst_sim.smk"
 #include: "rules/legacy/kmc.smk"
 #include: "rules/legacy/kmc_contam_db.smk"

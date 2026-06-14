@@ -1,18 +1,3 @@
-#rule msprime:
-#    group: "simulation"
-#    output:
-#        "msprime_results/{ID}.trees"
-#    conda:
-#        "../envs/msprime.yaml"
-#    params:
-#        mu=
-#        r=
-#        N=
-#        L=
-#        n=
-#    shell:
-#        "msp ancestry {params.n} -N {params.N} -L {params.L} -r {params.r} | msp mutations {params.mu} > {output}"
-
 rule bcftools_random:
     group: "simulation"
     input:
@@ -88,15 +73,19 @@ rule slim:
     conda:
         "../envs/msprime.yaml"
     params:
-        nmu=lookup(query="ID == '{ID}'", within=gt_params, cols="nmu"),
-        tmu=lookup(query="ID == '{ID}'", within=gt_params, cols="tmu"),
+        # core parameters for wf sims
+        MU=lookup(query="ID == '{ID}'", within=gt_params, cols="MU"),
         R=lookup(query="ID == '{ID}'", within=gt_params, cols="R"),
         N=lookup(query="ID == '{ID}'", within=gt_params, cols="N"),
         L=lookup(query="ID == '{ID}'", within=gt_params, cols="L"),
-        sigma=lookup(query="ID == '{ID}'", within=gt_params, cols="sigma"),
-        alpha=lookup(query="ID == '{ID}'", within=gt_params, cols="alpha"),
-        gamma=lookup(query="ID == '{ID}'", within=gt_params, cols="gamma"),
-        tau=lookup(query="ID == '{ID}'", within=gt_params, cols="tau"),
+        G=lookup(query="ID == '{ID}'", within=gt_params, cols="G"),
+        VA=lookup(query="ID == '{ID}'", within=gt_params, cols="VA"),
+        SIGMA=lookup(query="ID == '{ID}'", within=gt_params, cols="SIGMA"),
+        TAU=lookup(query="ID == '{ID}'", within=gt_params, cols="TAU"),
+        # extra parameters for non-wf sims
+        TMU=lookup(query="ID == '{ID}'", within=gt_params, cols="TMU"),
+        ALPHA=lookup(query="ID == '{ID}'", within=gt_params, cols="ALPHA"),
+        #gamma=lookup(query="ID == '{ID}'", within=gt_params, cols="gamma"),
         germ_rate=lookup(query="ID == '{ID}'", within=gt_params, cols="GERM_RATE"),
         bank_surv=lookup(query="ID == '{ID}'", within=gt_params, cols="BANK_SURV"),
         K=lookup(query="ID == '{ID}'", within=gt_params, cols="K"),
@@ -108,11 +97,18 @@ rule slim:
     shell:
         """
         if [[ "unstruct" == "{params.type}" ]]; then
-            slim -d N={params.N} -d L={params.L} -d nmu={params.nmu} -d tmu={params.tmu} -d R={params.R} -d sigma={params.sigma} -d alpha={params.alpha} -d ID={wildcards.ID} -d gamma={params.gamma} -d tau={params.tau} scripts/gt_expectations.slim
+            slim -d N={params.N} \\
+                -d L={params.L} \\
+                -d MU={params.MU} \\
+                -d R={params.R} \\
+                -d SIGMA={params.SIGMA} \\
+                -d VA={params.VA} \\
+                -d ID={wildcards.ID} \\
+                -d TAU={params.TAU} scripts/gt_expectations.slim
         elif [[ "struct" == "{params.type}" ]]; then
-            slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{input.vcf}"' -d N={params.N} -d sigma={params.sigma} -d tmu={params.tmu} -d R={params.R} -d alpha={params.alpha} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
+            slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{input.vcf}"' -d N={params.N} -d sigma={params.SIGMA} -d tmu={params.TMU} -d R={params.R} -d alpha={params.ALPHA} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
         elif [[ "bank" == "{params.type}" ]]; then
-            slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{input.vcf}"' -d N_VCF=5082 -d SIGMA={params.sigma} -d NMU={params.nmu} -d TMU={params.tmu} -d R={params.R} -d SIM_LENGTH={params.tau} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d ALPHA={params.alpha} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} scripts/gt_expectations_seed_bank.slim 
+            slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{input.vcf}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d TMU={params.TMU} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d ALPHA={params.ALPHA} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} scripts/gt_expectations_seed_bank.slim 
         else
             echo "Invalid simulation type!"
         fi

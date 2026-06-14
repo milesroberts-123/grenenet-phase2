@@ -10,16 +10,32 @@ function (void)write_freqs(string file, object<Subpopulation> subpop,
   writeFile(file, generation + "\t" + line, append=T);
 }
 
+function (float)genic_va(float x, float a) {
+    return 2*sum(a^2 * x * (1-x));
+}
+
+function (float)ssh(float x) {
+  return 2*sum(x * (1-x));
+}
+
+function (float)target_alpha(float va, integer l, integer n){
+  theta_l = l/(0.577215664901532 + log(2*n));
+  return sqrt(va/theta_l);
+}
+
 initialize() {
   defineConstant("seed", getSeed());
   defineConstant("data_dir", 'slim_results');
   defineConstant("neutfreqs_file", data_dir + "/" + ID + "_neutfreqs.tsv");
+ 
+  catn("Tick 1: Target alpha:" + target_alpha(VA, L, N)); 
+  defineConstant("alpha", target_alpha(VA, L, N));
 
-  initializeMutationRate(nmu + tmu);
+  initializeMutationRate(MU);
   initializeMutationType("m1", 0.5, "s", "if (runif(1) < 0.5) -alpha; else alpha;");
   initializeMutationType("m2", 0.5, "f", 0.0);
-  initializeGenomicElementType("g1", c(m1, m2), c(tmu, nmu));
-  initializeGenomicElement(g1, 0, asInteger(L-1));
+  initializeGenomicElementType("g1", c(m1, m2), c(0, 1));
+  initializeGenomicElement(g1, 0, asInteger(G-1));
   initializeRecombinationRate(R);
   m1.convertToSubstitution = T;
   m1.mutationStackPolicy = "f";
@@ -31,28 +47,16 @@ initialize() {
   defineGlobal("end", burnin + tau);
 
   // initialize output file headers
-  bname = (ID + "_" + N + "N_" + R + "R_" + alpha + "alpha_" + nmu + "nmu_" + 
-            tmu + "tmu_" + L + "L");
+  bname = (ID + "_" + N + "N_" + R + "R_" + alpha + "alpha_" + MU + "mu_" + 
+            + L + "L_" + VA + "VA_" + G + "G");
   defineConstant("basename", bname);
   defineConstant("stats_file", data_dir + '/' + basename + '_stats.tsv');
   // write header
   param_string = "#seed=" + seed + ";alpha=" + alpha + ";N=" + N + 
      	         ";L=" + R + ";L=" + L + 
-                 ";nmu=" + nmu + ";tmu=" + tmu;
+                 ";mu=" + MU;
   writeFile(stats_file, param_string, append=F);
   writeFile(stats_file, "gen\tzbar\tzbar_nofix\tzvar\tgenic_var\tneut_het\tS", append=T);
-}
-
-// --- fitness function definitions
-// even there there are sites with fitness effects, these during the burnin
-// have no effect on fitness (yet)
-mutationEffect(m1) {
-  if (sim.cycle <= burnin) {
-    return 1.0;
-  }
-  else {
-    return effect;
-  }
 }
 
 // --- blocks
@@ -60,25 +64,13 @@ mutationEffect(m1) {
     sim.addSubpop("p1", N);
     p1.setSelfingRate(sigma);
     // --- block schedule --- 
-    // whole sims: calc phenotypes to propogate breeding value in tagF
-    //defineGlobal("burnin", 10*N);
-    //end = burnin + tau;
-    // when recording begins
-    //community.rescheduleScriptBlock(s1, start=2, end=burnin+gamma);
-    community.rescheduleScriptBlock(s2, start=burnin, end=end);
     // when selection begins
-    //community.rescheduleScriptBlock(s3, start=burnin+gamma, end=end);
+    community.rescheduleScriptBlock(s2, start=burnin, end=burnin);
+    // recording begins
+    community.rescheduleScriptBlock(s3, start=burnin, end=end);
     // end point
     community.rescheduleScriptBlock(s4, start=end);
 }
-
-//s1 1000 mutationEffect(m1) {
-//  return 1.0;
-//}
-
-//s3 1000 mutationEffect(m1) {
-//  return effect;
-//}
 
 // report during burn-in
 early() {
@@ -87,8 +79,18 @@ early() {
     }
 }
 
+// sample mutations to be selected
+s2 600 early(){
+  sampled = sample(sim.mutations, L);
+  catn("Generation: " + sim.cycle + "; Sampled mutations: " + length(sampled));
+  for (mut in sampled) {
+    mut.setMutationType(m1);
+  }
+}
+
 //
-s2 late() {
+s3 500 late() {
+    catn("Generation: " + sim.cycle + "; Recording frequencies...");
     inds = sim.subpopulations.individuals;
     phenotypes = inds.sumOfMutationsOfType(m1);
     fixed_trait = sum(sim.substitutions.selectionCoeff);
@@ -108,7 +110,6 @@ s2 late() {
     write_freqs(neutfreqs_file, p1, m2, sim.cycle);
 }
 
-s4 late() {
-  p1.outputVCFSample(5, filePath = data_dir + "/" + ID + ".vcf");
+s4 5000 late() {
   sim.simulationFinished();
 }

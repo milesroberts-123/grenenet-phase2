@@ -215,7 +215,7 @@ plot_var_cov_matrix <- function(covmat,
 #' @export
 #'
 #' @examples
-plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, prefix){
+plot_manhattan_by_site <- function(data, site, today, height, width, quick = F, save_pdf = T, prefix){
 
   print(site)
 
@@ -245,7 +245,7 @@ plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, 
 
   print("Plot...")
   ggplot(don, aes(x=BPcum, y=-log10(pvalue))) +
-    geom_point( aes(color=as.factor(CHROM)), alpha=0.8, size=1.3, shape = 16) +
+    geom_point(aes(color=as.factor(CHROM)), alpha=0.8, size=1.3, shape = 16) +
     geom_point(data=subset(don, highlight=="yes"), color="orange", size=1.5) +
     scale_color_manual(values = rep(c("grey", "black"), 22 )) +
     scale_x_continuous( label = axisdf$CHROM, breaks= axisdf$center ) +
@@ -260,4 +260,9 @@ plot_manhattan_by_site <- function(data, site, today, height, width, quick = T, 
 
   print("Save png...")
   ggsave(paste("../results/by-date/", today, "/", prefix, "_", site, ".jpg", sep = ""), height = height, width = width)
+
+  if(save_pdf){
+    print("Save pdf...")
+    ggsave(paste("../results/by-date/", today, "/", prefix, "_", site, ".pdf", sep = ""), height = height, width = width)
+  }
 }
