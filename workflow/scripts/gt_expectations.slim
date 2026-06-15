@@ -92,6 +92,11 @@ s2 600 early(){
   catn("Generation: " + sim.cycle + "; Sampled mutations: " + length(sampled));
   for (mut in sampled) {
     mut.setMutationType(m1);
+    if (runif(1) < 0.5) {
+        mut.setSelectionCoeff(alpha);
+    } else {
+        mut.setSelectionCoeff(-alpha);
+    }
   }
 }
 
