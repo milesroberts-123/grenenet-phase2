@@ -44,7 +44,7 @@ initialize() {
 
   // simulation start and end
   defineGlobal("burnin", 10*N);
-  defineGlobal("end", burnin + tau);
+  defineGlobal("end", burnin + TAU);
 
   // initialize output file headers
   bname = (ID + "_" + N + "N_" + R + "R_" + alpha + "alpha_" + MU + "mu_" + 
@@ -62,7 +62,7 @@ initialize() {
 // --- blocks
 1 early() {
     sim.addSubpop("p1", N);
-    p1.setSelfingRate(sigma);
+    p1.setSelfingRate(SIGMA);
     // --- block schedule --- 
     // when selection begins
     community.rescheduleScriptBlock(s2, start=burnin, end=burnin);
@@ -111,5 +111,6 @@ s3 500 late() {
 }
 
 s4 5000 late() {
+  p1.outputVCFSample(5, filePath = data_dir + "/" + ID + ".vcf");
   sim.simulationFinished();
 }

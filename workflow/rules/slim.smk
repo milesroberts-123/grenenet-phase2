@@ -101,6 +101,7 @@ rule slim:
         if [[ "unstruct" == "{params.type}" ]]; then
             slim -d N={params.N} \\
                 -d L={params.L} \\
+                -d G={params.G} \\
                 -d MU={params.MU} \\
                 -d R={params.R} \\
                 -d SIGMA={params.SIGMA} \\
