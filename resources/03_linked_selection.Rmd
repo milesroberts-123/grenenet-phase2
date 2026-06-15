@@ -197,7 +197,31 @@ print("Percentage of frequencies at loss/fixation:")
 sum(is.na(hapfire_nas))/prod(dim(hapfire_nas)) * 100
 
 # output filtered hapfire frequencies
-write.table(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrmtrajectory.csv", row.names = F, sep = ",", quote = F)
+write.table(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", row.names = F, sep = ",", quote = F)
+```
+
+## arcsine square-root transformation
+
+```{r}
+# apply function per chunk and append to file
+chunked_arcsin_sqrt <- function(output) {
+  function(x, pos) {
+    cat(paste(pos, Sys.time(), "\n"))
+    append_table(arcsin_sqrt(x), output)
+  }
+}
+
+# loop over chunks of csv
+read_csv_chunked(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv",
+  callback = SideEffectChunkCallback$new(
+    chunked_arcsin_sqrt(
+      "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory_arcsin.csv"
+    )
+  ),
+  chunk_size = 10000
+)
+
 ```
 
 # load allele frequencies and sample sizes
@@ -209,9 +233,15 @@ write.table(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/gr
 # tracked allele randomly switched
 gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F)
 
+gen0_arcsin <- gen0
+gen0_arcsin$X3 <- arcsin_sqrt(gen0_arcsin$X3)
+
+#gen0_arcsin <- gen0_arcsin[1:150000,]
+
 # later gen
 # tracked allele randomly switched
-hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", data.table = F)
+#hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", data.table = F)
+hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory_arcsin.csv", data.table = F)
 
 # year 1-3 sample sizes
 sample_sizes_13 <- fread("/global/home/users/milesroberts/moi_lab_projects/grenenet-phase2/data/samples_data_fix57.csv")
@@ -940,7 +970,189 @@ download_cmip6_ecmwfr(
 ```
 
 
-## G(t) and Gabs(t)
+# G(t) and Gabs(t)
+
+## arcsin sqrt transformed frequencies
+
+### point estimates
+
+```{r}
+
+# make list of sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+
+# for now, ignore some sites
+sites <- sites[c(-30)]
+
+gt_results <- NULL
+
+for(site in unique(sites)){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    
+    if(ncol(hap_rep) <= 2){
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
+    
+    rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 10000)
+    
+    hap_rep <- cbind(gen0_arcsin$X3, hap_rep)
+    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
+    
+    covmat <- covmat_from_pmat(hap_rep, rep_n$n, correct_for_n = T, input_asin_trans = T, procedure = "none")
+    
+    gt_result <- gt_from_covmat(covmat)
+    
+    gt_result$site = site
+    gt_result$rep = exprep
+    
+    gt_results <- rbind(gt_results, gt_result)
+ 
+  }
+}
+
+gt_abs_mean <- gt_results %>%
+  group_by(site, gen) %>%
+  summarize(gt = mean(sum_cov)/mean(sum_cov+sum_var),
+            gt_avg_ratio = mean(sum_cov/(sum_cov+sum_var)),
+            gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov+sum_var),
+            gt_abs_2 = mean(sum_abs_cov)/mean(sum_cov+sum_var),
+            gt_pos_abs = mean(sum_pos_cov)/mean(sum_abs_cov+sum_var))
+  
+gt_abs_mean <- merge(gt_abs_mean, worldclim_sitesdata, by = "site")
+
+ggplot(gt_abs_mean, aes(x = gen, y = gt_abs, group = site, color = bio1)) +
+  geom_point() +
+  geom_line() +
+  #geom_errorbar(aes(ymin=lwr, ymax=upr), width=.2) +
+  #geom_ribbon(data = gabs_null, mapping = aes(x=gen, ymin=lwr, ymax=upr), alpha = 0.2, color = "grey", size = 0.01) + 
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = expression(G[abs]), color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+ggplot(gt_abs_mean, aes(x = gen, y = gt_pos_abs, group = site, color = bio1)) +
+  geom_point() +
+  geom_line() +
+  #geom_errorbar(aes(ymin=lwr, ymax=upr), width=.2) +
+  #geom_ribbon(data = gabs_null, mapping = aes(x=gen, ymin=lwr, ymax=upr), alpha = 0.2, color = "grey", size = 0.01) + 
+  scale_color_scico(palette = "berlin") +
+  scale_x_discrete(name ="Generation", limits=c(1:5)) +
+  labs(x = "Generation", y = expression(G[abs]), color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+```
+
+### sign permutation
+
+```{r}
+# make list of sites
+# for now, ignore some sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+sites <- sites[c(-30)]
+
+# permuation parameters
+sign_permute_replicates <- 200
+sign_permute_blocks <- create_blocks(gen0_arcsin, X1, X2, 15000, "_")
+
+# define output
+output_gt_perm <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/gt_abs_arcsin_permutations_sites.tsv",
+  sep = ""
+)
+
+check_file_exists(output_gt_perm)
+
+# loop over sites
+for (site in unique(sites)) {
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for (exprep in 1:12) {
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>%
+      dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>%
+      relocate(all_of(sort(colnames(hap_rep))))
+    
+    if (ncol(hap_rep) <= 2) {
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
+    
+    rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 10000)
+    
+    hap_rep <- cbind(gen0_arcsin$X3, hap_rep)
+    #hap_rep <- cbind(gen0$X3, hap_rep)
+    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
+    
+    for (p in 1:sign_permute_replicates) {
+      covmat <- covmat_from_pmat(
+        hap_rep,
+        rep_n$n,
+        correct_for_n = T,
+        input_asin_trans = T,
+        procedure = "cell",
+        windows = sign_permute_blocks$window
+      )
+      
+      gt_perm_result <- gt_from_covmat(covmat)
+      
+      gt_perm_result$site = site
+      gt_perm_result$rep = exprep
+      gt_perm_result$perm = p
+      
+      append_table(gt_perm_result, output_gt_perm)
+      #gt_perm_results <- rbind(gt_perm_results, gt_perm_result)
+    }
+  }
+}
+
+gt_perm_results <- fread(output_gt_perm)
+
+gt_perm_results %>%
+  group_by(site, gen, perm) %>% # average across replicates within permutation
+  summarize(gt_abs = mean(sum_abs_cov) / mean(sum_abs_cov + sum_var)) %>%
+  summarize(
+    lwr = quantile(gt_abs, 0.025),
+    med = median(gt_abs),
+    upr = quantile(gt_abs, 0.975)
+  )
+
+gt_perm_results %>%
+  group_by(site, gen, perm) %>% # average across replicates within permutation
+  summarize(gt = mean(sum_cov) / mean(sum_cov + sum_var)) %>%
+  summarize(lwr = quantile(gt, 0.025),
+            med = median(gt),
+            upr = quantile(gt, 0.975))
+
+gt_perm_results %>%
+  group_by(site, gen, perm) %>% # average across replicates within permutation
+  summarize(gt_pos_abs = mean(sum_pos_cov) / mean(sum_abs_cov + sum_var)) %>%
+  summarize(lwr = quantile(gt_pos_abs, 0.025),
+            med = median(gt_pos_abs),
+            upr = quantile(gt_pos_abs, 0.975))
+
+gt_perm_results %>%
+  group_by(site, gen, perm) %>% # average across replicates within permutation
+  summarize(gt_abs_2 = mean(sum_abs_cov) / mean(sum_cov + sum_var)) %>%
+  summarize(lwr = quantile(gt_abs_2, 0.025),
+            med = median(gt_abs_2),
+            upr = quantile(gt_abs_2, 0.975))
+```
+
+
+## raw frequencies
 
 ### calculate frequency increments
 
@@ -996,8 +1208,6 @@ for(site in sites) {
 
 # save increment matrix
 write.csv(pdiffs, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", row.names = F, quote = F)
-
-#fwrite(pdiffs, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", row.names = F, quote = F)
   
 ```
 
@@ -1007,15 +1217,6 @@ write.csv(pdiffs, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-
 if(!exists("pdiffs")){
   pdiffs <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/allele_frequency_increments.csv", header = T)
 }
-
-# calculate all covariances
-# system.time(
-#  cov(pdiffs[,1:50])
-# )
-# 
-# system.time(
-#  cov(as.matrix(pdiffs[,1:10]))
-# )
 
 # save un-corrected covariance matrices
 cov_pdiffs <- cov(pdiffs)

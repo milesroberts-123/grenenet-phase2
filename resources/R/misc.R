@@ -2,6 +2,41 @@ box::use(dplyr[...])
 box::use(utils[write.table])
 
 
+#' Check if file already exists and delete if so
+#'
+#' @param file_name 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+check_file_exists <- function(file_name) {
+  if (file.exists(file_name)) {
+    file.remove(file_name)
+    print(paste(file_name, "from previous run deleted."))
+  } else {
+    print(paste(file_name, "does not exist."))
+  }
+}
+
+
+#' arcsin square-root transform, Kelly 2022 Evolution Letters
+#'
+#' @param p 
+#' @param C 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+arcsin_sqrt <- function(p, C = 2){
+  stopifnot(
+    all(p <= 1, na.rm = T),
+    all(p >= 0, na.rm = T)
+    )
+  C*asin(sqrt(p))
+}
+
 #' Allele frequency after one generation of selection
 #'
 #' @param q 

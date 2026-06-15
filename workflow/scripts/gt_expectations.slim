@@ -18,6 +18,10 @@ function (float)ssh(float x) {
   return 2*sum(x * (1-x));
 }
 
+//function (integer)target_g(integer l, integer n, float mu){ 
+// return asInteger( ((0.577215664901532 + log(2*n))*mu*4*n)/1.5 - l );
+//}
+
 function (float)target_alpha(float va, integer l, integer n){
   theta_l = l/(0.577215664901532 + log(2*n));
   return sqrt(va/theta_l);
@@ -30,6 +34,9 @@ initialize() {
  
   catn("Tick 1: Target alpha:" + target_alpha(VA, L, N)); 
   defineConstant("alpha", target_alpha(VA, L, N));
+
+  //catn("Tick 1: Target genome size:" + target_g(L, N, MU));
+  //defineConstant("G", target_g(L, N, MU));
 
   initializeMutationRate(MU);
   initializeMutationType("m1", 0.5, "s", "if (runif(1) < 0.5) -alpha; else alpha;");

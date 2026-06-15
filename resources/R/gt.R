@@ -2,6 +2,7 @@ box::use(reshape2[melt],
          stringr[str_extract],
          ./plot,
          stats[...],
+         dplyr[...]
          )
 
 #' Calculate linked selection ratios from covariance matrix
@@ -42,6 +43,8 @@ gt_from_covmat <- function(covmat) {
     gen = 1:nrow(covmat),
     gt = sums_cov/(sums_var + sums_cov),
     gt_abs = sums_abs_cov/(sums_var + sums_abs_cov),
+    gt_abs_2 = sums_abs_cov/(sums_var + sums_cov),
+    gt_pos = sums_pos_cov/(sums_var + sums_pos_cov),
     sum_cov = sums_cov,
     sum_abs_cov = sums_abs_cov,
     sum_pos_cov = sums_pos_cov,
@@ -144,24 +147,48 @@ freq_increments <- function(pmat){
 #' @export
 #'
 #' @examples
-covmat_from_pmat <- function(pmat, n, correct_for_n = T){
+covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, input_asin_trans = F, procedure = "none", windows = NULL){
   
   # allele frequency changes between adjacent generations
   pdiff <- freq_increments(pmat)
-
+  
+  # randomly swap signs of allele frequency changes
+  pdiff <- sign_permute_increments(pdiff, procedure = procedure, windows = windows)
+  
   # covariance matrices
   covmat <- stats::cov(pdiff, use = "pairwise.complete.obs")
-
+  
   # correct for sample size, if needed
   if(correct_for_n){
-      if(any(n < 2)){
-        stop("All n must be >= 2")
+    if(any(n < 2)){
+      stop("All n must be >= 2")
+    }
+    
+    if(length(n) != (ncol(covmat) + 1)){
+      stop("Should be a sample size for every time point.")
+    }
+    
+    ### ARCSIN SQRT TRANSFORMED FREQUENCIES ###
+    if(input_asin_trans){
+      # correct overlapping covariances
+      for(i in 1:(ncol(covmat)-1)){
+        corrected_cov <- covmat[i,i+1] + (1/n[i+1])
+        covmat[i,i+1] <- corrected_cov
+        covmat[i+1,i] <- corrected_cov
       }
       
-      if(length(n) != (ncol(covmat) + 1)){
-        stop("Should be a sample size for every time point.")
+      # correct variances
+      for(i in 1:ncol(covmat)){
+        corrected_var <- covmat[i,i] - (1/n[i]) - (1/n[i+1])
+        if(corrected_var < 0) {
+          print("Sample size correction makes variance negative. Setting variance to zero")
+          covmat[i,i] <- 0
+        } else{
+          covmat[i,i] <- corrected_var
+        }
       }
-    
+    ###RAW FREQUENCIES###
+    } else {
       # correct overlapping covariances
       for(i in 1:(ncol(covmat)-1)){
         corrected_cov <- mean(pdiff[,i] * pdiff[,i+1], na.rm = T) + mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)
@@ -180,7 +207,8 @@ covmat_from_pmat <- function(pmat, n, correct_for_n = T){
         }
       }
     }
-    return(covmat)
+  }
+  return(covmat)
 }
 
 #' Calculate covariances across a pair of environments
@@ -389,24 +417,42 @@ g_prime <- function(times, pmat, N, n, take_abs = F){
 #' Sign permute a block of allele frequencies
 #'
 #' @param pdiff 
+#' @param procedure 
+#' @param windows 
 #'
 #' @returns
 #' @export
 #'
 #' @examples
-sign_permute_increments <- function(pdiff){
-  stopifnot(ncol(pdiff)>=2)
-  
-  # draw whether an increment will be flipped or not 
-  sign_permutations <- sample(c(-1,1), size = ncol(pdiff), replace = T)
-  
-  # Create the diagonal matrix from vector
-  P <- diag(sign_permutations)
-  
-  # Perform matrix multiplication to flip all increments at once
-  pdiff_perm <- pdiff %*% P
-  
-  return(pdiff_perm)
+sign_permute_increments <- function(pdiff, procedure = "none", windows = NULL){
+  stopifnot(ncol(pdiff)>=2, nrow(pdiff)>=2)
+  if(procedure == "window"){
+    # within a window, randomly multiply allele frequency change by +1 or -1
+    pdiff$window <- windows
+    pdiff <- pdiff %>%
+      group_by(window) %>%
+      mutate(across(where(is.numeric), ~ .x * sample(c(1, -1), size = 1))) %>%
+      ungroup() %>%
+      dplyr::select(-window) %>%
+      as.data.frame()
+  } else if (procedure == "cell"){
+    # randomly multiply every cell frequency change by +1 or -1
+    pdiff <- pdiff %>%
+      mutate(across(where(is.numeric), ~ .x * sample(c(1, -1), n(), replace = TRUE)))
+  } else if (procedure == "genome"){
+    # randomly multiply entire columns by +1 or -1
+    sign_permutations <- sample(c(-1,1), size = ncol(pdiff), replace = T)
+    # Create the diagonal matrix from vector
+    P <- diag(sign_permutations)
+    # Perform matrix multiplication to flip all increments at once
+    pdiff <- as.matrix(pdiff) %*% P
+  } else if (procedure == "none") {
+    # no flipping
+  }
+  else {
+    stop("Procedure not valid. Choose from list of options.")
+  }
+  return(pdiff)
 }
 
 gt_n_adjust <- function(pmat, n) {

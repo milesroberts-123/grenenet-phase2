@@ -5,6 +5,45 @@ box::use(./misc)
 box::use(./gt)
 box::use(./plot)
 
+describe("sign_permute_increments", {
+  it("returns input as output for none procedure",{
+    mat <- as.data.frame(matrix(runif(10*10, min = -1, max = 1), nrow = 10, ncol = 10))
+    result <- sign_permute_increments(mat, procedure = "none")
+    expect_equal(result, mat)
+  })
+  
+  it("returns output with same dim as input",{
+    mat <- as.data.frame(matrix(runif(10*10, min = -1, max = 1), nrow = 10, ncol = 10))
+    result_cell <- sign_permute_increments(mat, procedure = "cell")
+    result_window <- sign_permute_increments(mat, procedure = "window", windows = c(rep(1, times = 5), rep(2, times = 5)))
+    result_genome <- sign_permute_increments(mat, procedure = "genome")
+    expect_equal(dim(result_cell), dim(mat))
+    expect_equal(dim(result_window), dim(mat))
+    expect_equal(dim(result_genome), dim(mat))
+  })
+})
+
+describe("arcsin_sqrt", {
+  it("returns pi for 1",{
+    expect_equal(arcsin_sqrt(1), pi)
+  })
+  
+  it("returns 0 for 0", {
+    expect_equal(arcsin_sqrt(0), 0)
+  })
+  
+  it("is monotonic", {
+    expect_lt(arcsin_sqrt(0.1), arcsin_sqrt(0.2))
+  })
+  
+  it("catches bad frequencies", {
+    expect_error(arcsin_sqrt(50))
+  })
+  
+  it("NA input gives NA output", {
+    expect_equal(arcsin_sqrt(c(0, NA, 1)), c(0, NA, pi))
+  })
+})
 
 describe("rolling_matrix_sum", {
   it("starts at top-left square and sums successively larger sub-squares", {
@@ -118,6 +157,12 @@ describe("get_upper_tri", {
     expect_true(result[2, 3] == 8)
   })
 })
+
+# describe("covmat_from_pmat", {
+#   it("", {
+#     
+#   })
+# })
 
 describe("gt_from_covmat", {
   it("returns 0 gt for 2x2 matrix with only one off-diagonal", {

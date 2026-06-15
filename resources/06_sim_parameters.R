@@ -4,9 +4,9 @@ gt_wf_params <- expand.grid(
     MU=7e-09,
     R=8.06452e-10,
     N=c(1000),
-    G=5e6, # high enough so that more that there are at least L mutations post-burn-in
+    G=10e6, # high enough so that more that there are at least L mutations post-burn-in
     L=c(10, 100, 1000),
-    VA=c(0.01, 0.05, 0.1),
+    VA=c(0.001, 0.01, 0.1),
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
     TAU=10,
     rep=1:30,
