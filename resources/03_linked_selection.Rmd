@@ -716,7 +716,10 @@ files_to_plot <- c(
 )
 
 sim_curves <- NULL
+
 output <- paste("../results/", today, "/simulated_gt_curves_" , today, ".txt", sep = "")
+
+check_file_exists(output)
 
 gens_to_skip <- 0
 
@@ -736,44 +739,64 @@ for(neutfreq_file in neutfreq_files){
 
   neutfreqs$pos <- as.numeric(gsub(";", "", neutfreqs$pos))
   neutfreqs$freq <- as.numeric(gsub(";", "", neutfreqs$freq))
-
-  neutfreqs <- neutfreqs %>%
-    group_by(pos) %>%
-    mutate(dp = freq - lag(freq))
+  
+  # calculate increments
+  # neutfreqs <- neutfreqs %>%
+  #   group_by(pos) %>%
+  #   mutate(dp = freq - lag(freq))
 
   # Source - https://stackoverflow.com/a/5890689
   # Posted by Ista, modified by community. See post 'Timeline' for change history
   # Retrieved 2026-02-21, License - CC BY-SA 3.0
-  neutfreqs <- neutfreqs[,c("X1", "pos", "dp")]
+  # neutfreqs <- neutfreqs[,c("X1", "pos", "dp")]
+  # neutfreqs <- neutfreqs[complete.cases(neutfreqs),]
+  # neutfreqs <- neutfreqs[!duplicated(neutfreqs[,c("X1", "pos")]),]
+  # dpmat <- reshape2::dcast(neutfreqs, pos ~ X1, value.var = "dp")
+  # dpmat <- dpmat[,c(-1,-2)]
+  # dpcov_mat <- cov(dpmat, use = "pairwise.complete.obs")
+  # sim_curve <- gt_from_covmat(dpcov_mat)
+  
+  # pivot to longer, convert NULL list elements to NA, flatten lists
+  # pmat_sim <- neutfreqs %>% 
+  #   dplyr::select(pos, X1, freq) %>%
+  #   pivot_wider(names_from = "X1", values_from = "freq") %>%
+  # mutate(across(everything(), ~ {
+  #   # 1. Replace empty or NULL list items with a standard NA
+  #   cleaned_list <- map(., ~ if(is.null(.x) || length(.x) == 0) NA else .x[[1]])
+  #   # 2. Flatten the list into a regular atomic vector
+  #   flatten(cleaned_list)
+  # })) %>%
+  # unnest_longer(where(is.list), keep_empty = TRUE) %>%
+  # arrange(pos)
+  
+  neutfreqs <- neutfreqs[,c("X1", "pos", "freq")]
   neutfreqs <- neutfreqs[complete.cases(neutfreqs),]
   neutfreqs <- neutfreqs[!duplicated(neutfreqs[,c("X1", "pos")]),]
-  dpmat <- reshape2::dcast(neutfreqs, pos ~ X1, value.var = "dp")
+  neutfreqs <- reshape2::dcast(neutfreqs, pos ~ X1, value.var = "freq")
+  pmat_sim <- neutfreqs[,-1]
 
-  #dpmat <- dpmat %>% filter(rowSums(is.na(.)) <= ncol(dpmat)*0.5)
-  dpmat <- dpmat[,c(-1,-2)]
+  covmat_sim <- covmat_from_pmat(pmat_sim, correct_for_n = F, input_asin_trans = F)
   
-  #dpmat <- dpmat[complete.cases(dpmat),]
-
-  dpcov_mat <- cov(dpmat, use = "pairwise.complete.obs")
+  #   
+  # if(neutfreq_file %in% files_to_plot){
+  #   print("Plotting variance covariance matrix...")
+  #   plot_var_cov_matrix(covmat_sim, paste("../results/", today, "/", simid, "_var_cov_mat.pdf", sep = ""), include_values = F)
+  # }
+  # 
+  sim_curve <- gt_from_covmat(covmat_sim)
   
-  if(neutfreq_file %in% files_to_plot){
-    print("Plotting variance covariance matrix...")
-    plot_var_cov_matrix(dpcov_mat, paste("../results/", today, "/", simid, "_var_cov_mat.pdf", sep = ""), include_values = F)
-  }
-  
-  sim_curve <- gt_from_covmat(dpcov_mat)
-
   param_row <- params[(params$ID == simid),]
   
   sim_curve$ID <- simid
-  sim_curve$alpha <- param_row[, "alpha"]
-  sim_curve$sigma <- param_row[, "sigma"]
-  sim_curve$tmu <- param_row[, "tmu"]
+  sim_curve$L <- param_row[, "L"]
+  sim_curve$SIGMA <- param_row[, "SIGMA"]
+  sim_curve$VA <- param_row[, "VA"]
   sim_curve$N <- param_row[, "N"]
   sim_curve$adjust <- param_row[, "adjust"]
   
-  write.table(sim_curve, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
+  #write.table(sim_curve, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
   
+  append_table(sim_curve, output)
 }
 
 ```
@@ -2593,13 +2616,15 @@ for(site in unique(glm_results$SITE)){
 #sim_curves <- fread("../results/2026-04-16/simulated_gt_curves_2026-04-16.txt")
 #sim_curves <- fread("../results/2026-04-26/simulated_gt_curves_2026-04-26.txt")
 #sim_curves <- fread("../results/2026-04-27/simulated_gt_curves_2026-04-27.txt")
-sim_curves <- fread("../results/2026-04-28/simulated_gt_curves_2026-04-28.txt")
+#sim_curves <- fread("../results/2026-04-28/simulated_gt_curves_2026-04-28.txt")
 
-sim_curves <- merge(params[,c("ID", "MIN_AGE")], sim_curves, by = "ID")
+sim_curves <- fread("../results/2026-06-15/simulated_gt_curves_2026-06-15.txt")
+
+#sim_curves <- merge(params[,c("ID", "MIN_AGE")], sim_curves, by = "ID")
 
 # average across reps in a site
 mean_sims = sim_curves %>% 
-  group_by(gen, sigma, alpha, adjust, MIN_AGE) %>% 
+  group_by(gen, SIGMA, L, VA, adjust) %>% 
   summarize(gt = mean(sum_cov)/mean(sum_cov + sum_var),
             gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov + sum_var), 
             sum_cov = mean(sum_cov), 
@@ -2613,44 +2638,44 @@ mean_sims = sim_curves %>%
 mean_sims$adjust[mean_sims$adjust] <- "Ne constant"
 mean_sims$adjust[(mean_sims$adjust == "FALSE")] <- "Ne lowered"
 
-mean_sims$MIN_AGE[(mean_sims$MIN_AGE == 1)] <- "Non-WF"
-mean_sims$MIN_AGE[(mean_sims$MIN_AGE == 0)] <- "Non-WF reduced"
+# mean_sims$MIN_AGE[(mean_sims$MIN_AGE == 1)] <- "Non-WF"
+# mean_sims$MIN_AGE[(mean_sims$MIN_AGE == 0)] <- "Non-WF reduced"
 
 # gt over time
-ggplot(mean_sims, aes(x = gen, y = gt, group = sigma, color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = gt, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(adjust+MIN_AGE~alpha, scales = "free") +
+  facet_grid(adjust~VA+L, labeller = label_both) +
   geom_hline(yintercept = 0, lwd = 1.1, lty = 2) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "G(t)", color = "Self\nrate")
 
-ggsave(paste("../results/", today, "/simulated_linked_selection_gt.pdf", sep = ""), height = 4.5, width = 8, device = cairo_pdf)
+ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt.pdf", sep = ""), height = 4.5, width = 11, device = cairo_pdf)
 
 # sum of covariances over time
-ggplot(mean_sims, aes(x = gen, y = sum_cov, group = sigma, color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = sum_cov, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(adjust+MIN_AGE~alpha) +
+  facet_grid(adjust~VA+L, labeller = label_both) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of Cov(\u0394pi, \u0394pj)", color = "Self\nrate")
 
-ggsave(paste("../results/", today, "/simulated_linked_selection_sum_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
+ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_sum_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # sum of absolute value of covariances over time
-ggplot(mean_sims, aes(x = gen, y = sum_abs_cov, group = sigma, color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = sum_abs_cov, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(adjust+MIN_AGE~alpha) +
+  facet_grid(adjust~VA + L) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of |Cov(\u0394pi, \u0394pj)|", color = "Self\nrate")
 
-ggsave(paste("../results/", today, "/simulated_linked_selection_sum_abs_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
+ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_sum_abs_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # sum variances over time
 ggplot(mean_sims, aes(x = gen, y = sum_var, group = interaction(sigma, alpha), color = as.factor(sigma))) +
