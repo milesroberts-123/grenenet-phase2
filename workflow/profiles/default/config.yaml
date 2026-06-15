@@ -18,7 +18,7 @@ default-resources:
 # here only rules, which require different (more) resources:
 set-resources:
     slim:
-        runtime: "10m"
+        runtime: "20m"
     cat:
         runtime: "60m"
     freqk_count:

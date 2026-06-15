@@ -81,9 +81,14 @@ initialize() {
 
 reproduction(p2) {
     //catn("Individual fitness: " + individual.fitnessScaling);
-    REALIZED_FITNESS = pmax(0.0, N_OFFSPRING*(1 + individual.sumOfMutationsOfType(m3)));
+    if(STRUCTURE == 0 & sim.cycle <= BURN){
+        REALIZED_FITNESS = N_OFFSPRING;
+    } else {
+        REALIZED_FITNESS = pmax(0.0, N_OFFSPRING*(1 + individual.sumOfMutationsOfType(m3)));
+    }
+
     REALIZED_OFFSPRING = rpois(1, REALIZED_FITNESS);
-    //catn("Individual fitness: " + REALIZED_FITNESS);
+
     for (i in seqLen(REALIZED_OFFSPRING)) {
         if (runif(1) > SIGMA){
             mate = p2.sampleIndividuals(1);       // random mating within p2
@@ -273,11 +278,18 @@ s1 300 early() {
 // ============================================================================
 
 s2 300 late() {
-    write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
-
+    
     tick = community.tick;
     n_seed  = p1.individualCount;
     n_plant = p2.individualCount;
+
+    if(STRUCTURE == 1){
+        write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
+    }
+
+    if((STRUCTURE == 0) & (tick >= BURN+1)){
+        write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
+    }
 
     // Detect extinction.
     if (n_seed == 0 & n_plant == 0) {

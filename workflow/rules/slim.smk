@@ -93,7 +93,9 @@ rule slim:
         type=lookup(query="ID == '{ID}'", within=gt_params, cols="type"),
         surv=lookup(query="ID == '{ID}'", within=gt_params, cols="SURVIVAL_SELECTION"),
         min_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MIN_AGE"),
-        max_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MAX_AGE")
+        max_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MAX_AGE"),
+        structure=lookup(query="ID == '{ID}'", within=gt_params, cols="STRUCTURE"),
+        burn=lookup(query="ID == '{ID}'", within=gt_params, cols="BURN")
     shell:
         """
         if [[ "unstruct" == "{params.type}" ]]; then
@@ -113,14 +115,3 @@ rule slim:
             echo "Invalid simulation type!"
         fi
         """
-
-#rule tskit:
-#    group: "simulation"
-#    input:
-#        "slim_results/{ID}.trees"
-#    output:
-#        "tskit_results/{ID}.vcf"
-#    conda:
-#        "../envs/tskit.yaml"
-#    shell:
-#        "tskit vcf {input} > {output}"

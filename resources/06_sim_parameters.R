@@ -14,7 +14,7 @@ gt_wf_params <- expand.grid(
     type=c("unstruct", "struct")
 )
 
-gt_nonwf_params <- expand.grid(
+gt_nonwf_bank_struc <- expand.grid(
     N = 1000,
     MU=7e-09,
     TMU=c(2e-11),
@@ -32,11 +32,36 @@ gt_nonwf_params <- expand.grid(
     type="bank",
     SURVIVAL_SELECTION=c(0.5,1),
     MIN_AGE=1,
-    MAX_AGE=20,
-    adjust = T
+    MAX_AGE=5,
+    adjust = T,
+    STRUCTURE = 1,
+    BURN=999
 )
 
-gt_nonwf_wflike <- expand.grid(N = 1000,
+gt_nonwf_bank_nostruc <- expand.grid(N = 1000,
+                               nmu=7e-09,
+                               tmu=c(2e-11),
+    R=8.06452e-10,
+    L=1e6,
+    sigma=c(0, 0.05, 0.5, 0.95, 0.99),
+    alpha=c(0, 0.0025, 0.005, 0.01, 0.015),
+    rep=1:30,
+    gamma=10,
+    tau=12,
+    K=c(1000),
+    N_OFFSPRING=c(5),
+    GERM_RATE=c(0.8),
+    BANK_SURV=c(0.6),
+    type="bank",
+    SURVIVAL_SELECTION=0.5,
+    MIN_AGE=1,
+    MAX_AGE=5,
+    adjust = T,
+    STRUCTURE = 0,
+    BURN=10000
+)
+
+gt_nonwf_nobank_struc <- expand.grid(N = 1000,
                                nmu=7e-09,
                                tmu=c(2e-11),
     R=8.06452e-10,
@@ -53,7 +78,6 @@ gt_nonwf_wflike <- expand.grid(N = 1000,
     type="bank",
     SURVIVAL_SELECTION=c(0.5, 1),
     adjust = T,
-    MIN_AGE=0,
     MAX_AGE=20 # doesn't mattern because BANK_SURV= 0
     ) 
 
@@ -61,6 +85,35 @@ gt_nonwf_wflike <- expand.grid(N = 1000,
 
 # adjust Ne based on selfing rate
 gt_wf_params$N[(gt_wf_params$adjust == T)] = as.integer(gt_wf_params$N[(gt_wf_params$adjust == T)]/(1 - gt_wf_params$SIGMA[(gt_wf_params$adjust == T)]/2))
+
+gt_nonwf_nobank_nostruc <- expand.grid(N = 1000,
+                               nmu=7e-09,
+                               tmu=c(2e-11),
+    R=8.06452e-10,
+    L=1e6,
+    sigma=c(0, 0.05, 0.5, 0.95, 0.99),
+    alpha=c(0, 0.0025, 0.005, 0.01, 0.015),
+    rep=1:30,
+    gamma=10,
+    tau=12,
+    K=c(1000),
+    N_OFFSPRING=c(5),
+    GERM_RATE=c(0.8),
+    BANK_SURV=c(0.0),
+    type="bank",
+    SURVIVAL_SELECTION=0.5,
+    adjust = T,
+    MIN_AGE=0,
+    MAX_AGE=5, # doesn't mattern because BANK_SURV=0
+    STRUCTURE=0,
+    BURN=10000    )
+
+gt_nonwf_params <- rbind(gt_nonwf_bank_struc, gt_nonwf_bank_nostruc, gt_nonwf_nobank_struc, gt_nonwf_nobank_nostruc)
+
+# adjust Ne based on selfing rate
+gt_wf_params$N[(gt_wf_params$adjust == T)] = as.integer(gt_wf_params$N[(gt_wf_params$adjust == T)]/(1 - gt_wf_params$sigma[(gt_wf_params$adjust == T)]/2))
+gt_nonwf_params$K[(gt_nonwf_params$adjust == T)] = as.integer(gt_nonwf_params$K[(gt_nonwf_params$adjust == T)]/(1 - gt_nonwf_params$sigma[(gt_nonwf_params$adjust == T)]/2))
+gt_nonwf_params$BURN = 10*gt_nonwf_params$K
 
 # combine sims
 gt_params <- bind_rows(gt_wf_params, gt_nonwf_params)
