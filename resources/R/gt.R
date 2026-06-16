@@ -52,7 +52,6 @@ gt_from_covmat <- function(covmat) {
     sum_var = sums_var,
     ratio = sums_pos_cov/(sums_pos_cov + sums_neg_cov)
   )
-
   return(result)
 }
 
