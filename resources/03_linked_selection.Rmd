@@ -1167,7 +1167,7 @@ output_gt_boot <-  paste(
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 sites <- sites[c(-30)]
 
-for(site in unique(sites)){
+for(site in unique(sites)[26:30]){
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
@@ -1181,7 +1181,7 @@ for(site in unique(sites)){
     # sort names to be in order of generation
     hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
     
-    if(ncol(hap_rep) <= 3){
+    if(ncol(hap_rep) <= 2){
       print("Need at least two increments. Skipping to next replicate...")
       next
     }
@@ -1269,7 +1269,9 @@ check_file_exists(output_gt_perm)
 # loop over sites
 for (site in unique(sites)[1]) {
   print(paste("Site:", site))
-  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
+    collect()
   
   for (exprep in 1:12) {
     print(paste("Rep:", exprep))
