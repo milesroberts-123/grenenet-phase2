@@ -2253,7 +2253,7 @@ ggplot(recom_map, aes(x = pos, y = cm)) +
 
 ```
 
-## load diversity data
+## compare diversity data vs recombination rate
 
 ```{r}
 
@@ -2307,12 +2307,16 @@ ggplot(rate_vs_div, aes(x = window_pos_mid, y = rate)) +
   facet_wrap(.~chrom)
 
 # diversity vs recombination rate
-ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
+rate_vs_div_out <- subset(rate_vs_div, rate < 15)
+
+# adjust correlation coefficient for autocorrelation
+corr_ci_autocorr(rate_vs_div_out$rate, rate_vs_div_out$avg_pi)
+
+ggplot(rate_vs_div_out, aes(x = rate, y = avg_pi)) +
   geom_point() +
   geom_smooth(method = "lm") + 
-  stat_cor() +
-  #xlim(0, 10) +
   facet_zoom(xlim = c(0, 10)) +
+  stat_cor() +
    theme(
   # Draws a border line and shaded region for the connecting zoom lines
     zoom = element_rect(colour = "red", linewidth = 0.8, fill = alpha("red", 0.01)),
@@ -2320,6 +2324,9 @@ ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
     panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)
   ) +
   labs(x = "Recombination rate (cM/Mb)", y = "Synonymous site diversity")
+
+
+
 ```
 
 # Ne and VA(1) estimates
