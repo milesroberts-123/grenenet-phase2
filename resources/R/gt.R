@@ -147,35 +147,32 @@ freq_increments <- function(pmat){
 #'
 #' @examples
 covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, input_asin_trans = F, procedure = "none", windows = NULL){
-  
   # allele frequency changes between adjacent generations
   pdiff <- freq_increments(pmat)
-  
   # randomly swap signs of allele frequency changes
   pdiff <- sign_permute_increments(pdiff, procedure = procedure, windows = windows)
-  
   # covariance matrices
   covmat <- stats::cov(pdiff, use = "pairwise.complete.obs")
-  
   # correct for sample size, if needed
   if(correct_for_n){
     if(any(n < 2)){
       stop("All n must be >= 2")
     }
-    
     if(length(n) != (ncol(covmat) + 1)){
       stop("Should be a sample size for every time point.")
     }
-    
     ### ARCSIN SQRT TRANSFORMED FREQUENCIES ###
     if(input_asin_trans){
+      # check transformed data are actually input
+      if(all(pmat[,1] < pi)){
+        warning("Are you sure values are arcsin transformed?")
+      }
       # correct overlapping covariances
       for(i in 1:(ncol(covmat)-1)){
         corrected_cov <- covmat[i,i+1] + (1/n[i+1])
         covmat[i,i+1] <- corrected_cov
         covmat[i+1,i] <- corrected_cov
       }
-      
       # correct variances
       for(i in 1:ncol(covmat)){
         corrected_var <- covmat[i,i] - (1/n[i]) - (1/n[i+1])
@@ -194,7 +191,6 @@ covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, input_asin_trans
         covmat[i,i+1] <- corrected_cov
         covmat[i+1,i] <- corrected_cov
       }
-      
       # correct variances
       for(i in 1:ncol(covmat)){
         corrected_var <- mean((pdiff[,i])^2, na.rm = T) - mean(pmat[,i]*(1-pmat[,i])/(n[i] - 1), na.rm = T) - mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)

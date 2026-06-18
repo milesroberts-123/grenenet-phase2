@@ -229,20 +229,30 @@ read_csv_chunked(
 ```{r}
 
 ###
+#setDTthreads(0) # use all threads
 SUBSET = F # for testing, just load small subset of data
+ASIN = F
 
 #gen0 <- vroom("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_rng_switched.csv", delim = ",", col_names = T)
 
 # initial generation
 # tracked allele randomly switched
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F)
-
-gen0_arcsin <- gen0
-gen0_arcsin$X3 <- arcsin_sqrt(gen0_arcsin$X3)
+#gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F)
 
 if(SUBSET){
-  gen0 <- gen0[1:300000,]
-  #gen0_arcsin <- gen0_arcsin[1:300000,]
+  if(ASIN){
+    gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F, nrows = 30000)
+    gen0$X3 <- arcsin_sqrt(gen0$X3)
+  } else {
+    gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F, nrows = 30000)
+  }
+} else {
+  if(ASIN){
+    gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F)
+    gen0$X3 <- arcsin_sqrt(gen0$X3)
+  } else {
+    gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/seedmix_hapfire_allele_frequency_random_switch_fixrm.csv", data.table = F, nThread = 8)
+  }
 }
 
 
@@ -251,13 +261,18 @@ if(SUBSET){
 #hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm.csv", data.table = F)
 
 if(SUBSET){
-  hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", data.table = F, nrows = 300000)
-  #hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory_arcsin.csv", data.table = F, nrows = 300000)
+  if(ASIN){
+      hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory_arcsin.csv", data.table = F, nrows = 300000)
+  } else {
+      hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", data.table = F, nrows = 300000)
+  }
 } else {
-  hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", data.table = F)
-  #hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory_arcsin.csv", data.table = F)
+  if(ASIN){
+      hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory_arcsin.csv", data.table = F)
+  } else {
+      hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", data.table = F)
+  }
 }
-
 
 # year 1-3 sample sizes
 sample_sizes_13 <- fread("/global/home/users/milesroberts/moi_lab_projects/grenenet-phase2/data/samples_data_fix57.csv")
@@ -285,6 +300,28 @@ all(sample_sizes$n > 1)
 load("../data/worldclim_sitesdata.rda")
 
 #sites.clim <- sites.clim[,c("SITE_CODE", paste("bio", 1:19, sep = ""))]
+```
+# test converting data to binary
+
+```{r}
+library(arrow)
+
+open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
+  write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/hapfire_parquet", format = "parquet", max_rows_per_file = 500000L)
+
+
+hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/hapfire_parquet")
+
+# Ensure arrow uses all available CPU threads
+#set_cpu_count(parallelly::availableCores())
+
+# Write the dataframe efficiently 
+# Zstd provides a great balance of tight file compression and write speed
+write_parquet(hapfire, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.parquet")
+
+Sys.time()
+read_parquet("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.parquet")
+Sys.time()
 ```
 
 # Feder test
@@ -1105,20 +1142,15 @@ ggplot(gt_abs_mean, aes(x = gen, y = cov_ratio, group = site, color = bio1)) +
   scale_x_discrete(name ="Generation", limits=c(1:5)) +
   labs(x = "Generation", y = "Propotion Cov > 0", color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
 ```
+
 ### bootstrap
 
 ```{r}
-# make list of sites
-sites <- unique(gsub("_.*", "", colnames(hapfire)))
-
-# for now, ignore some sites
-sites <- sites[c(-30)]
-
 sign_permute_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
-hapfire$window <- sign_permute_blocks$window
+#hapfire$window <- sign_permute_blocks$window
 
 W <- length(unique(sign_permute_blocks$window))
-B <- 300
+B <- 200
 
 # define output
 output_gt_boot <-  paste(
@@ -1128,16 +1160,23 @@ output_gt_boot <-  paste(
   sep = ""
 )
 
-check_file_exists(output_gt_boot)
+#check_file_exists(output_gt_boot)
 
 # loop over sites
+# make list of sites, ignoring some
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+sites <- sites[c(-30)]
+
 for(site in unique(sites)){
   print(paste("Site:", site))
-  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")), window)
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
+    collect()
   
   for(exprep in 1:12){
     print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")), window)
+    hap_rep <- hap_site %>% 
+      dplyr::select(ends_with(paste("_", exprep, sep = "")))
     
     # sort names to be in order of generation
     hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
@@ -1152,16 +1191,21 @@ for(site in unique(sites)){
     hap_rep <- cbind(gen0$X3, hap_rep)
     colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
     
+    hap_rep$window <- sign_permute_blocks$window
     # bootstrap sample allele frequencies by window
+    nested <- hap_rep %>% nest_by(window) %>% ungroup()
+    
     for (b in 1:B){
-      gt_boot <- hap_rep %>%
-        nest_by(window) %>% # Group and nest into a list-column
-        ungroup() %>%
+      gt_boot <- nested %>%
         slice_sample(n = W, replace = TRUE) %>%
         unnest(cols = c(data)) %>%
         dplyr::select(-window) %>%
         as.data.frame() %>%
-        covmat_from_pmat(data, n = rep_n$n, correct_for_n = T, input_asin_trans = F, procedure = "none") %>%
+        covmat_from_pmat(data, 
+                         n = rep_n$n, 
+                         correct_for_n = T, 
+                         input_asin_trans = F, 
+                         procedure = "none") %>%
         gt_from_covmat()
       
       gt_boot$site <- site
@@ -1172,10 +1216,20 @@ for(site in unique(sites)){
   }
 }
 
-gt_boot_results <- fread(output_gt_boot)
+gt_boot_results <- fread(output_gt_boot) %>% 
+  distinct(site, rep, gen, boot, .keep_all = T)
 
-gt_boot_cis <- gt_boot_results %>%
-  group_by(site, rep, gen) %>% # average across replicates within permutation
+gt_boot_rep_cis <- gt_boot_results %>%
+  group_by(site, rep, gen) %>% 
+  summarize(
+    lwr = quantile(sum_cov, 0.025, na.rm = T),
+    med = median(sum_cov, na.rm = T),
+    upr = quantile(sum_cov, 0.975, na.rm = T)
+  )
+
+gt_boot_mean_cis <- gt_boot_results %>%
+  group_by(site, gen, boot) %>% # average across replicates within bootstrap
+  summarize(sum_cov = mean(sum_cov)) %>%
   summarize(
     lwr = quantile(sum_cov, 0.025, na.rm = T),
     med = median(sum_cov, na.rm = T),
@@ -1200,13 +1254,13 @@ sites <- sites[c(-30)]
 
 # permuation parameters
 sign_permute_replicates <- 400
-sign_permute_blocks <- create_blocks(gen0_arcsin, X1, X2, 15000, "_")
+sign_permute_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
 
 # define output
 output_gt_perm <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_abs_arcsin_permutations_cov_ratio.tsv",
+  "/gt_permutations.tsv",
   sep = ""
 )
 
@@ -1233,8 +1287,7 @@ for (site in unique(sites)[1]) {
     
     rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 10000)
     
-    hap_rep <- cbind(gen0_arcsin$X3, hap_rep)
-    #hap_rep <- cbind(gen0$X3, hap_rep)
+    hap_rep <- cbind(gen0$X3, hap_rep)
     colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
     
     for (p in 1:sign_permute_replicates) {
@@ -1242,7 +1295,7 @@ for (site in unique(sites)[1]) {
         hap_rep,
         rep_n$n,
         correct_for_n = T,
-        input_asin_trans = T,
+        input_asin_trans = F,
         procedure = "window",
         windows = sign_permute_blocks$window
       )
@@ -1259,7 +1312,24 @@ for (site in unique(sites)[1]) {
   }
 }
 
-gt_perm_results <- fread(output_gt_perm)
+gt_perm_results <- fread(output_gt_perm)  %>% 
+  distinct(site, rep, gen, perm, .keep_all = T)
+
+gt_perm_rep <- gt_perm_results %>%
+  group_by(site, gen, rep) %>%
+  summarize(lwr = quantile(sum_cov, 0.025), # get quantiles across permutations
+            med = median(sum_cov),
+            upr = quantile(sum_cov, 0.975))
+
+gt_perm_mean <- gt_perm_results %>%
+  group_by(site, gen, perm) %>% # average across replicates within permutation
+  summarize(sum_cov = mean(sum_cov)) %>%
+  summarize(lwr = quantile(sum_cov, 0.025), # get quantiles across permutations
+            med = median(sum_cov),
+            upr = quantile(sum_cov, 0.975))
+
+
+
 
 
 gt_perm_results %>%
@@ -2174,6 +2244,25 @@ ggplot(recom_map, aes(x = pos, y = cm)) +
   facet_wrap(chrom~., scales = "free") +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
   labs(x = "Position", y = "cM")
+
+# Test out model fitting and derivative evaluation
+recom_map_2$pos <- recom_map_2$pos/1e6
+
+test_mod <- find_best_poly(recom_map_2, x_col = "pos", y_col = "cm", max_degree = 10)
+
+# 2. Create a clean grid spanning the original independent variable range
+grid_data <- data.frame(x_val = seq(min(recom_map_2$pos), max(recom_map_2$pos), length.out = 100))
+
+# 3. Extract the predicted fits into the new grid data frame
+grid_data$predicted_cm <- predict(test_mod, newdata = grid_data)
+names(grid_data)[1] <- "pos"
+
+# 4. Map the new prediction grid as a secondary data layer
+ggplot(recom_map_2, aes(x = pos, y = cm)) +
+  geom_point() +  # Plots the actual raw data points
+  geom_line(data = grid_data, aes(y = predicted_cm), color = "red", size = 1)  # Predicted line
+
+eval_deriv(test_mod, 0.5)
 ```
 
 ## calculate average ld or average ld decay by block

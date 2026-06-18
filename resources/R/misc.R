@@ -1,5 +1,70 @@
 box::use(dplyr[...])
 box::use(utils[write.table])
+box::use(stats[...])
+
+
+#' Fit polynomial to data
+#'
+#' @param data 
+#' @param x_col 
+#' @param y_col 
+#' @param max_degree 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+find_best_poly <- function(data, x_col, y_col, max_degree = 10) {
+  # 1. Extract vectors from dataframe
+  x_val <- data[[x_col]]
+  y_val <- data[[y_col]]
+  
+  # 2. Fit models for degrees 1 to max_degree and compute AIC
+  models <- lapply(1:max_degree, function(d) {
+    lm(y_val ~ poly(x_val, d, raw = TRUE))
+  })
+  aics <- sapply(models, AIC)
+  
+  # 3. Select the best model (lowest AIC)
+  best_idx <- which.min(aics)
+  best_model <- models[[best_idx]]
+  best_degree <- best_idx
+  
+  return(best_model)
+}
+
+
+#' Evaluate derivative of model at a point
+#'
+#' @param best_model 
+#' @param i 
+#' @param x_eval 
+#' @param best_degree 
+#' @param aics 
+#' @param best_idx 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+eval_deriv <- function(model, x_eval, best_degree) {
+  # 4. Extract coefficients
+  # beta[1] is intercept, beta[2] is x^1, beta[3] is x^2, etc.
+  beta <- coef(model)
+  
+  # 5. Compute the derivative at x_eval
+  # Formula: d/dx(beta_d * x^d) = d * beta_d * x^(d-1)
+  deriv_val <- 0
+  if (length(beta) > 1) {
+    for (i in 2:length(beta)) {
+      deg <- i - 1
+      deriv_val <- deriv_val + (deg * beta[i] * (x_eval ^ (deg - 1)))
+    }
+  }
+  
+  # 6. Return a list with all relevant details
+  return(as.numeric(deriv_val))
+}
 
 
 #' Check if file already exists and delete if so
@@ -217,7 +282,7 @@ create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
 #' @export
 #'
 grab_sample_sizes <- function(n_data, sample_col, samples, first_n){
-    rep_n <- n_data %>% filter({{ sample_col }} %in% samples)
+    rep_n <- n_data %>% dplyr::filter({{ sample_col }} %in% samples)
     rep_n <- rbind(c(0, first_n), rep_n)
     rep_n <- rep_n %>% arrange({{ sample_col }})
     return(rep_n)
