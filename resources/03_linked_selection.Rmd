@@ -2181,7 +2181,7 @@ rep_gt_perm %>%
 
 ```
 
-# Ne and VA(1)
+# Recombination rate vs pi
 
 ## load, format, and filter recombination map
 
@@ -2239,33 +2239,90 @@ recom_map_5$cm <- recom_map_5$cm - min(recom_map_5$cm)
 
 recom_map_5 <- recom_map_5 %>% filter(cm == cummax(cm))
 
+# combine all chr
+# convert pos to Mb
 recom_map <- rbind(recom_map_1, recom_map_2, recom_map_3, recom_map_4, recom_map_5)
+
+recom_map$pos <- recom_map$pos/1e6
 
 ggplot(recom_map, aes(x = pos, y = cm)) +
   geom_point() +
   facet_wrap(chrom~., scales = "free") +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
-  labs(x = "Position", y = "cM")
+  labs(x = "Position (Mb)", y = "cM")
 
-# Test out model fitting and derivative evaluation
-recom_map_2$pos <- recom_map_2$pos/1e6
-
-test_mod <- find_best_poly(recom_map_2, x_col = "pos", y_col = "cm", max_degree = 10)
-
-# 2. Create a clean grid spanning the original independent variable range
-grid_data <- data.frame(x_val = seq(min(recom_map_2$pos), max(recom_map_2$pos), length.out = 100))
-
-# 3. Extract the predicted fits into the new grid data frame
-grid_data$predicted_cm <- predict(test_mod, newdata = grid_data)
-names(grid_data)[1] <- "pos"
-
-# 4. Map the new prediction grid as a secondary data layer
-ggplot(recom_map_2, aes(x = pos, y = cm)) +
-  geom_point() +  # Plots the actual raw data points
-  geom_line(data = grid_data, aes(y = predicted_cm), color = "red", size = 1)  # Predicted line
-
-eval_deriv(test_mod, 0.5)
 ```
+
+## load diversity data
+
+```{r}
+
+nuc_div <- fread("../data/diversity/all_sites/2029_pi.txt", header = T)
+
+nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2 # midpoint
+nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
+
+names(nuc_div)[2] <- "chrom"
+
+# fit model to marey map
+best_mods <- recom_map %>%
+  group_by(chrom) %>%
+  nest() %>%
+  mutate(model = map(data, ~ find_best_poly(.x, 
+                                            x_col = "pos",
+                                            y_col = "cm", 
+                                            max_degree = 7)))
+# Plot model fits
+grid_data <- best_mods %>%
+  mutate(
+    grid = map(data, ~ tibble(x_val = seq(min(.x$pos), max(.x$pos), length.out = 500))))
+
+pred_data <- grid_data %>% 
+  mutate(fit  = map2(model, grid, ~ predict(.x, newdata = .y))
+  ) %>%
+  select(chrom, grid, fit) %>%
+  unnest(c(grid, fit))
+
+names(pred_data)[2] = "pos"
+
+ggplot(pred_data, aes(x = pos, y = fit)) +
+  geom_line() +
+  geom_point(data = recom_map, mapping = aes(x = pos, y = cm), color = "red") +
+  facet_wrap(.~chrom)
+
+# Evaluate derivative of model for windows
+rate_vs_div <- nuc_div %>%
+  left_join(best_mods, by = "chrom") %>%
+  group_by(chrom) %>%
+  mutate(rate = eval_deriv(model[[1]], window_pos_mid)) %>%
+  select(chrom, window_pos_mid, rate, avg_pi) %>%
+  unnest(cols = c(rate))
+
+# filter out negative recombination rates
+rate_vs_div <- rate_vs_div %>% filter(rate > 0)
+
+# recombination rate across chromosome
+ggplot(rate_vs_div, aes(x = window_pos_mid, y = rate)) +
+  geom_line() +
+  facet_wrap(.~chrom)
+
+# diversity vs recombination rate
+ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
+  geom_point() +
+  geom_smooth(method = "lm") + 
+  stat_cor() +
+  #xlim(0, 10) +
+  facet_zoom(xlim = c(0, 10)) +
+   theme(
+  # Draws a border line and shaded region for the connecting zoom lines
+    zoom = element_rect(colour = "red", linewidth = 0.8, fill = alpha("red", 0.01)),
+    # Optional: Adds a distinct border strictly around the zoomed-in panel background
+    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)
+  ) +
+  labs(x = "Recombination rate (cM/Mb)", y = "Synonymous site diversity")
+```
+
+# Ne and VA(1) estimates
 
 ## calculate average ld or average ld decay by block
 

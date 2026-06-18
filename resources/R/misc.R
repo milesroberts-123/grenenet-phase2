@@ -47,7 +47,7 @@ find_best_poly <- function(data, x_col, y_col, max_degree = 10) {
 #' @export
 #'
 #' @examples
-eval_deriv <- function(model, x_eval, best_degree) {
+eval_deriv <- function(model, x_eval) {
   # 4. Extract coefficients
   # beta[1] is intercept, beta[2] is x^1, beta[3] is x^2, etc.
   beta <- coef(model)
