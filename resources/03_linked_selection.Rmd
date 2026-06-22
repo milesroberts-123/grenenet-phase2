@@ -20,10 +20,13 @@ library(ggplot2)
 library(scico)
 library(reshape2)
 library(tidyverse)
-# library(vroom)
 library(broom)
 library(data.table)
 library(testthat)
+library(ggpubr)
+library(MareyMap)
+library(ggforce)
+library(arrow)
 
 box::use(./R/gt[...],
          ./R/plot[...],
@@ -306,9 +309,9 @@ load("../data/worldclim_sitesdata.rda")
 ```{r}
 library(arrow)
 
+# one time conversion
 open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
   write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/hapfire_parquet", format = "parquet", max_rows_per_file = 500000L)
-
 
 hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/hapfire_parquet")
 
@@ -754,6 +757,7 @@ for(b in unique_blocks[320:418]){
 params <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/config/gt_params.tsv", sep = "\t", header = T, data.table = F)
 
 neutfreq_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
+#neutfreq_files <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/", params$ID[params$VA == 0], "_neutfreqs.tsv", sep = "")
 
 #neutfreq_files <- sample(neutfreq_files, size = 1000, replace = F)
 
@@ -769,11 +773,11 @@ files_to_plot <- c(
 
 sim_curves <- NULL
 
-output <- paste("../results/", today, "/simulated_gt_curves_with_neutral_" , today, ".txt", sep = "")
+output_sim <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/simulated_gt_curves_" , today, ".txt", sep = "")
 
-check_file_exists(output)
+check_file_exists(output_sim)
 
-gens_to_skip <- 0
+P <- 300 # number of permutations to estimate drift absoluate covariances
 
 for(neutfreq_file in neutfreq_files){
   simid <- as.numeric(gsub(".*/", "", gsub("_neutfreqs.tsv", "", neutfreq_file)))
@@ -829,14 +833,42 @@ for(neutfreq_file in neutfreq_files){
 
   covmat_sim <- covmat_from_pmat(pmat_sim, correct_for_n = F, input_asin_trans = F)
   
-  #   
+  sim_curve <- gt_from_covmat(covmat_sim)
+  
+  # create blocks
+  block_sim <- data.frame(
+    chrom = 1,
+    pos = 1:nrow(pmat_sim)
+  )
+  
+  block_sim <- create_blocks(block_sim, chrom, pos, 1000, "_")
+  
+  # block-based sign permutation
+  sim_perm_curves <- NULL
+  for(i in 1:P){
+    perm_covmat_sim <- covmat_from_pmat(pmat_sim, n = NULL, correct_for_n = F, input_asin_trans = F, procedure = "window", windows = block_sim$window)
+  
+    sim_perm_curve <- gt_from_covmat(perm_covmat_sim)
+    sim_perm_curve$perm <- i
+    
+    sim_perm_curves <- rbind(sim_perm_curves, sim_perm_curve)
+  }
+  
+  sim_perm_curves <- sim_perm_curves %>%
+    group_by(gen) %>%
+    summarize(med_sum_abs_cov = median(sum_abs_cov),
+              upr_sum_abs_cov = quantile(sum_abs_cov, 0.975))
+  
+  sim_curve <- sim_curve %>%
+    left_join(sim_perm_curves, by = "gen") %>%
+    mutate(cor_sum_abs_cov = sum_abs_cov - upr_sum_abs_cov) 
+
   # if(neutfreq_file %in% files_to_plot){
   #   print("Plotting variance covariance matrix...")
   #   plot_var_cov_matrix(covmat_sim, paste("../results/", today, "/", simid, "_var_cov_mat.pdf", sep = ""), include_values = F)
   # }
   # 
-  sim_curve <- gt_from_covmat(covmat_sim)
-  
+
   param_row <- params[(params$ID == simid),]
   
   sim_curve$ID <- simid
@@ -848,7 +880,7 @@ for(neutfreq_file in neutfreq_files){
   
   #write.table(sim_curve, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
   
-  append_table(sim_curve, output)
+  append_table(sim_curve, output_sim)
 }
 
 ```
@@ -1059,15 +1091,23 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 # for now, ignore some sites
 sites <- sites[c(-30)]
 
-gt_results <- NULL
+output_gt_points <-  paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/gt_point_estimates.tsv",
+  sep = ""
+)
 
 for(site in unique(sites)){
   print(paste("Site:", site))
-  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
+    collect()
   
   for(exprep in 1:12){
     print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    hap_rep <- hap_site %>% 
+      dplyr::select(ends_with(paste("_", exprep, sep = "")))
     
     # sort names to be in order of generation
     hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
@@ -1089,7 +1129,8 @@ for(site in unique(sites)){
     gt_result$site<-site
     gt_result$rep<-exprep
     
-    gt_results <- rbind(gt_results, gt_result)
+    append_table(gt_result, output_gt_points)
+    #gt_results <- rbind(gt_results, gt_result)
   }
 }
 
@@ -1253,7 +1294,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 sites <- sites[c(-30)]
 
 # permuation parameters
-sign_permute_replicates <- 400
+sign_permute_replicates <- 300
 sign_permute_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
 
 # define output
@@ -1264,10 +1305,10 @@ output_gt_perm <- paste(
   sep = ""
 )
 
-check_file_exists(output_gt_perm)
+#check_file_exists(output_gt_perm)
 
 # loop over sites
-for (site in unique(sites)[1]) {
+for (site in unique(sites)[29:30]) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
@@ -1372,6 +1413,50 @@ gt_perm_results %>%
   summarize(lwr = quantile(gt_abs_2, 0.025),
             med = median(gt_abs_2),
             upr = quantile(gt_abs_2, 0.975))
+```
+### compare bootstrap with permutation null
+
+```{r}
+
+points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/gt_point_estimates.tsv")
+
+perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/gt_permutations.tsv") %>% 
+  distinct(site, rep, gen, perm, .keep_all = T)
+
+boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/gt_bootstraps.tsv", colClasses = "numeric") %>% 
+  distinct(site, rep, gen, boot, .keep_all = T) %>%
+  mutate_if(is.character,as.numeric)
+
+# average absolute cov sum under permutation
+perms <- perms %>%
+  group_by(site, rep, gen) %>%
+  summarize(perm_lwr_sum_abs_cov = quantile(sum_abs_cov, 0.025),
+            perm_mean_sum_abs_cov = mean(sum_abs_cov),
+            perm_upr_sum_abs_cov = quantile(sum_abs_cov, 0.975))
+
+# subtract off permutation null
+points_cor <- points %>% 
+  left_join(perms, by = c("site", "rep", "gen")) %>%
+  mutate(cor_sum_abs_cov = sum_abs_cov - perm_upr_sum_abs_cov) %>%
+  group_by(site, gen) %>%
+  summarize(gt_abs_cor = mean(cor_sum_abs_cov)/mean(sum_abs_cov + sum_var))
+
+boots_cor <- boots %>%
+  left_join(perms, by = c("site", "rep", "gen")) %>%
+  mutate(cor_sum_abs_cov = sum_abs_cov - perm_upr_sum_abs_cov) %>%
+  group_by(site, gen, boot) %>%
+  summarize(gt_abs_cor = mean(cor_sum_abs_cov, na.rm = T)/mean(sum_abs_cov + sum_var, na.rm = T)) %>%
+  group_by(site, gen) %>%
+  summarize(gt_abs_cor_lwr = quantile(gt_abs_cor, 0.025, na.rm = T),
+            gt_abs_cor_upr = quantile(gt_abs_cor, 0.975, na.rm = T))
+  
+points_cor %>% 
+  left_join(boots_cor, by = c("site", "gen"))
+
+ggplot(points_cor, aes(x = gen, y = gt_abs_cor, group = site)) +
+  geom_point() +
+  geom_line()
+
 ```
 
 
@@ -2187,7 +2272,6 @@ rep_gt_perm %>%
 
 ```{r}
 #
-library(MareyMap)
 data("Arabidopsis_thaliana")
 
 recom_map_1 <- data.frame(
@@ -2253,7 +2337,7 @@ ggplot(recom_map, aes(x = pos, y = cm)) +
 
 ```
 
-## compare diversity data vs recombination rate
+## load diversity data
 
 ```{r}
 
@@ -2263,6 +2347,7 @@ nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2 # 
 nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
 
 names(nuc_div)[2] <- "chrom"
+
 
 # fit model to marey map
 best_mods <- recom_map %>%
@@ -2307,26 +2392,25 @@ ggplot(rate_vs_div, aes(x = window_pos_mid, y = rate)) +
   facet_wrap(.~chrom)
 
 # diversity vs recombination rate
-rate_vs_div_out <- subset(rate_vs_div, rate < 15)
-
-# adjust correlation coefficient for autocorrelation
-corr_ci_autocorr(rate_vs_div_out$rate, rate_vs_div_out$avg_pi)
-
-ggplot(rate_vs_div_out, aes(x = rate, y = avg_pi)) +
+ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
   geom_point() +
-  geom_smooth(method = "lm") + 
-  facet_zoom(xlim = c(0, 10)) +
-  stat_cor() +
+  #geom_smooth(method = "lm", color = "lightblue") + 
+  #stat_cor() +
+  #xlim(0, 10) +
+  geom_smooth(
+    data = subset(rate_vs_div, rate <= 10), 
+    method = "lm", 
+    se = TRUE, 
+    color = "lightblue"
+  ) +
+  facet_zoom(rate <= 10) +
    theme(
   # Draws a border line and shaded region for the connecting zoom lines
-    zoom = element_rect(colour = "red", linewidth = 0.8, fill = alpha("red", 0.01)),
-    # Optional: Adds a distinct border strictly around the zoomed-in panel background
-    panel.border = element_rect(colour = "black", fill = NA, linewidth = 1)
+    zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))
   ) +
-  labs(x = "Recombination rate (cM/Mb)", y = "Synonymous site diversity")
+  labs(x = "Recombination rate (cM/Mb)", y = "Average nucleotide diversity")
 
-
-
+ggsave(paste(results_path, "recombination_vs_diversity.pdf", sep = ""), width = 5.5, height = 8)
 ```
 
 # Ne and VA(1) estimates
@@ -2901,7 +2985,14 @@ for(site in unique(glm_results$SITE)){
 #sim_curves <- fread("../results/2026-04-27/simulated_gt_curves_2026-04-27.txt")
 #sim_curves <- fread("../results/2026-04-28/simulated_gt_curves_2026-04-28.txt")
 #sim_curves <- fread("../results/2026-06-15/simulated_gt_curves_2026-06-15.txt")
-sim_curves <- fread("../results/2026-06-15/simulated_gt_curves_with_neutral_2026-06-15.txt")
+#sim_curves <- fread("../results/2026-06-15/simulated_gt_curves_with_neutral_2026-06-15.txt")
+
+#sim_curves <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/simulated_gt_curves_2026-06-17.txt")
+sim_curves <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-19/simulated_gt_curves_2026-06-19.txt")
+
+sim_curves$sum_abs_cov/sim_curves$sum_var
+
+sim_curves$sum_abs_cov/sim_curves$med_sum_abs_cov
 
 #sim_curves <- merge(params[,c("ID", "MIN_AGE")], sim_curves, by = "ID")
 
@@ -2912,6 +3003,7 @@ mean_sims = sim_curves %>%
             gt_pos = mean(sum_pos_cov)/mean(sum_abs_cov + sum_var),
             gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov + sum_var),
             gt_abs_2 = mean(sum_abs_cov)/mean(sum_cov + sum_var),
+            gt_abs_cor = mean(cor_sum_abs_cov)/mean(sum_abs_cov + sum_var),
             sum_cov = mean(sum_cov), 
             sum_abs_cov = mean(sum_abs_cov),
             sum_pos_cov = mean(sum_pos_cov),
@@ -2925,6 +3017,18 @@ mean_sims$adjust[(mean_sims$adjust == "FALSE")] <- "Ne lowered"
 
 # mean_sims$MIN_AGE[(mean_sims$MIN_AGE == 1)] <- "Non-WF"
 # mean_sims$MIN_AGE[(mean_sims$MIN_AGE == 0)] <- "Non-WF reduced"
+
+# gt over time
+ggplot(mean_sims, aes(x = gen, y = gt_abs_cor, group = SIGMA, color = as.factor(SIGMA))) +
+  geom_point(size = 1.5) +
+  scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
+  facet_grid(adjust~VA+L) +
+  geom_hline(yintercept = 0, lwd = 1.1, lty = 2) +
+  geom_line() +
+  theme(legend.position = "top") +
+  labs(x = "Generation", y = "G(t)", color = "Self\nrate")
+
+ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt_abs_cor.pdf", sep = ""), height = 4.5, width = 14, device = cairo_pdf)
 
 # gt over time
 ggplot(mean_sims, aes(x = gen, y = gt, group = SIGMA, color = as.factor(SIGMA))) +
@@ -2977,6 +3081,7 @@ ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_sum_abs_
 # sum variances over time
 ggplot(mean_sims, aes(x = gen, y = sum_var, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
+  geom_abline(intercept = 0, slope = 1/16000) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
   facet_grid(adjust~VA+L) +
@@ -2998,20 +3103,6 @@ ggplot(mean_sims, aes(x = gen, y = ratio, group = SIGMA, color = as.factor(SIGMA
 
 ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_ratio.pdf", sep = ""), height = 4.5, width = 14, device = cairo_pdf)
 
-# try using averages of variances components
-mean_sims$gt2 = mean_sims$sum_cov/(mean_sims$sum_cov + mean_sims$sum_var)
-
-ggplot(mean_sims, aes(x = gen, y = gt2, group = interaction(sigma, alpha), color = as.factor(sigma))) +
-  geom_point(size = 1.5) +
-  geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
-  scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(adjust~VA+L) +
-  geom_line() +
-  theme(legend.position = "top") +
-  labs(x = "Generation", y = "G(t)\nmean components", color = "Self\nrate")
-
-ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt_mean_components.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
-
 # absolute value of covariance
 #ggplot(subset(mean_sims,gen <=10), aes(x = gen, y = sum_abs_cov/(sum_abs_cov + sum_var), group = interaction(sigma, alpha), color = as.factor(sigma))) +
 ggplot(mean_sims, aes(x = gen, y = gt_abs, group = SIGMA, color = as.factor(SIGMA))) +
@@ -3026,7 +3117,7 @@ ggplot(mean_sims, aes(x = gen, y = gt_abs, group = SIGMA, color = as.factor(SIGM
 ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt_abs.pdf", sep = ""), height = 4.5, width = 14, device = cairo_pdf)
 
 # sum of negative vs positive cov
-ggplot(mean_sims, aes(x = gen, y = sum_neg_cov, group = interaction(sigma, alpha), color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = sum_neg_cov, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
   facet_grid(adjust~VA+L) +
@@ -3036,7 +3127,7 @@ ggplot(mean_sims, aes(x = gen, y = sum_neg_cov, group = interaction(sigma, alpha
 
 ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_sum_neg_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
-ggplot(mean_sims, aes(x = gen, y = sum_pos_cov, group = interaction(sigma, alpha), color = as.factor(sigma))) +
+ggplot(mean_sims, aes(x = gen, y = sum_pos_cov, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
   facet_grid(adjust~VA+L) +
@@ -3991,3 +4082,4 @@ for(i in seq_along(chroms)){
 
 head(lfmm_ft_only)
 ```
+>>>>>>> Stashed changes
