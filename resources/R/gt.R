@@ -136,6 +136,33 @@ freq_increments <- function(pmat){
   pmat[, -1] - pmat[, -ncol(pmat)]
 }
 
+
+#' Standardize covmat by 
+#'
+#' @param pmat excluding the last time point
+#' @param covmat 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+standard_cov_by_het <- function(pmat, covmat) {
+  stopifnot(ncol(pmat) == ncol(covmat))
+  half_het_sums <- 0.5*apply(pmat, MARGIN = 2, FUN = sum_of_het)
+  stopifnot(all(half_het_sums > 0))
+  # standaridize variances
+  diag(covmat) <- diag(covmat)/half_het_sums
+  # standardize covariances
+  for(i in 1:nrow(covmat)){
+    for(j in 1:ncol(covmat)){
+      if(i != j){
+        covmat[i,j] <- covmat[i,j]/half_het_sums[min(c(i,j))]
+      }
+    }
+  }
+  return(covmat)
+}
+
 #' Calculate covariances from allele frequency matrix
 #'
 #' @param pmat matrix of allele frequencies, first column is initial generation
@@ -146,7 +173,7 @@ freq_increments <- function(pmat){
 #' @export
 #'
 #' @examples
-covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, input_asin_trans = F, procedure = "none", windows = NULL){
+covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, standard_by_het = F, input_asin_trans = F, procedure = "none", windows = NULL){
   # allele frequency changes between adjacent generations
   pdiff <- freq_increments(pmat)
   # randomly swap signs of allele frequency changes
@@ -203,6 +230,11 @@ covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, input_asin_trans
       }
     }
   }
+  
+  if(standard_by_het){
+    covmat <- standard_cov_by_het(pmat[,-ncol(pmat)], covmat)
+  }
+  
   return(covmat)
 }
 
@@ -626,6 +658,53 @@ estim_linked_selection_params <- function(pmat, sum_of_het_vec, sum_of_het_1, n,
   return(X)
 }
 
+
+
+#' Title
+#'
+#' @param pmat 
+#' @param sum_of_het_vec 
+#' @param sum_of_het_1 
+#' @param n 
+#' @param mean_ld 
+#' @param weight 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+estim_linked_selection_params_new <- function(pmat, n, sum_of_het_vec, sum_of_het_1, mean_ld, weight){
+  
+  covmat <- covmat_from_pmat(pmat, n = n, correct_for_n = T, standard_by_het = T)
+  
+  X <- reshape2::melt(covmat)
+  X <- X[!duplicated(X$value),]
+  
+  X$t <- gsub("_", "", str_extract(X$Var2, "_.*_"))
+  X$s <- gsub("_", "", str_extract(X$Var1, "_.*_"))
+  
+  X$b <- as.numeric(X$t == X$s)
+  
+  X <- merge(X, sum_of_het_vec, by = "t")
+  
+  X <- merge(X, sum_of_het_vec, by.x = "s", by.y = "t", suffixes = c("_t", "_s"))
+  
+  #sum_of_het_1 <- sum_of_het(pmat[,1])
+  
+  X$sum_of_het_ratio <- X$sum_of_het_s/sum_of_het_1
+  
+  #X$sum_of_het_ratio <- X$sum_of_het_s/X$sum_of_het_t
+  
+  X$a <- X$sum_of_het_ratio*0.5*mean_ld*weight
+  
+  X$mean_ld <- mean_ld
+  
+  X$weight <- weight
+  
+  X$sum_of_het_1 <- sum_of_het_1
+  
+  return(X)
+}
 
 #' Allele frequency trajectory simulation, THE SIGNATURE OF POSITIVE SELECTION ON STANDING GENETIC VARIATION (PRZEWORSKI 2005)
 #'

@@ -27,6 +27,8 @@ library(ggpubr)
 library(MareyMap)
 library(ggforce)
 library(arrow)
+library(sf)
+library(maps)
 
 box::use(./R/gt[...],
          ./R/plot[...],
@@ -51,7 +53,8 @@ theme_set(
       ),
       axis.text = element_text(colour = "black"),
       plot.title = element_text(hjust = 0.5),
-      strip.text = element_text(colour = "black")
+      strip.text = element_text(colour = "black"),
+      panel.grid.minor = element_blank()
     )
 )
 ```
@@ -227,7 +230,9 @@ read_csv_chunked(
 
 ```
 
-# load allele frequencies and sample sizes
+# loading datasets
+
+## sample sizes
 
 ```{r}
 
@@ -298,33 +303,63 @@ sample_sizes <- rbind(sample_sizes_13, sample_sizes_45)
 sample_sizes$n <- 2*sample_sizes$n
 all(sample_sizes$n > 1)
 
+rm(sample_sizes_13, sample_sizes_45)
 # load site climatic data
 #load("../data/sites.clim.rda")
-load("../data/worldclim_sitesdata.rda")
 
 #sites.clim <- sites.clim[,c("SITE_CODE", paste("bio", 1:19, sep = ""))]
 ```
-# test converting data to binary
+
+## allele frequency matrix
 
 ```{r}
-library(arrow)
-
 # one time conversion
-open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
+if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/hapfire_parquet")){
+  open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
   write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/hapfire_parquet", format = "parquet", max_rows_per_file = 500000L)
+}
 
+# now can just read it
 hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/hapfire_parquet")
+```
 
-# Ensure arrow uses all available CPU threads
-#set_cpu_count(parallelly::availableCores())
+## site data
 
-# Write the dataframe efficiently 
-# Zstd provides a great balance of tight file compression and write speed
-write_parquet(hapfire, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.parquet")
+```{r}
+# from grene-net r package
+load("../data/worldclim_sitesdata.rda")
+load("../data/locations_data.rda")
 
-Sys.time()
-read_parquet("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_hapFIRE_allele_frequency_random_switch_fixrm_trajectory.parquet")
-Sys.time()
+# 1. Create a spatial object for your target point
+target_points <- locations_data %>% st_as_sf(coords = c("longitude", "latitude"), crs = 4326)
+
+# 2. Get a dataset of world or US cities (from the maps package)
+data(world.cities, package = "maps")
+
+cities_sf <- world.cities %>%
+  st_as_sf(coords = c("long", "lat"), crs = 4326)
+
+# 3. Find the index of the nearest city
+nearest_index <- st_nearest_feature(target_points, cities_sf)
+
+# 4. Pull the closest city details
+closest_city <- world.cities[nearest_index, ]
+print(closest_city)
+
+locations_data$city_country <- paste(closest_city$name, ", ", closest_city$country.etc, sep = "")
+```
+
+## LD matrix
+
+```{r}
+# one time conversion
+if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink_parquet")){
+  open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink.ld.tsv", format = "tsv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
+  write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink_parquet", format = "parquet", max_rows_per_file = 2000000L)
+}
+
+ld_matrix <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink_parquet")
+
 ```
 
 # Feder test
@@ -1414,11 +1449,13 @@ gt_perm_results %>%
             med = median(gt_abs_2),
             upr = quantile(gt_abs_2, 0.975))
 ```
+
 ### compare bootstrap with permutation null
 
 ```{r}
 
-points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/gt_point_estimates.tsv")
+points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/gt_point_estimates.tsv") %>%
+  left_join(select(locations_data, site, city_country), by = "site")
 
 perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/gt_permutations.tsv") %>% 
   distinct(site, rep, gen, perm, .keep_all = T)
@@ -1428,11 +1465,76 @@ boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-pha
   mutate_if(is.character,as.numeric)
 
 # average absolute cov sum under permutation
-perms <- perms %>%
-  group_by(site, rep, gen) %>%
-  summarize(perm_lwr_sum_abs_cov = quantile(sum_abs_cov, 0.025),
-            perm_mean_sum_abs_cov = mean(sum_abs_cov),
-            perm_upr_sum_abs_cov = quantile(sum_abs_cov, 0.975))
+# perms <- perms %>%
+#   group_by(site, rep, gen) %>%
+#   summarize(perm_lwr_sum_abs_cov = quantile(sum_abs_cov, 0.025),
+#             perm_mean_sum_abs_cov = mean(sum_abs_cov),
+#             perm_upr_sum_abs_cov = quantile(sum_abs_cov, 0.975),
+#             perm_lwr_gt_abs = quantile(sum_abs_cov/(), 0.025),
+#             perm_mean_gt_abs = mean(sum_abs_cov),
+#             perm_upr_gt_abs = quantile(sum_abs_cov, 0.975))
+
+perms_summary <- perms %>%
+  group_by(site, gen, rep) %>%
+  summarize(sum_abs_cov_perm_lwr = quantile(sum_abs_cov, 0.025),
+    sum_abs_cov_perm_upr = quantile(sum_abs_cov, 0.975),
+    sum_abs_cov = NA,
+    gt_abs_perm_lwr = quantile(gt_abs, 0.025),
+    gt_abs_perm_upr = quantile(gt_abs, 0.975),
+    gt_abs = NA) %>%
+  left_join(select(locations_data, site, city_country), by = "site")
+
+boots_summary <- boots %>%
+  group_by(site, gen, rep) %>%
+  summarize(sum_abs_cov_boot_lwr = quantile(sum_abs_cov, 0.025, na.rm = T),
+    sum_abs_cov_boot_upr = quantile(sum_abs_cov, 0.975, na.rm = T),
+    sum_abs_cov = NA,
+    gt_abs_boot_lwr = quantile(gt_abs, 0.025, na.rm = T),
+    gt_abs_boot_upr = quantile(gt_abs, 0.975, na.rm = T),
+    gt_abs = median(gt_abs, na.rm = T)) %>%
+  left_join(select(locations_data, site, city_country), by = "site") %>%
+  left_join(worldclim_sitesdata, by = "site")
+
+## plot sum of covariance through time
+ggplot(points, aes(x = gen, y = sum_abs_cov, group = interaction(site,rep))) +
+  geom_point(shape = 16) +
+  geom_ribbon(data = perms_summary, mapping = aes(x=gen, ymin=sum_abs_cov_perm_lwr, ymax=sum_abs_cov_perm_upr), alpha = 0.2, color = "grey", size = 0.01) +
+  facet_wrap(.~city_country+site, scales = "free_y") +
+  geom_line() +
+  geom_errorbar(data = boots_summary, mapping = aes(x = gen, ymin = sum_abs_cov_boot_lwr, ymax = sum_abs_cov_boot_upr), width = 0.1, color = "red")
+
+ggsave(paste(results_path, "sum_abs_cov_perm_boot.pdf", sep = ""), width = 13, height = 9)
+
+# plot G(t) per replicate through time
+ggplot(boots_summary, aes(x = gen, y = gt_abs, group = interaction(site, rep), color = bio1)) +
+  geom_point(shape = 16) +
+  geom_line() +
+  geom_errorbar(data = boots_summary, mapping = aes(x = gen, ymin = gt_abs_boot_lwr, ymax = gt_abs_boot_upr), width = 0.1, color = "red") +
+  geom_ribbon(data = perms_summary, mapping = aes(x=gen, ymin=gt_abs_perm_lwr, ymax=gt_abs_perm_upr), alpha = 0.2, color = "grey", size = 0.01) +
+  facet_wrap(.~city_country+site, scales = "free_y") +
+  scale_color_scico(palette = "berlin") +
+  labs(x = "Generation", y = expression(G[abs]), color = "Mean\nAnnual\nTemp.\n(\u00B0C)")
+
+
+ggsave(paste(results_path, "gt_abs_perm_boot.pdf", sep = ""), width = 12, height = 9)
+
+
+
+boots_summary <- boots %>%
+  # group_by(site, gen, rep, boot) %>%
+  # mutate(gt_abs = (sum_abs_cov)/(sum_abs_cov+sum_var)) %>%
+  group_by(site, gen, rep) %>%
+  summarize(gt_abs_boot_lwr = quantile(gt_abs, 0.025, na.rm = T),
+    gt_abs_boot_upr = quantile(gt_abs, 0.975, na.rm = T),
+    gt_abs = NA)
+
+ggplot(points_summary, aes(x = gen, y = gt_abs, group = site)) +
+  geom_point() +
+  geom_errorbar(data = boots_summary, mapping = aes(x = gen, ymin = gt_abs_boot_lwr, ymax = gt_abs_boot_upr), width = 0.1) +
+  geom_ribbon(data = perms_summary, mapping = aes(x=gen, ymin=gt_abs_perm_lwr, ymax=gt_abs_perm_upr), alpha = 0.2, color = "grey", size = 0.01) + 
+  geom_line()
+
+
 
 # subtract off permutation null
 points_cor <- points %>% 
@@ -1453,9 +1555,6 @@ boots_cor <- boots %>%
 points_cor %>% 
   left_join(boots_cor, by = c("site", "gen"))
 
-ggplot(points_cor, aes(x = gen, y = gt_abs_cor, group = site)) +
-  geom_point() +
-  geom_line()
 
 ```
 
@@ -2414,6 +2513,190 @@ ggsave(paste(results_path, "recombination_vs_diversity.pdf", sep = ""), width = 
 ```
 
 # Ne and VA(1) estimates
+
+## re-do: standardize by half heterozygosity
+
+```{r}
+# make list of sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+
+# initial sum of site heterozygosity
+sum_of_het_1 <- sum_of_het(gen0[,"X3"])
+
+# get correlations that are encompassed within each block
+blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+
+output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation.txt", sep = "")
+
+check_file_exists(output_linked_params)
+
+for(site in unique(sites)){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = ""))) %>% collect()
+  
+  hap_site$window <- blocks$window
+  
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")), window)
+    
+    if(ncol(hap_rep) <= 2){
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
+    
+    sum_of_het_vec <- sum_of_het_by_t(hap_rep %>% dplyr::select(-window))
+    
+    for(b in unique(hap_site$window)){
+      
+      hap_block <- hap_rep %>% filter(window == b) %>% dplyr::select(-window)
+      
+      gen0_block <- blocks %>% filter(window == b)
+      
+      weight = 1/200
+      
+      chrom = gen0_block$X1[1]
+      start = min(gen0_block$X2)
+      stop = max(gen0_block$X2)
+      
+      mean_ld_block <- ld_matrix %>% 
+        filter( (CHR_A == chrom) & (CHR_B == chrom) & (BP_A >= start) & (BP_A <= stop) & (BP_B >= start) & (BP_B <= stop)) %>% 
+        summarize(mean(R2)) %>% 
+        collect()
+  
+      # sample sizes
+      rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 1000)
+      
+      # sort names to be in order of generation
+      hap_block <- hap_block %>% relocate(all_of(sort(colnames(hap_block))))
+      
+      # add initial generation
+      hap_block <- cbind(gen0_block$X3, hap_block)
+      #hap_rep <- cbind(gen0$X3, hap_rep)
+      
+      # organize data for linked selection parameters into a table
+      linked_sel_param_block <- estim_linked_selection_params_new(hap_block, rep_n$n, sum_of_het_vec, sum_of_het_1, mean_ld_block$`mean(R2)`, weight)
+      
+      linked_sel_param_block$site = site
+      linked_sel_param_block$rep = exprep
+      linked_sel_param_block$block = b
+      linked_sel_param_block$S = nrow(hap_block)
+      
+      append_table(linked_sel_param_block, output_linked_params)
+      
+    }
+  }
+}
+
+
+
+```
+
+### fit linear models
+
+```{r}
+va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-24/va_ne_points_for_estimation.txt")
+
+# va_ne_blocks <- va_ne_blocks %>% 
+#   filter(t <= 2 & s <= 2)
+  #filter((sum_of_het_ratio < 1) & (value > 0))
+
+# check for multicollinearity
+va_ne_blocks %>%
+  group_by(site, rep) %>%
+  summarize(cor(a,b))
+
+# ggplot(subset(va_ne_blocks, rep == 3), aes(x = a, y = value)) +
+#   geom_point() +
+#   facet_wrap(b~rep, scales = "free_y")
+
+mod_genome <- va_ne_blocks %>%
+  group_by(site, rep) %>%
+  #filter((sum_of_het_ratio < 1) & (value > 0))
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+
+mod_by_block <- va_ne_blocks %>%
+  group_by(site, rep, block) %>%
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+
+mod_off_diag <- va_ne_blocks %>%
+  group_by(site, rep) %>%
+  filter(s != t) %>%
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+
+mean_est <- mod_by_block %>%
+  group_by(site, rep, term) %>%
+  summarize(estimate = mean(estimate))
+  #filter(estimate < 0)
+
+va1_ne_est <- mod_genome %>% 
+  subset(term == "b") %>% 
+  mutate(Ne=1/(2*estimate)) %>%
+  left_join(mod_genome %>% subset(term == "a"), by = c("site", "rep")) %>%
+  mutate(VA1 = estimate.y) %>%
+  dplyr::select(site, rep, Ne, VA1)
+
+ggplot(va1_ne_est, aes(x = Ne, y = VA1)) +
+  geom_point() +
+  scale_y_log10() +
+  scale_x_log10()
+
+## bootstrap
+W = 200
+B = 200
+boot_samples <- NULL
+for(i in 1:B){
+  
+  boot_sample <- mod_by_block %>%
+    group_by(site,rep,term) %>%
+    slice_sample(n = W, replace = TRUE) %>%  # Sample blocks with replacement
+    summarize(boot_estimate = mean(estimate))
+  
+  boot_samples <- rbind(boot_samples, boot_sample)
+}
+
+boot_cis <- boot_samples %>%
+  group_by(site, rep, term) %>%
+  summarize(lwr = quantile(boot_estimate, 0.025),
+            med = median(boot_estimate),
+            upr = quantile(boot_estimate, 0.975))
+
+boot_cis %>%
+  subset(term == "a") 
+  
+boot_cis %>%
+  subset(term == "b") %>% 
+  mutate(Ne_lwr=1/(2*upr),
+         Ne_med=1/(2*med),
+         Ne_upr=1/(2*lwr))
+```
 
 ## calculate average ld or average ld decay by block
 
