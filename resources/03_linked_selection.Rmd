@@ -3,6 +3,8 @@ title: "Linked selection in GrENE-net phase 2"
 output: 
   html_notebook: 
     toc: true
+editor_options: 
+  chunk_output_type: inline
 ---
 
 # set-up
@@ -304,6 +306,7 @@ sample_sizes$n <- 2*sample_sizes$n
 all(sample_sizes$n > 1)
 
 rm(sample_sizes_13, sample_sizes_45)
+gc()
 # load site climatic data
 #load("../data/sites.clim.rda")
 
@@ -2514,11 +2517,14 @@ ggsave(paste(results_path, "recombination_vs_diversity.pdf", sep = ""), width = 
 
 # Ne and VA(1) estimates
 
-## re-do: standardize by half heterozygosity
+## re-do: standardize by half heterozygosity, weight
+
+### one model per block
 
 ```{r}
 # make list of sites
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
+sites <- sites[-30]
 
 # initial sum of site heterozygosity
 sum_of_het_1 <- sum_of_het(gen0[,"X3"])
@@ -2528,11 +2534,16 @@ blocks <- create_blocks(gen0, X1, X2, 15000, "_")
 
 output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation.txt", sep = "")
 
-check_file_exists(output_linked_params)
+#check_file_exists(output_linked_params)
+
+#weight = 1/200
+weight = 1
 
 for(site in unique(sites)){
   print(paste("Site:", site))
-  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = ""))) %>% collect()
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>% 
+    collect()
   
   hap_site$window <- blocks$window
   
@@ -2552,8 +2563,6 @@ for(site in unique(sites)){
       hap_block <- hap_rep %>% filter(window == b) %>% dplyr::select(-window)
       
       gen0_block <- blocks %>% filter(window == b)
-      
-      weight = 1/200
       
       chrom = gen0_block$X1[1]
       start = min(gen0_block$X2)
@@ -2591,11 +2600,116 @@ for(site in unique(sites)){
 
 
 ```
+### one model for whole genome
+
+```{r}
+output_linked_params_whole <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation_whole_genome.txt", sep = "")
+
+#check_file_exists(output_linked_params_whole)
+
+# mean ld decay
+mean_ld_block <- ld_matrix %>% 
+        summarize(mean(R2)) %>% 
+        collect()
+
+# initial sum of site heterozygosity
+sum_of_het_1 <- sum_of_het(gen0[,"X3"])
+
+#
+weight = 1
+
+for(site in unique(sites)){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>% 
+    collect()
+  
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    
+    if(ncol(hap_rep) <= 2){
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
+    
+    sum_of_het_vec <- sum_of_het_by_t(hap_rep)
+    
+    # sample sizes
+    rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 1000)
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    
+    # add initial generation
+    hap_rep <- cbind(gen0$X3, hap_rep)
+    #hap_rep <- cbind(gen0$X3, hap_rep)
+    
+    # organize data for linked selection parameters into a table
+    linked_sel_param_rep <- estim_linked_selection_params_new(hap_rep, rep_n$n, sum_of_het_vec, sum_of_het_1, mean_ld_block$`mean(R2)`, weight)
+    
+    linked_sel_param_rep$site = site
+    linked_sel_param_rep$rep = exprep
+    
+    append_table(linked_sel_param_rep, output_linked_params_whole)
+  }
+}
+
+```
 
 ### fit linear models
 
 ```{r}
-va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-24/va_ne_points_for_estimation.txt")
+
+### one model per genome
+va_ne_whole <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-24/va_ne_points_for_estimation_whole_genome.txt", fill = T) %>%
+  distinct(site, rep, s, t, .keep_all = T)
+
+mod_genome <- va_ne_whole %>%
+  group_by(site) %>%
+  filter(s <= 1 & t <= 1) %>%
+  #mutate(a = 1/a) %>%
+  #filter(s != t) %>%
+  #filter(s == t) %>%
+  #filter((sum_of_het_ratio < 1) & (value > 0))
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+
+ggplot(va_ne_whole %>% filter(s <= 1 & t <= 1), aes(x = a, y = value)) +
+  geom_point() +
+  geom_smooth(method = "lm") +
+  facet_wrap(.~site, scales = "free")
+
+### one model per block
+va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-25/va_ne_points_for_estimation.txt") %>%
+  distinct(site, rep, block, s, t, .keep_all = T)
+
+# un-do window weighting
+va_ne_blocks <- va_ne_blocks %>%
+  mutate(c = 0.5*mean_ld)
+
+va_ne_blocks %>%
+  group_by(site, rep) %>%
+  filter(s <= 1 & t <= 1) %>%
+  #filter((sum_of_het_ratio < 1) & (value > 0))
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = purrr::map(data, ~ lm(value ~ c + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
 
 # va_ne_blocks <- va_ne_blocks %>% 
 #   filter(t <= 2 & s <= 2)
@@ -2609,9 +2723,9 @@ va_ne_blocks %>%
 # ggplot(subset(va_ne_blocks, rep == 3), aes(x = a, y = value)) +
 #   geom_point() +
 #   facet_wrap(b~rep, scales = "free_y")
-
-mod_genome <- va_ne_blocks %>%
+mod_first_gen <- va_ne_blocks %>%
   group_by(site, rep) %>%
+  filter(s <= 1 & t <= 1) %>%
   #filter((sum_of_het_ratio < 1) & (value > 0))
   nest() %>%
   mutate(
@@ -2624,8 +2738,34 @@ mod_genome <- va_ne_blocks %>%
   unnest(tidied) %>% 
   dplyr::select(c(-data, -fit))
 
-mod_by_block <- va_ne_blocks %>%
+mod_first_gen %>% 
+  ungroup() %>%
+  filter(term == "a") %>% 
+  summarize(sum(estimate > 0))
+
+mod_genome <- va_ne_blocks %>%
+  group_by(site, rep) %>%
+  #filter(s <= 2 & t <= 2) %>%
+  #filter((sum_of_het_ratio < 1) & (value > 0))
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+
+mod_genome %>% 
+  ungroup() %>%
+  filter(term == "a") %>% 
+  summarize(sum(estimate > 0))
+
+mod_block <- va_ne_blocks %>%
   group_by(site, rep, block) %>%
+  #filter(s <= 2 & t <= 2) %>%
   nest() %>%
   mutate(
     # Fit a linear model to each nested group
@@ -2651,10 +2791,40 @@ mod_off_diag <- va_ne_blocks %>%
   unnest(tidied) %>% 
   dplyr::select(c(-data, -fit))
 
-mean_est <- mod_by_block %>%
-  group_by(site, rep, term) %>%
+mod_off_diag %>% 
+  ungroup() %>%
+  filter(term == "a") %>% 
+  summarize(sum(estimate > 0))
+
+mod_diag <- va_ne_blocks %>%
+  group_by(site, rep) %>%
+  filter(s == t) %>%
+  nest() %>%
+  mutate(
+    # Fit a linear model to each nested group
+    fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    # Extract tidy coefficients (intercept and slope)
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  # Expand the tidied results into a standard data frame
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+
+mod_diag %>% 
+  ungroup() %>%
+  filter(term == "a") %>% 
+  summarize(sum(estimate > 0))
+
+mean_est_genome <- mod_genome %>%
+  group_by(site, term) %>%
   summarize(estimate = mean(estimate))
   #filter(estimate < 0)
+
+mean_est_block <- mod_block %>%
+  group_by(site, rep, term) %>%
+  summarize(estimate = mean(estimate)) %>%
+  group_by(site, term) %>%
+  summarize(estiamte = mean(estimate))
 
 va1_ne_est <- mod_genome %>% 
   subset(term == "b") %>% 
@@ -2674,7 +2844,7 @@ B = 200
 boot_samples <- NULL
 for(i in 1:B){
   
-  boot_sample <- mod_by_block %>%
+  boot_sample <- mod_block %>%
     group_by(site,rep,term) %>%
     slice_sample(n = W, replace = TRUE) %>%  # Sample blocks with replacement
     summarize(boot_estimate = mean(estimate))
