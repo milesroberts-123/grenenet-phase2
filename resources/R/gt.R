@@ -178,6 +178,10 @@ covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, standard_by_het 
   pdiff <- freq_increments(pmat)
   # randomly swap signs of allele frequency changes
   pdiff <- sign_permute_increments(pdiff, procedure = procedure, windows = windows)
+  # ensure pdiff is a matrix even with a single increment (2-column pmat)
+  if(is.null(dim(pdiff))){
+    pdiff <- matrix(pdiff, ncol = 1)
+  }
   # covariance matrices
   covmat <- stats::cov(pdiff, use = "pairwise.complete.obs")
   # correct for sample size, if needed
@@ -195,13 +199,14 @@ covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, standard_by_het 
         warning("Are you sure values are arcsin transformed?")
       }
       # correct overlapping covariances
-      for(i in 1:(ncol(covmat)-1)){
+      # seq_len() yields integer(0) when ncol(covmat) == 1, so this is skipped
+      for(i in seq_len(ncol(covmat) - 1)){
         corrected_cov <- covmat[i,i+1] + (1/n[i+1])
         covmat[i,i+1] <- corrected_cov
         covmat[i+1,i] <- corrected_cov
       }
       # correct variances
-      for(i in 1:ncol(covmat)){
+      for(i in seq_len(ncol(covmat))){
         corrected_var <- covmat[i,i] - (1/n[i]) - (1/n[i+1])
         if(corrected_var < 0) {
           print("Sample size correction makes variance negative. Setting variance to zero")
@@ -210,16 +215,17 @@ covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, standard_by_het 
           covmat[i,i] <- corrected_var
         }
       }
-    ###RAW FREQUENCIES###
+      ###RAW FREQUENCIES###
     } else {
       # correct overlapping covariances
-      for(i in 1:(ncol(covmat)-1)){
+      # seq_len() yields integer(0) when ncol(covmat) == 1, so this is skipped
+      for(i in seq_len(ncol(covmat) - 1)){
         corrected_cov <- mean(pdiff[,i] * pdiff[,i+1], na.rm = T) + mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)
         covmat[i,i+1] <- corrected_cov
         covmat[i+1,i] <- corrected_cov
       }
       # correct variances
-      for(i in 1:ncol(covmat)){
+      for(i in seq_len(ncol(covmat))){
         corrected_var <- mean((pdiff[,i])^2, na.rm = T) - mean(pmat[,i]*(1-pmat[,i])/(n[i] - 1), na.rm = T) - mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)
         if(corrected_var < 0) {
           print("Sample size correction makes variance negative. Setting variance to zero")
@@ -232,7 +238,7 @@ covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, standard_by_het 
   }
   
   if(standard_by_het){
-    covmat <- standard_cov_by_het(pmat[,-ncol(pmat)], covmat)
+    covmat <- standard_cov_by_het(pmat[,-ncol(pmat), drop = FALSE], covmat)
   }
   
   return(covmat)
@@ -677,6 +683,11 @@ estim_linked_selection_params_new <- function(pmat, n, sum_of_het_vec, sum_of_he
   
   covmat <- covmat_from_pmat(pmat, n = n, correct_for_n = T, standard_by_het = T)
   
+  if(is.null(rownames(covmat))){
+    rownames(covmat) = colnames(pmat)[2]
+    colnames(covmat) = colnames(pmat)[2]
+  }
+  
   X <- reshape2::melt(covmat)
   X <- X[!duplicated(X$value),]
   
@@ -693,9 +704,13 @@ estim_linked_selection_params_new <- function(pmat, n, sum_of_het_vec, sum_of_he
   
   X$sum_of_het_ratio <- X$sum_of_het_s/sum_of_het_1
   
+  #X$sum_of_het_ratio <- X$sum_of_het_1/X$sum_of_het_s
+  
   #X$sum_of_het_ratio <- X$sum_of_het_s/X$sum_of_het_t
   
-  X$a <- X$sum_of_het_ratio*0.5*mean_ld*weight
+  #X$sum_of_het_ratio <- X$sum_of_het_t/sum_of_het_1
+  
+  X$a <- (X$sum_of_het_ratio)*0.5*mean_ld*weight
   
   X$mean_ld <- mean_ld
   
@@ -816,4 +831,23 @@ waples_ne <- function(r_low, r_high, p0, pt, S0, St, t){
   Fc <- fc(p0, pt)
   ne <- (r*t - 2)/(2*r*(Fc - 1/(S0) - 1/(St)))
   return(ne)
+}
+
+
+#' Function to calculate LD decay distances, Hill and Weir 1988
+#'
+#' @param d distance between two loci in bp
+#' @param n sample size
+#' @param C Population-scaled recombination rate: 4Nc  
+#'
+#' @return
+#' @export
+#'
+#' @examples
+hill_weir_r2 <- function(d, n, C) {
+  part1 <- (10 + C * d) / ((2 + C * d) * (11 + C * d))
+  part2 <- 1 + ((3 + C * d) * (12 + 12 * C * d + (C * d) ^ 2)) / (n * (2 + C *
+                                                                         d) * (11 + C * d))
+  r2 <- part1 * part2
+  return(r2)
 }

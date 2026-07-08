@@ -3,6 +3,35 @@ box::use(utils[write.table])
 box::use(stats[...])
 
 
+#' Save plot and data object to the same location
+#'
+#' @param plot_obj 
+#' @param base_path 
+#' @param img_ext 
+#' @param ... 
+#'
+#' @return
+#' @export
+#'
+#' @examples
+save_plot_and_object <- function(plot_obj, base_path, img_ext = "png", ...) {
+  # Build the output filenames
+  img_filename <- paste0(base_path, ".", img_ext)
+  rds_filename <- paste0(base_path, ".rds")
+  
+  # Save the ggplot image (passes extra args like width, height to ggsave)
+  ggplot2::ggsave(filename = img_filename, plot = plot_obj, ...)
+  
+  # Save the R object
+  saveRDS(plot_obj, file = rds_filename)
+  
+  # Print confirmation message
+  message("Successfully saved:")
+  message(" -> Image:  ", img_filename)
+  message(" -> Object: ", rds_filename)
+}
+
+
 #' Confidence interval for a Pearson correlation, adjusted for AR(1) autocorrelation
 #'
 #' Computes a confidence interval (and optional zero-correlation test) for the

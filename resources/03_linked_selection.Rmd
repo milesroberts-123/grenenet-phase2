@@ -362,7 +362,6 @@ if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-pha
 }
 
 ld_matrix <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/plink_parquet")
-
 ```
 
 # Feder test
@@ -794,20 +793,21 @@ for(b in unique_blocks[320:418]){
 ```{r}
 params <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/config/gt_params.tsv", sep = "\t", header = T, data.table = F)
 
+# grab files of neutral allele freq trajectories
 neutfreq_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
-#neutfreq_files <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/", params$ID[params$VA == 0], "_neutfreqs.tsv", sep = "")
+#neutfreq_files <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/", params %>% group_by(VA, L, SIGMA, adjust) %>% slice_sample(n = 5) %>% pull(ID), "_neutfreqs.tsv", sep = "")
 
 #neutfreq_files <- sample(neutfreq_files, size = 1000, replace = F)
 
-files_to_plot <- c(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1_neutfreqs.tsv",
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/10_neutfreqs.tsv",
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/100_neutfreqs.tsv",
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/751_neutfreqs.tsv",
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/841_neutfreqs.tsv",
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1000_neutfreqs.tsv",
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1001_neutfreqs.tsv"
-)
+# files_to_plot <- c(
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/10_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/100_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/751_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/841_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1000_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1001_neutfreqs.tsv"
+# )
 
 sim_curves <- NULL
 
@@ -815,7 +815,7 @@ output_sim <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenene
 
 check_file_exists(output_sim)
 
-P <- 300 # number of permutations to estimate drift absoluate covariances
+#P <- 300 # number of permutations to estimate drift absoluate covariances
 
 for(neutfreq_file in neutfreq_files){
   simid <- as.numeric(gsub(".*/", "", gsub("_neutfreqs.tsv", "", neutfreq_file)))
@@ -874,32 +874,32 @@ for(neutfreq_file in neutfreq_files){
   sim_curve <- gt_from_covmat(covmat_sim)
   
   # create blocks
-  block_sim <- data.frame(
-    chrom = 1,
-    pos = 1:nrow(pmat_sim)
-  )
-  
-  block_sim <- create_blocks(block_sim, chrom, pos, 1000, "_")
-  
-  # block-based sign permutation
-  sim_perm_curves <- NULL
-  for(i in 1:P){
-    perm_covmat_sim <- covmat_from_pmat(pmat_sim, n = NULL, correct_for_n = F, input_asin_trans = F, procedure = "window", windows = block_sim$window)
-  
-    sim_perm_curve <- gt_from_covmat(perm_covmat_sim)
-    sim_perm_curve$perm <- i
-    
-    sim_perm_curves <- rbind(sim_perm_curves, sim_perm_curve)
-  }
-  
-  sim_perm_curves <- sim_perm_curves %>%
-    group_by(gen) %>%
-    summarize(med_sum_abs_cov = median(sum_abs_cov),
-              upr_sum_abs_cov = quantile(sum_abs_cov, 0.975))
-  
-  sim_curve <- sim_curve %>%
-    left_join(sim_perm_curves, by = "gen") %>%
-    mutate(cor_sum_abs_cov = sum_abs_cov - upr_sum_abs_cov) 
+  # block_sim <- data.frame(
+  #   chrom = 1,
+  #   pos = 1:nrow(pmat_sim)
+  # )
+  # 
+  # block_sim <- create_blocks(block_sim, chrom, pos, 1000, "_")
+  # 
+  # # block-based sign permutation
+  # sim_perm_curves <- NULL
+  # for(i in 1:P){
+  #   perm_covmat_sim <- covmat_from_pmat(pmat_sim, n = NULL, correct_for_n = F, input_asin_trans = F, procedure = "window", windows = block_sim$window)
+  # 
+  #   sim_perm_curve <- gt_from_covmat(perm_covmat_sim)
+  #   sim_perm_curve$perm <- i
+  #   
+  #   sim_perm_curves <- rbind(sim_perm_curves, sim_perm_curve)
+  # }
+  # 
+  # sim_perm_curves <- sim_perm_curves %>%
+  #   group_by(gen) %>%
+  #   summarize(med_sum_abs_cov = median(sum_abs_cov),
+  #             upr_sum_abs_cov = quantile(sum_abs_cov, 0.975))
+  # 
+  # sim_curve <- sim_curve %>%
+  #   left_join(sim_perm_curves, by = "gen") %>%
+  #   mutate(cor_sum_abs_cov = sum_abs_cov - upr_sum_abs_cov) 
 
   # if(neutfreq_file %in% files_to_plot){
   #   print("Plotting variance covariance matrix...")
@@ -2439,80 +2439,175 @@ ggplot(recom_map, aes(x = pos, y = cm)) +
 
 ```
 
-## load diversity data
+## LD decay
+```{r}
+
+# LD decay threshold
+threshold <- 0.1
+  
+# define blocks within which to calculate LD decay
+# helps contextualize blocks for other analyses
+ld_decay_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+
+# Loop over each block and calculate LD decay within the block
+for(w in unique(ld_decay_blocks$window)) {
+  cat(w, "\n")
+  
+  block_coords <- ld_decay_blocks %>%
+    filter(window == w) %>%
+    summarize(chrom = unique(X1),
+              start = min(X2),
+              end = max(X2))
+  
+  chrom = block_coords$chrom
+  start = block_coords$start
+  end   = block_coords$end
+  
+  # extract test region
+  ld_region <- ld_matrix %>%
+    filter(
+      (CHR_A == chrom) &
+        (BP_A >= start) &
+        (BP_A <= end) &
+        (CHR_B == chrom) &
+        (BP_B >= start) &
+        (BP_B <= end)
+    ) %>%
+    mutate(d = BP_B - BP_A, n = 231) %>%
+    collect()
+  
+  # Fit Hill and Weir Non-Linear Least Squares (NLS) Model
+  hw_model <- nls(
+    R2 ~ hill_weir_r2(d, n, C),
+    data = ld_region,
+    start = list(C = 0.001),
+    control = nls.control(maxiter = 1000, warnOnly = TRUE)
+  )
+  
+  # Extract the fitted recombination parameter (C)
+  fitted_C <- coef(hw_model)["C"]
+  line1 <- paste("Estimated 4Nc:", signif(fitted_C,3), "\n")
+  
+  # Generate Predicted Trend Line Values
+  pred_distances <- seq(0, max(ld_region$d), length.out = 1000)
+  pred_r2 <- predict(hw_model, newdata = data.frame(d = pred_distances, n = 231))
+  plot_data <- data.frame(d = pred_distances, R2 = pred_r2)
+  
+  # Calculate LD Decay Distance at r^2 threshold (e.g., r2 = 0.2)
+  decay_distance <- pred_distances[which.min(abs(pred_r2 - threshold))]
+  line2 <- paste("LD decays to r^2 =",
+      threshold,
+      "at:",
+      round(decay_distance / 1000, 2),
+      "kb\n")
+  
+  line3 <- paste("Block coordinates: ", chrom, ":", start, "..", end, "\n", sep = "")
+  
+  # Plot the Raw Data Bins and the Fitted Hill & Weir Curve
+  ggplot(ld_region, aes(x = d, y = R2)) +
+    geom_point(alpha = 0.3, color = "darkgray", shape = 16) +
+    geom_line(
+      data = plot_data,
+      aes(x = d, y = R2),
+      color = "skyblue",
+      size = 1.2
+    ) +
+    geom_hline(yintercept = threshold,
+               linetype = "dashed",
+               color = "pink") +
+    geom_vline(xintercept = decay_distance,
+               linetype = "dashed",
+               color = "pink") +
+    labs(title = paste(line1,line2,line3, sep = ""), x = "Physical Distance (bp)", y = "LD (r^2)")
+  
+    ggsave(paste(results_path, "ld_decay_", chrom, "_", start, "_", end, ".png", sep = ""), width = 5.5, height = 6)
+  
+    gc()
+}
+
+```
+
+## Diversity vs recombination rate
 
 ```{r}
 
-nuc_div <- fread("../data/diversity/all_sites/2029_pi.txt", header = T)
+pi_files <- list.files(path = "../data/diversity", recursive = T, full.names = T, pattern = "_pi.txt$")
 
-nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2 # midpoint
-nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
+file_prefixes <- gsub("/", "_", gsub("../data/diversity/|.txt", "", pi_files))
 
-names(nuc_div)[2] <- "chrom"
+for(i in seq_along(pi_files)){
+  
+  nuc_div <- fread(pi_files[i], header = T)
+  
+  nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2 # midpoint
+  nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
+  
+  names(nuc_div)[2] <- "chrom"
+  
+  # fit model to marey map
+  best_mods <- recom_map %>%
+    group_by(chrom) %>%
+    nest() %>%
+    mutate(model = purrr::map(data, ~ find_best_poly(.x, 
+                                              x_col = "pos",
+                                              y_col = "cm", 
+                                              max_degree = 7)))
+  # Plot model fits
+  grid_data <- best_mods %>%
+    mutate(
+      grid = purrr::map(data, ~ tibble(x_val = seq(min(.x$pos), max(.x$pos), length.out = 500))))
+  
+  pred_data <- grid_data %>% 
+    mutate(fit  = purrr::map2(model, grid, ~ predict(.x, newdata = .y))
+    ) %>%
+    select(chrom, grid, fit) %>%
+    unnest(c(grid, fit))
+  
+  names(pred_data)[2] = "pos"
+  
+  ggplot(pred_data, aes(x = pos, y = fit)) +
+    geom_line() +
+    geom_point(data = recom_map, mapping = aes(x = pos, y = cm), color = "red") +
+    facet_wrap(.~chrom)
+  
+  # Evaluate derivative of model for windows
+  rate_vs_div <- nuc_div %>%
+    left_join(best_mods, by = "chrom") %>%
+    group_by(chrom) %>%
+    mutate(rate = eval_deriv(model[[1]], window_pos_mid)) %>%
+    select(chrom, window_pos_mid, rate, avg_pi) %>%
+    unnest(cols = c(rate))
+  
+  # filter out negative recombination rates
+  rate_vs_div <- rate_vs_div %>% filter(rate > 0)
+  
+  # recombination rate across chromosome
+  ggplot(rate_vs_div, aes(x = window_pos_mid, y = rate)) +
+    geom_line() +
+    facet_wrap(.~chrom)
+  
+  # diversity vs recombination rate
+  ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
+    geom_point() +
+    #geom_smooth(method = "lm", color = "lightblue") + 
+    #stat_cor() +
+    #xlim(0, 10) +
+    geom_smooth(
+      data = subset(rate_vs_div, rate <= 10), 
+      method = "lm", 
+      se = TRUE, 
+      color = "lightblue"
+    ) +
+    facet_zoom(rate <= 10) +
+    theme(
+      # Draws a border line and shaded region for the connecting zoom lines
+      zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))
+    ) +
+    labs(x = "Recombination rate (cM/Mb)", y = "Average nucleotide diversity")
+  
+  ggsave(paste(results_path, file_prefixes[i],"_recombination_vs_diversity.pdf", sep = ""), width = 5.5, height = 8)
+}
 
-
-# fit model to marey map
-best_mods <- recom_map %>%
-  group_by(chrom) %>%
-  nest() %>%
-  mutate(model = map(data, ~ find_best_poly(.x, 
-                                            x_col = "pos",
-                                            y_col = "cm", 
-                                            max_degree = 7)))
-# Plot model fits
-grid_data <- best_mods %>%
-  mutate(
-    grid = map(data, ~ tibble(x_val = seq(min(.x$pos), max(.x$pos), length.out = 500))))
-
-pred_data <- grid_data %>% 
-  mutate(fit  = map2(model, grid, ~ predict(.x, newdata = .y))
-  ) %>%
-  select(chrom, grid, fit) %>%
-  unnest(c(grid, fit))
-
-names(pred_data)[2] = "pos"
-
-ggplot(pred_data, aes(x = pos, y = fit)) +
-  geom_line() +
-  geom_point(data = recom_map, mapping = aes(x = pos, y = cm), color = "red") +
-  facet_wrap(.~chrom)
-
-# Evaluate derivative of model for windows
-rate_vs_div <- nuc_div %>%
-  left_join(best_mods, by = "chrom") %>%
-  group_by(chrom) %>%
-  mutate(rate = eval_deriv(model[[1]], window_pos_mid)) %>%
-  select(chrom, window_pos_mid, rate, avg_pi) %>%
-  unnest(cols = c(rate))
-
-# filter out negative recombination rates
-rate_vs_div <- rate_vs_div %>% filter(rate > 0)
-
-# recombination rate across chromosome
-ggplot(rate_vs_div, aes(x = window_pos_mid, y = rate)) +
-  geom_line() +
-  facet_wrap(.~chrom)
-
-# diversity vs recombination rate
-ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
-  geom_point() +
-  #geom_smooth(method = "lm", color = "lightblue") + 
-  #stat_cor() +
-  #xlim(0, 10) +
-  geom_smooth(
-    data = subset(rate_vs_div, rate <= 10), 
-    method = "lm", 
-    se = TRUE, 
-    color = "lightblue"
-  ) +
-  facet_zoom(rate <= 10) +
-   theme(
-  # Draws a border line and shaded region for the connecting zoom lines
-    zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))
-  ) +
-  labs(x = "Recombination rate (cM/Mb)", y = "Average nucleotide diversity")
-
-ggsave(paste(results_path, "recombination_vs_diversity.pdf", sep = ""), width = 5.5, height = 8)
 ```
 
 # Ne and VA(1) estimates
@@ -2530,16 +2625,16 @@ sites <- sites[-30]
 sum_of_het_1 <- sum_of_het(gen0[,"X3"])
 
 # get correlations that are encompassed within each block
-blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+blocks <- create_blocks(gen0, X1, X2, 10000, "_")
 
-output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation.txt", sep = "")
+output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation_10000b.txt", sep = "")
 
 #check_file_exists(output_linked_params)
 
-#weight = 1/200
-weight = 1
+weight = 1/length(unique(blocks$window))
+#weight = 1
 
-for(site in unique(sites)){
+for(site in unique(sites)[25:30]){
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>% 
@@ -2562,7 +2657,11 @@ for(site in unique(sites)){
       
       hap_block <- hap_rep %>% filter(window == b) %>% dplyr::select(-window)
       
+      #sum_of_het_vec <- sum_of_het_by_t(hap_block)
+      
       gen0_block <- blocks %>% filter(window == b)
+      
+      #sum_of_het_1 <- sum_of_het(gen0_block[,"X3"])
       
       chrom = gen0_block$X1[1]
       start = min(gen0_block$X2)
@@ -2592,7 +2691,8 @@ for(site in unique(sites)){
       linked_sel_param_block$S = nrow(hap_block)
       
       append_table(linked_sel_param_block, output_linked_params)
-      
+      rm(chrom, start, stop, hap_block, linked_sel_param_block, gen0_block, rep_n, mean_ld_block)
+      gc()
     }
   }
 }
@@ -2600,6 +2700,7 @@ for(site in unique(sites)){
 
 
 ```
+
 ### one model for whole genome
 
 ```{r}
@@ -2628,10 +2729,10 @@ for(site in unique(sites)){
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
     
-    if(ncol(hap_rep) <= 2){
-      print("Need at least two increments. Skipping to next replicate...")
-      next
-    }
+    # if(ncol(hap_rep) <= 2){
+    #   print("Need at least two increments. Skipping to next replicate...")
+    #   next
+    # }
     
     sum_of_het_vec <- sum_of_het_by_t(hap_rep)
     
@@ -2644,6 +2745,7 @@ for(site in unique(sites)){
     # add initial generation
     hap_rep <- cbind(gen0$X3, hap_rep)
     #hap_rep <- cbind(gen0$X3, hap_rep)
+    names(hap_rep)[1] = paste(site, 0, exprep, sep = "_")
     
     # organize data for linked selection parameters into a table
     linked_sel_param_rep <- estim_linked_selection_params_new(hap_rep, rep_n$n, sum_of_het_vec, sum_of_het_1, mean_ld_block$`mean(R2)`, weight)
@@ -2662,12 +2764,27 @@ for(site in unique(sites)){
 ```{r}
 
 ### one model per genome
-va_ne_whole <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-24/va_ne_points_for_estimation_whole_genome.txt", fill = T) %>%
-  distinct(site, rep, s, t, .keep_all = T)
+va_ne_whole <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-29/va_ne_points_for_estimation_10000b.txt", fill = T) %>%
+  distinct(site, rep, s, t, block, .keep_all = T)
 
+### plot relationships
+# are there lots of outliers?
+for(i in unique(va_ne_whole$site)){
+  
+ggplot(va_ne_whole %>% filter(s <= 1 & t <= 1 & value > 0 & site == i), aes(x = mean_ld, y = value)) +
+  geom_point(shape = 16) +
+  geom_smooth(method = "lm") +
+  facet_wrap(.~rep, scales = "free") +
+  scale_y_log10() +
+  labs(x = "Mean LD (r^2)", y = "Var(dp)/(p(1-p))")
+
+ggsave(paste(results_path, i, "_variance_dp_vs_ld.png", sep = ""), height = 9, width = 9)
+}
+
+### estimate va and ne
 mod_genome <- va_ne_whole %>%
-  group_by(site) %>%
-  filter(s <= 1 & t <= 1) %>%
+  group_by(site, rep) %>%
+  filter(s == 1 & t == 1 & value > 0) %>%
   #mutate(a = 1/a) %>%
   #filter(s != t) %>%
   #filter(s == t) %>%
@@ -2675,6 +2792,7 @@ mod_genome <- va_ne_whole %>%
   nest() %>%
   mutate(
     # Fit a linear model to each nested group
+    #fit = purrr::map(data, ~ MASS::rlm(value ~ a + b - 1, data = .x)),
     fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
     # Extract tidy coefficients (intercept and slope)
     tidied = purrr::map(fit, tidy)
@@ -2683,14 +2801,139 @@ mod_genome <- va_ne_whole %>%
   unnest(tidied) %>% 
   dplyr::select(c(-data, -fit))
 
-ggplot(va_ne_whole %>% filter(s <= 1 & t <= 1), aes(x = a, y = value)) +
-  geom_point() +
-  geom_smooth(method = "lm") +
-  facet_wrap(.~site, scales = "free")
+va_per_site <- mod_genome %>% 
+  filter(estimate > 0 & term == "a") %>% # some reps with negative estimates for Ne are being included here, same for Ne per site
+  group_by(site) %>%
+  summarize(mean_va = mean(estimate), n = n())
+
+
+
+ne_per_site <- mod_genome %>% 
+  filter(estimate > 0 & term == "b") %>%
+  group_by(site) %>%
+  summarize(mean_Ne = 1/mean(estimate), n = n())
+
+
+### bootstrapping
+W = 299
+B = 1000
+boot_samples <- NULL
+for(i in 1:B){
+  
+  boot_sample <- va_ne_whole %>%
+  group_by(site, rep) %>%
+  filter(s == 1 & t == 1 & value > 0) %>%
+  slice_sample(n = W, replace = TRUE) %>%  # Sample blocks with replacement
+  nest() %>%
+  mutate(
+    fit = purrr::map(data, ~ lm(value ~ a + b - 1, data = .x)),
+    tidied = purrr::map(fit, tidy)
+  ) %>%
+  unnest(tidied) %>% 
+  dplyr::select(c(-data, -fit))
+  
+  boot_sample$boot <- i
+  
+  boot_samples <- rbind(boot_samples, boot_sample)
+}
+
+va_per_site_boot <- boot_samples %>% 
+  filter(estimate > 0 & term == "a") %>% # some reps with negative estimates for Ne are being included here, same for Ne per site
+  group_by(site, boot) %>%
+  summarize(mean_va = mean(estimate)) %>%
+  summarize(lwr = quantile(mean_va, 0.005),
+            med = median(mean_va),
+            upr = quantile(mean_va, 0.995),
+            n = n())
+
+va_plot_data <- va_per_site %>% 
+  left_join(va_per_site_boot, by = "site") %>% 
+  mutate(VALID = mean_va > lwr) %>%
+  left_join(worldclim_sitesdata, by = "site")
+
+ne_per_site_boot <- boot_samples %>% 
+  filter(estimate > 0 & term == "b") %>% # some reps with negative estimates for Ne are being included here, same for Ne per site
+  group_by(site, boot) %>%
+  summarize(mean_Ne = 1/mean(estimate)) %>%
+  summarize(lwr = quantile(mean_Ne, 0.005),
+            med = median(mean_Ne),
+            upr = quantile(mean_Ne, 0.995),
+            n = n())
+
+ne_plot_data <- ne_per_site %>% 
+  left_join(ne_per_site_boot, by = "site") %>% 
+  mutate(VALID = mean_Ne > lwr) %>%
+  left_join(worldclim_sitesdata, by = "site")
+
+# look at correlations with climate
+plot_va_bio1 <- ggplot() +
+  geom_pointrange(data = va_plot_data, mapping = aes(y = mean_va, ymin = lwr, ymax = upr, x = bio1)) +
+  geom_smooth(
+      data = subset(va_plot_data, bio1 <= 19), 
+      mapping = aes(x = bio1, y = mean_va),
+      method = "lm", 
+      se = TRUE, 
+      color = "lightblue"
+    ) +
+  scale_y_log10() +
+  labs(x = "Mean Annual Temperature (\U00B0 C)", y = "VA")
+
+save_plot_and_object(plot_obj = plot_va_bio1, base_path = paste(results_path, "va_per_site", sep = ""), img_ext = "pdf")
+
+plot_ne_bio1 <- ggplot() +
+    geom_pointrange(data = ne_plot_data, mapping = aes(y = mean_Ne, ymin = lwr, ymax = upr, x = bio1)) +
+  geom_smooth(
+      data = subset(ne_plot_data, bio1 <= 19), 
+      mapping = aes(x = bio1, y = mean_Ne),
+      method = "lm", 
+      se = TRUE, 
+      color = "lightblue"
+    ) +
+  scale_y_log10()  +
+  labs(x = "Mean Annual Temperature (\U00B0 C)", y = "Ne")
+
+save_plot_and_object(plot_obj = plot_ne_bio1, base_path = paste(results_path, "ne_per_site", sep = ""), img_ext = "pdf")
+
+# DEPRECATED #
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+# boot_cis <- boot_samples %>%
+#   group_by(site, rep, term) %>%
+#   summarize(lwr = quantile(boot_estimate, 0.025),
+#             med = median(boot_estimate),
+#             upr = quantile(boot_estimate, 0.975))
+
+
+
 
 ### one model per block
-va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-25/va_ne_points_for_estimation.txt") %>%
-  distinct(site, rep, block, s, t, .keep_all = T)
+# va_ne_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-25/va_ne_points_for_estimation_single_locus_version.txt") %>%
+#   distinct(site, rep, block, s, t, .keep_all = T)
+
+# va_ne_blocks <- va_ne_blocks %>%
+#   mutate(a = (1/sum_of_het_ratio)*0.5*mean_ld)
+
+ggplot(subset(va_ne_blocks, t == 1 & s == 1 & value > 0), aes(x = a, y = value)) +
+  geom_point(aes(color = mean_ld)) +
+  geom_smooth(method = "lm") +       # Linear regression line
+  stat_regline_equation() +
+  facet_wrap(.~site + rep, scales = "free") +
+  labs(x = "a", y = "Var(dp)/(p(1-p))", color = "Mean LD", title = "First increment variances")
+
+ggsave(paste("../results/by-date/", today, "/va1_ne_bc_regression_single_locus_version.pdf", sep = ""), width = 15, height = 10, device = cairo_pdf())
 
 # un-do window weighting
 va_ne_blocks <- va_ne_blocks %>%
@@ -2720,9 +2963,7 @@ va_ne_blocks %>%
   group_by(site, rep) %>%
   summarize(cor(a,b))
 
-# ggplot(subset(va_ne_blocks, rep == 3), aes(x = a, y = value)) +
-#   geom_point() +
-#   facet_wrap(b~rep, scales = "free_y")
+
 mod_first_gen <- va_ne_blocks %>%
   group_by(site, rep) %>%
   filter(s <= 1 & t <= 1) %>%
@@ -3441,11 +3682,12 @@ for(site in unique(glm_results$SITE)){
 #sim_curves <- fread("../results/2026-06-15/simulated_gt_curves_with_neutral_2026-06-15.txt")
 
 #sim_curves <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-17/simulated_gt_curves_2026-06-17.txt")
-sim_curves <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-19/simulated_gt_curves_2026-06-19.txt")
+#sim_curves <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-19/simulated_gt_curves_2026-06-19.txt")
+sim_curves <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-26/simulated_gt_curves_2026-06-26.txt")
 
 sim_curves$sum_abs_cov/sim_curves$sum_var
 
-sim_curves$sum_abs_cov/sim_curves$med_sum_abs_cov
+#sim_curves$sum_abs_cov/sim_curves$med_sum_abs_cov
 
 #sim_curves <- merge(params[,c("ID", "MIN_AGE")], sim_curves, by = "ID")
 
@@ -3455,8 +3697,8 @@ mean_sims = sim_curves %>%
   summarize(gt = mean(sum_cov)/mean(sum_cov + sum_var),
             gt_pos = mean(sum_pos_cov)/mean(sum_abs_cov + sum_var),
             gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov + sum_var),
-            gt_abs_2 = mean(sum_abs_cov)/mean(sum_cov + sum_var),
-            gt_abs_cor = mean(cor_sum_abs_cov)/mean(sum_abs_cov + sum_var),
+            #gt_abs_2 = mean(sum_abs_cov)/mean(sum_cov + sum_var),
+            #gt_abs_cor = mean(cor_sum_abs_cov)/mean(sum_abs_cov + sum_var),
             sum_cov = mean(sum_cov), 
             sum_abs_cov = mean(sum_abs_cov),
             sum_pos_cov = mean(sum_pos_cov),
@@ -3472,28 +3714,29 @@ mean_sims$adjust[(mean_sims$adjust == "FALSE")] <- "Ne lowered"
 # mean_sims$MIN_AGE[(mean_sims$MIN_AGE == 0)] <- "Non-WF reduced"
 
 # gt over time
-ggplot(mean_sims, aes(x = gen, y = gt_abs_cor, group = SIGMA, color = as.factor(SIGMA))) +
-  geom_point(size = 1.5) +
-  scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(adjust~VA+L) +
-  geom_hline(yintercept = 0, lwd = 1.1, lty = 2) +
-  geom_line() +
-  theme(legend.position = "top") +
-  labs(x = "Generation", y = "G(t)", color = "Self\nrate")
-
-ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt_abs_cor.pdf", sep = ""), height = 4.5, width = 14, device = cairo_pdf)
+# ggplot(mean_sims, aes(x = gen, y = gt_abs_cor, group = SIGMA, color = as.factor(SIGMA))) +
+#   geom_point(size = 1.5) +
+#   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
+#   facet_grid(adjust~VA+L) +
+#   geom_hline(yintercept = 0, lwd = 1.1, lty = 2) +
+#   geom_line() +
+#   theme(legend.position = "top") +
+#   labs(x = "Generation", y = "G(t)", color = "Self\nrate")
+# 
+# ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt_abs_cor.pdf", sep = ""), height = 4.5, width = 14, device = cairo_pdf)
 
 # gt over time
-ggplot(mean_sims, aes(x = gen, y = gt, group = SIGMA, color = as.factor(SIGMA))) +
+ggplot(subset(mean_sims, adjust == "Ne constant"), aes(x = gen, y = gt, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(adjust~VA+L) +
+  facet_grid(VA~L) +
   geom_hline(yintercept = 0, lwd = 1.1, lty = 2) +
   geom_line() +
+  scale_x_continuous(breaks = seq(from = 2, to = max(mean_sims$gen), by = 2)) +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "G(t)", color = "Self\nrate")
 
-ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt.pdf", sep = ""), height = 4.5, width = 14, device = cairo_pdf)
+ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_gt.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # gt pos over time
 ggplot(mean_sims, aes(x = gen, y = gt_pos, group = SIGMA, color = as.factor(SIGMA))) +
@@ -3514,6 +3757,7 @@ ggplot(mean_sims, aes(x = gen, y = sum_cov, group = SIGMA, color = as.factor(SIG
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
   facet_grid(adjust~VA+L, labeller = label_both) +
   geom_line() +
+  scale_x_continuous(breaks = seq(from = 2, to = max(mean_sims$gen), by = 2)) +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of Cov(\u0394pi, \u0394pj)", color = "Self\nrate")
 
@@ -3525,19 +3769,20 @@ ggplot(mean_sims, aes(x = gen, y = sum_abs_cov, group = SIGMA, color = as.factor
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
   facet_grid(adjust~VA + L) +
+  scale_x_continuous(breaks = seq(from = 2, to = max(mean_sims$gen), by = 2)) +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of |Cov(\u0394pi, \u0394pj)|", color = "Self\nrate")
 
-ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_sum_abs_cov.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
+ggsave(paste("../results/by-date/", today, "/simulated_linked_selection_sum_abs_cov.pdf", sep = ""), height = 7, width = 10, device = cairo_pdf)
 
 # sum variances over time
 ggplot(mean_sims, aes(x = gen, y = sum_var, group = SIGMA, color = as.factor(SIGMA))) +
   geom_point(size = 1.5) +
-  geom_abline(intercept = 0, slope = 1/16000) +
+  #geom_abline(intercept = 0, slope = 1/16000) +
   geom_hline(yintercept = 0, lty = 2, lwd = 1.1) +
   scale_color_scico_d(palette = "acton", begin = 0.1, end = 0.9) +
-  facet_grid(adjust~VA+L) +
+  facet_grid(adjust~VA+L, scales = "free") +
   geom_line() +
   theme(legend.position = "top") +
   labs(x = "Generation", y = "Sum of Var(\u0394pi)", color = "Self\nrate")
