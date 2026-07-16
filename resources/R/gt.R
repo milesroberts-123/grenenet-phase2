@@ -679,9 +679,9 @@ estim_linked_selection_params <- function(pmat, sum_of_het_vec, sum_of_het_1, n,
 #' @export
 #'
 #' @examples
-estim_linked_selection_params_new <- function(pmat, n, sum_of_het_vec, sum_of_het_1, mean_ld, weight){
+estim_linked_selection_params_new <- function(pmat, n, sum_of_het_vec, sum_of_het_1, mean_ld, weight, correct_for_n = T){
   
-  covmat <- covmat_from_pmat(pmat, n = n, correct_for_n = T, standard_by_het = T)
+  covmat <- covmat_from_pmat(pmat, n = n, correct_for_n = correct_for_n, standard_by_het = T)
   
   if(is.null(rownames(covmat))){
     rownames(covmat) = colnames(pmat)[2]
@@ -797,17 +797,13 @@ fc <- function(p0, pt) {
             all(p0 <= 1, na.rm = T),
             all(pt <= 1, na.rm = T))
   
-  L <- length(p0)
+  #L <- length(p0)
   
-  q0 <- 1 - p0
+  fsum_num <- (p0 - pt)^2
   
-  qt <- 1 - pt
-  
-  fsum_num <- ((p0 - pt) ^ 2) + ((q0 - qt) ^ 2)
-  
-  fsum_denom <- ((p0 + pt) / 2 - p0 * pt) + ((q0 + qt) / 2 - q0 * qt)
-  
-  return(mean(fsum_num, na.rm = T)/mean(fsum_denom, na.rm = T))
+  #fsum_denom <- ((p0 + pt) / 2 - p0 * pt)
+  fsum_denom <- p0*(1-p0)
+  return(sum(fsum_num, na.rm = T)/sum(fsum_denom, na.rm = T))
   #return(fsum)
   #return(sum(fsum, na.rm = T) / sum(!is.nan(fsum)))
 }

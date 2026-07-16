@@ -48,6 +48,7 @@ save_plot_and_object <- function(plot_obj, base_path, img_ext = "png", ...) {
 #'
 #' @return A list with the correlation, effective sample size, CI bounds,
 #'         and a t-test of H0: rho = 0 using N_eff.
+#' @export
 corr_ci_autocorr <- function(x, y, conf = 0.95, bias_correct = TRUE) {
   
   # --- input handling: drop pairs with NA, check length ---------------------

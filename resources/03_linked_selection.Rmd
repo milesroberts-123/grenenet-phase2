@@ -2437,6 +2437,8 @@ ggplot(recom_map, aes(x = pos, y = cm)) +
   theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1)) +
   labs(x = "Position (Mb)", y = "cM")
 
+ggsave(paste(results_path, "marey_map.pdf", sep = ""), width = 7, height = 6)
+
 ```
 
 ## LD decay
@@ -2448,6 +2450,10 @@ threshold <- 0.1
 # define blocks within which to calculate LD decay
 # helps contextualize blocks for other analyses
 ld_decay_blocks <- create_blocks(gen0, X1, X2, 15000, "_")
+
+output_ld_decay <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/ld_decay_by_block.txt", sep = "")
+
+check_file_exists(output_ld_decay)
 
 # Loop over each block and calculate LD decay within the block
 for(w in unique(ld_decay_blocks$window)) {
@@ -2521,8 +2527,19 @@ for(w in unique(ld_decay_blocks$window)) {
     labs(title = paste(line1,line2,line3, sep = ""), x = "Physical Distance (bp)", y = "LD (r^2)")
   
     ggsave(paste(results_path, "ld_decay_", chrom, "_", start, "_", end, ".png", sep = ""), width = 5.5, height = 6)
-  
     gc()
+    
+    # save summary to table
+    ld_decay_result <- data.frame(
+      chrom = chrom,
+      start = start,
+      end = end,
+      block = w,
+      C = fitted_C,
+      decay_threshold = threshold,
+      decay_distance = decay_distance,
+               )
+    append_table(ld_decay_result, output_ld_decay)
 }
 
 ```
@@ -2531,44 +2548,50 @@ for(w in unique(ld_decay_blocks$window)) {
 
 ```{r}
 
+# fit model to marey map
+best_mods <- recom_map %>%
+  group_by(chrom) %>%
+  nest() %>%
+  mutate(model = purrr::map(data, ~ find_best_poly(.x, 
+                                                   x_col = "pos",
+                                                   y_col = "cm", 
+                                                   max_degree = 7)))
+# Plot model fits
+grid_data <- best_mods %>%
+  mutate(
+    grid = purrr::map(data, ~ tibble(x_val = seq(min(.x$pos), max(.x$pos), length.out = 500))))
+
+pred_data <- grid_data %>% 
+  mutate(fit  = purrr::map2(model, grid, ~ predict(.x, newdata = .y))
+  ) %>%
+  select(chrom, grid, fit) %>%
+  unnest(c(grid, fit))
+
+names(pred_data)[2] = "pos"
+
+ggplot(pred_data, aes(x = pos, y = fit)) +
+  geom_point(data = recom_map, mapping = aes(x = pos, y = cm), shape = 16) +
+  geom_line(color = "red") +
+  facet_wrap(.~chrom, scales = "free", labeller = as_labeller(function(value) paste0("Chromosome ", value))) +
+  labs(x = "Physical position (Mb)", y = "Genetic position (cM)")
+
+ggsave(paste(results_path, "marey_map_fitted.pdf", sep = ""), width = 7, height = 6)
+
+# now loop over diversity files
 pi_files <- list.files(path = "../data/diversity", recursive = T, full.names = T, pattern = "_pi.txt$")
 
 file_prefixes <- gsub("/", "_", gsub("../data/diversity/|.txt", "", pi_files))
 
+plot_list <- list()
 for(i in seq_along(pi_files)){
   
   nuc_div <- fread(pi_files[i], header = T)
+  title <- gsub("^ ", "", gsub("/|_", " ", gsub("../data/diversity|_pi.txt", "", pi_files[i])))
   
   nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2 # midpoint
   nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
   
   names(nuc_div)[2] <- "chrom"
-  
-  # fit model to marey map
-  best_mods <- recom_map %>%
-    group_by(chrom) %>%
-    nest() %>%
-    mutate(model = purrr::map(data, ~ find_best_poly(.x, 
-                                              x_col = "pos",
-                                              y_col = "cm", 
-                                              max_degree = 7)))
-  # Plot model fits
-  grid_data <- best_mods %>%
-    mutate(
-      grid = purrr::map(data, ~ tibble(x_val = seq(min(.x$pos), max(.x$pos), length.out = 500))))
-  
-  pred_data <- grid_data %>% 
-    mutate(fit  = purrr::map2(model, grid, ~ predict(.x, newdata = .y))
-    ) %>%
-    select(chrom, grid, fit) %>%
-    unnest(c(grid, fit))
-  
-  names(pred_data)[2] = "pos"
-  
-  ggplot(pred_data, aes(x = pos, y = fit)) +
-    geom_line() +
-    geom_point(data = recom_map, mapping = aes(x = pos, y = cm), color = "red") +
-    facet_wrap(.~chrom)
   
   # Evaluate derivative of model for windows
   rate_vs_div <- nuc_div %>%
@@ -2584,10 +2607,30 @@ for(i in seq_along(pi_files)){
   # recombination rate across chromosome
   ggplot(rate_vs_div, aes(x = window_pos_mid, y = rate)) +
     geom_line() +
-    facet_wrap(.~chrom)
+    facet_wrap(.~chrom) +
+    labs(x = "Position (bp)", y = "Recombination rate (cM/Mb)")
+  
+  ggsave(paste(results_path, file_prefixes[i],"_recombination_rate.pdf", sep = ""))
+  
+  # correlation between recombination rate and diversity
+  corr_results <- corr_ci_autocorr(
+    rate_vs_div$rate[rate_vs_div$rate <= 10],
+    rate_vs_div$avg_pi[rate_vs_div$rate <= 10]
+    )
+ 
+   title <- paste0(title,
+                  "\nr = ", 
+                  signif(corr_results$r, 2), 
+                  ", p = ", 
+                  format.pval(corr_results$p_value, digits = 2, eps = 0.001), 
+                  "\nCI = [", 
+                  signif(corr_results$ci_lower, 2), 
+                  ", ", 
+                  signif(corr_results$ci_upper, 2), 
+                  "]")
   
   # diversity vs recombination rate
-  ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
+  plot_rate_div <- ggplot(rate_vs_div, aes(x = rate, y = avg_pi)) +
     geom_point() +
     #geom_smooth(method = "lm", color = "lightblue") + 
     #stat_cor() +
@@ -2601,13 +2644,27 @@ for(i in seq_along(pi_files)){
     facet_zoom(rate <= 10) +
     theme(
       # Draws a border line and shaded region for the connecting zoom lines
-      zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))
-    ) +
-    labs(x = "Recombination rate (cM/Mb)", y = "Average nucleotide diversity")
+      zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
+    labs(x = "Recombination rate (cM/Mb)", 
+         y = "Average nucleotide diversity",
+         title = title)
   
-  ggsave(paste(results_path, file_prefixes[i],"_recombination_vs_diversity.pdf", sep = ""), width = 5.5, height = 8)
+  plot_list[[i]] <- plot_rate_div
+  
+  ggsave(paste(results_path, file_prefixes[i],"_recombination_vs_diversity.pdf", sep = ""), plot_rate_div, width = 5.5, height = 8)
 }
 
+# adjust plots to fit them all together
+plot_list <- purrr::map(plot_list, ~ .x + theme(text = element_text(size = 12)))
+
+ggarrange(plot_list[[1]], plot_list[[2]], plot_list[[3]], nrow = 1, ncol = 3)
+ggsave(paste0(results_path, "/all_sites_recombionation_rate_vs_diversity.pdf"), width = 9, height = 5)
+
+ggarrange(plot_list[[4]], plot_list[[5]], plot_list[[6]], nrow = 1, ncol = 3)
+ggsave(paste0(results_path, "/four_fold_recombionation_rate_vs_diversity.pdf"), width = 9, height = 5)
+
+ggarrange(plot_list[[7]], plot_list[[8]], plot_list[[9]], nrow = 1, ncol = 3)
+ggsave(paste0(results_path, "/zero_fold_recombionation_rate_vs_diversity.pdf"), width = 9, height = 5)
 ```
 
 # Ne and VA(1) estimates
@@ -2627,14 +2684,14 @@ sum_of_het_1 <- sum_of_het(gen0[,"X3"])
 # get correlations that are encompassed within each block
 blocks <- create_blocks(gen0, X1, X2, 10000, "_")
 
-output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation_10000b.txt", sep = "")
+output_linked_params <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/va_ne_points_for_estimation_10000b_nCorrectionOmitted.txt", sep = "")
 
 #check_file_exists(output_linked_params)
 
 weight = 1/length(unique(blocks$window))
 #weight = 1
 
-for(site in unique(sites)[25:30]){
+for(site in unique(sites)){
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>% 
@@ -2644,7 +2701,8 @@ for(site in unique(sites)[25:30]){
   
   for(exprep in 1:12){
     print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")), window)
+    hap_rep <- hap_site %>% 
+      dplyr::select(ends_with(paste("_", exprep, sep = "")), window)
     
     if(ncol(hap_rep) <= 2){
       print("Need at least two increments. Skipping to next replicate...")
@@ -2655,7 +2713,9 @@ for(site in unique(sites)[25:30]){
     
     for(b in unique(hap_site$window)){
       
-      hap_block <- hap_rep %>% filter(window == b) %>% dplyr::select(-window)
+      hap_block <- hap_rep %>% 
+        filter(window == b) %>% 
+        dplyr::select(-window)
       
       #sum_of_het_vec <- sum_of_het_by_t(hap_block)
       
@@ -2676,14 +2736,15 @@ for(site in unique(sites)[25:30]){
       rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 1000)
       
       # sort names to be in order of generation
-      hap_block <- hap_block %>% relocate(all_of(sort(colnames(hap_block))))
+      hap_block <- hap_block %>% 
+        relocate(all_of(sort(colnames(hap_block))))
       
       # add initial generation
       hap_block <- cbind(gen0_block$X3, hap_block)
       #hap_rep <- cbind(gen0$X3, hap_rep)
       
       # organize data for linked selection parameters into a table
-      linked_sel_param_block <- estim_linked_selection_params_new(hap_block, rep_n$n, sum_of_het_vec, sum_of_het_1, mean_ld_block$`mean(R2)`, weight)
+      linked_sel_param_block <- estim_linked_selection_params_new(hap_block, rep_n$n, sum_of_het_vec, sum_of_het_1, mean_ld_block$`mean(R2)`, weight, correct_for_n = F)
       
       linked_sel_param_block$site = site
       linked_sel_param_block$rep = exprep
@@ -2727,7 +2788,8 @@ for(site in unique(sites)){
   
   for(exprep in 1:12){
     print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    hap_rep <- hap_site %>% 
+      dplyr::select(ends_with(paste("_", exprep, sep = "")))
     
     # if(ncol(hap_rep) <= 2){
     #   print("Need at least two increments. Skipping to next replicate...")
@@ -2764,22 +2826,52 @@ for(site in unique(sites)){
 ```{r}
 
 ### one model per genome
-va_ne_whole <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-29/va_ne_points_for_estimation_10000b.txt", fill = T) %>%
-  distinct(site, rep, s, t, block, .keep_all = T)
+ va_ne_whole <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-06-29/va_ne_points_for_estimation_10000b.txt", fill = T) %>%
+   distinct(site, rep, s, t, block, .keep_all = T)
+
+# va_ne_whole <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-07-15/va_ne_points_for_estimation_10000b_nCorrectionOmitted.txt", fill = T) %>%
+#   distinct(site, rep, s, t, block, .keep_all = T)
 
 ### plot relationships
 # are there lots of outliers?
+# are values structured by year?
 for(i in unique(va_ne_whole$site)){
+  data_subset <- va_ne_whole %>% 
+    filter(s == t & value > 0 & site == i)
   
-ggplot(va_ne_whole %>% filter(s <= 1 & t <= 1 & value > 0 & site == i), aes(x = mean_ld, y = value)) +
+  print(summary(lm(value ~ mean_ld + as.factor(s), data_subset)))
+  
+  if(nrow(data_subset) == 0){
+    cat("Skipping site", i, "because there's no data...\n")
+    next
+  }
+  
+ggplot(data_subset, aes(x = mean_ld, y = value, color = as.factor(s))) +
   geom_point(shape = 16) +
   geom_smooth(method = "lm") +
   facet_wrap(.~rep, scales = "free") +
   scale_y_log10() +
-  labs(x = "Mean LD (r^2)", y = "Var(dp)/(p(1-p))")
+  labs(x = "Mean LD (r^2)", y = "Var(dpi)/(p0(1-p0))")
 
-ggsave(paste(results_path, i, "_variance_dp_vs_ld.png", sep = ""), height = 9, width = 9)
+ggsave(paste(results_path, i, "_variance_all_vs_ld_noNcorrection.png", sep = ""), height = 9, width = 9)
 }
+
+### try some custom modeling
+# Think slopes per site make more sense than one global slope
+site_slopes <- va_ne_whole %>%
+  group_by(site) %>%
+  filter(s == t) %>% # variances only
+  group_modify(~ {
+    m <- lmer(value ~ mean_ld + (1 | rep) + (1 | s), data = .x)
+    tibble(
+      slope = fixef(m)["mean_ld"],
+      n_obs = nrow(.x)
+    )
+  }) %>%
+  ungroup()
+
+# block bootstrapping
+
 
 ### estimate va and ne
 mod_genome <- va_ne_whole %>%
@@ -3462,13 +3554,19 @@ sites <- sites[c(-30)]
 
 output_ne <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/waples_1989_ne_esitmates.txt", sep = "")
 
+check_file_exists(output_ne)
+
 for(site in as.numeric(unique(sites))){
+  local({
   print(paste("Site:", site))
-  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = "")))
   
   for(exprep in 1:12){
     print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    hap_rep <- hap_site %>% 
+      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+      collect()
     
     # sort names to be in order of generation
     hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
@@ -3479,7 +3577,7 @@ for(site in as.numeric(unique(sites))){
     }
     
     # get last column == last generation
-    pt <- hap_rep[,ncol(hap_rep)]
+    pt <- hap_rep %>% pull(ncol(hap_rep))
     
     # sample sizes
     rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 1000)
@@ -3488,10 +3586,10 @@ for(site in as.numeric(unique(sites))){
     rep_time <- as.numeric(gsub("_", "", str_extract(colnames(hap_rep), "_._")))
     rep_time <- rep_time[length(rep_time)]
     
-    if(rep_time < 2){
-      print("Too close to t too close to 0. Skipping replicate...")
-      next
-    }
+    # if(rep_time < 2){
+    #   print("Too close to t too close to 0. Skipping replicate...")
+    #   next
+    # }
     
     # calculate Ne
     ne_estimate <- waples_ne(1.8, 20, gen0$X3, pt, 1000, rep_n$n[nrow(rep_n)], rep_time)
@@ -3499,6 +3597,7 @@ for(site in as.numeric(unique(sites))){
     ne_result <- data.frame(
       site = site,
       rep = exprep,
+      fc = fc(gen0$X3, pt),
       ne_low = ne_estimate[1],
       ne_high = ne_estimate[2],
       t = rep_time
@@ -3506,18 +3605,38 @@ for(site in as.numeric(unique(sites))){
     
     append_table(ne_result, output_ne)
   }
+  })
 }
 
+```
 
-ne_estimates <- read.csv(output_ne)
+## plot waples Ne estimates
 
-ne_estimates %>%
-  filter(ne_low > 0) %>%
+```{r}
+ne_estimates <- read.csv("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-07-13/waples_1989_ne_esitmates.txt")
+
+ne_summary <- ne_estimates %>%
+  #filter(ne_low > 0) %>%
   group_by(site) %>%
-  summarize(ne_low = mean(ne_low),
-            ne_high = mean(ne_high),
+  summarize(mufc = mean(fc),
+            sefc = sd(fc)/sqrt(n()),
             tmin = min(t),
-            tmax = max(t))
+            tmax = max(t)) %>%
+  left_join(locations_data, by = "site")
+
+ne_summary$site_city_country <- paste0("(", ne_summary$site, ") ", ne_summary$city_country)
+
+ggplot(ne_summary, aes(x = reorder(site_city_country, -mufc), 
+                       y = mufc, 
+                       group = as.factor(site))) +
+  geom_pointrange(aes(ymin = mufc - 2*sefc, 
+                      ymax = mufc+2*sefc), 
+                  position = position_dodge2(width = 0.75)) +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1),
+        text = element_text(size = 12)) +
+  labs(x = "Site", y = "Fb")
+
+ggsave(paste0(results_path, "fc_estimates.pdf"), height = 4, width = 8)
 ```
 
 # G' (G prime)
