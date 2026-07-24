@@ -31,6 +31,8 @@ library(ggforce)
 library(arrow)
 library(sf)
 library(maps)
+library(lme4)
+library(scales)
 
 box::use(./R/gt[...],
          ./R/plot[...],
@@ -2547,7 +2549,6 @@ for(w in unique(ld_decay_blocks$window)) {
 ## Diversity vs recombination rate
 
 ```{r}
-
 # fit model to marey map
 best_mods <- recom_map %>%
   group_by(chrom) %>%
@@ -2585,14 +2586,29 @@ file_prefixes <- gsub("/", "_", gsub("../data/diversity/|.txt", "", pi_files))
 plot_list <- list()
 for(i in seq_along(pi_files)){
   
-  nuc_div <- fread(pi_files[i], header = T)
-  title <- gsub("^ ", "", gsub("/|_", " ", gsub("../data/diversity|_pi.txt", "", pi_files[i])))
+  cat(paste0("Processing ", pi_files[i], "...\n"))
   
-  nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2 # midpoint
+  nuc_div <- fread(pi_files[i], header = T)
+
+  
+  # calculate window midpoint
+  nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2
   nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
   
+  # match chromosome name across files
   names(nuc_div)[2] <- "chrom"
   
+  # extract number of individuals in vcf
+  num_indiv <- as.numeric(str_split(title, " ")[[1]][3])
+  
+  # if diversity file excludes invariant sites, rescale denominator
+  # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
+  if(num_indiv == 231 | num_indiv == 2029){
+    cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
+    nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
+    nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
+  }
+
   # Evaluate derivative of model for windows
   rate_vs_div <- nuc_div %>%
     left_join(best_mods, by = "chrom") %>%
@@ -2617,13 +2633,16 @@ for(i in seq_along(pi_files)){
     rate_vs_div$rate[rate_vs_div$rate <= 10],
     rate_vs_div$avg_pi[rate_vs_div$rate <= 10]
     )
+  
+  # build plot title
+    title <- gsub("^ ", "", gsub("/|_", " ", gsub("../data/diversity|_pi.txt", "", pi_files[i])))
  
    title <- paste0(title,
                   "\nr = ", 
                   signif(corr_results$r, 2), 
                   ", p = ", 
                   format.pval(corr_results$p_value, digits = 2, eps = 0.001), 
-                  "\nCI = [", 
+                  "\n95 % CI = [", 
                   signif(corr_results$ci_lower, 2), 
                   ", ", 
                   signif(corr_results$ci_upper, 2), 
@@ -2665,6 +2684,319 @@ ggsave(paste0(results_path, "/four_fold_recombionation_rate_vs_diversity.pdf"), 
 
 ggarrange(plot_list[[7]], plot_list[[8]], plot_list[[9]], nrow = 1, ncol = 3)
 ggsave(paste0(results_path, "/zero_fold_recombionation_rate_vs_diversity.pdf"), width = 9, height = 5)
+```
+
+## gene density vs diversity
+
+```{r}
+gene_density <- fread("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/cds_per_window.bed")
+
+names(gene_density) <- c("chrom", "window_pos_1", "window_pos_2", "V4", "V5", "V6", "frac_cds")
+
+gene_density$chrom <- as.integer(gene_density$chrom)
+gene_density$window_pos_1 <- gene_density$window_pos_1 + 1
+
+gene_density_vs_div_plot_list <- list()
+
+for(i in seq_along(pi_files)){
+  
+  # load data
+  cat(paste0("Processing ", pi_files[i], "...\n"))
+  nuc_div <- fread(pi_files[i], header = T)
+  names(nuc_div)[2:4] <- c("chrom", "window_pos_1", "window_pos_2")
+  
+  # if windows are left shifted, correct them
+  nuc_div <- nuc_div %>%
+    group_by(chrom) %>%
+    mutate(window_pos_2 = window_pos_2 - min(window_pos_1) + 1,
+           window_pos_1 = window_pos_1 - min(window_pos_1) + 1)
+  
+  # combine density and diversity
+  nuc_div <- nuc_div %>%
+    left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2"))
+  
+  # plot title
+  title <- gsub("^ ", "", gsub("/|_", " ", gsub("../data/diversity|_pi.txt", "", pi_files[i])))
+  
+  # extract number of individuals in vcf
+  num_indiv <- as.numeric(str_split(title, " ")[[1]][3])
+  
+  # calculate window midpoint
+  nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2
+  nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
+  
+  # if diversity file excludes invariant sites, rescale denominator
+  # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
+  if(num_indiv == 231 | num_indiv == 2029){
+    cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
+    nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
+    nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
+  }
+  
+  # Evaluate derivative of model for windows
+  rate_vs_div <- nuc_div %>%
+    left_join(best_mods, by = "chrom") %>%
+    group_by(chrom) %>%
+    mutate(rate = eval_deriv(model[[1]], window_pos_mid)) %>%
+    select(chrom, window_pos_mid, rate, avg_pi, frac_cds) %>%
+    unnest(cols = c(rate))
+  
+  # filter out negative recombination rates
+  rate_vs_div <- rate_vs_div %>% filter(rate > 0)
+ 
+  # correlation between gene_density and diversity
+  corr_results <- corr_ci_autocorr(
+    rate_vs_div$frac_cds,
+    rate_vs_div$avg_pi
+    )
+ 
+   title <- paste0(title,
+                  "\nr = ", 
+                  signif(corr_results$r, 2), 
+                  ", p = ", 
+                  format.pval(corr_results$p_value, digits = 2, eps = 0.001), 
+                  "\n95 % CI = [", 
+                  signif(corr_results$ci_lower, 2), 
+                  ", ", 
+                  signif(corr_results$ci_upper, 2), 
+                  "]")
+   
+  # plot
+  plot_density_vs_div <- ggplot(rate_vs_div, aes(x = frac_cds, y = avg_pi)) +
+    geom_point() +
+    geom_smooth(
+      method = "lm", 
+      se = TRUE, 
+      color = "lightblue"
+    ) +
+    labs(y = "Average nucleotide diversity (\u03c0)", 
+         x = "Fraction of window\nannotated CDS",
+         title = title) 
+  
+  gene_density_vs_div_plot_list[[i]] <- plot_density_vs_div
+  
+    ggsave(paste(results_path, file_prefixes[i],"_gene_density_vs_diversity.pdf", sep = ""), plot_density_vs_div, width = 5.5, height = 8, device = cairo_pdf)
+    
+}
+
+# adjust plots to fit them all together
+gene_density_vs_div_plot_list <- purrr::map(gene_density_vs_div_plot_list, ~ .x + theme(text = element_text(size = 12)))
+
+ggarrange(gene_density_vs_div_plot_list[[1]], 
+          gene_density_vs_div_plot_list[[2]],
+          gene_density_vs_div_plot_list[[3]], 
+          nrow = 1, 
+          ncol = 3)
+ggsave(paste0(results_path, "/all_sites_gene_density_vs_diversity.pdf"), width = 9, height = 3.5, device = cairo_pdf)
+
+ggarrange(gene_density_vs_div_plot_list[[4]],
+          gene_density_vs_div_plot_list[[5]],
+          gene_density_vs_div_plot_list[[6]],
+          nrow = 1,
+          ncol = 3)
+ggsave(paste0(results_path, "/four_fold_gene_density_vs_diversity.pdf"), width = 9, height = 3.5, device = cairo_pdf)
+
+ggarrange(gene_density_vs_div_plot_list[[7]],
+          gene_density_vs_div_plot_list[[8]],
+          gene_density_vs_div_plot_list[[9]],
+          nrow = 1,
+          ncol = 3)
+ggsave(paste0(results_path, "/zero_fold_gene_density_vs_diversity.pdf"), width = 9, height = 3.5, device = cairo_pdf)
+  
+```
+
+## adaptest recombination map
+
+```{r}
+adaptest<-fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/Adaptest_genetic_map_500kb.csv")
+
+#
+names(adaptest)[1] <- "chrom"
+adaptest$window_pos_1 <- adaptest$bin + 1
+adaptest$window_pos_2 <- adaptest$bin + 5e5
+
+# now loop over diversity files
+pi_files <- list.files(path = "../data/diversity", recursive = T, full.names = T, pattern = "_pi.txt$")
+
+file_prefixes <- gsub("/", "_", gsub("../data/diversity/|.txt", "", pi_files))
+
+# loop over pixy outputs
+plots_adaptest <- list()
+for(i in seq_along(pi_files)){
+  
+  # load data
+  nuc_div <- fread(pi_files[i])
+  names(nuc_div)[2] <- "chrom"
+  
+  # if windows are left shifted, correct them
+  nuc_div <- nuc_div %>%
+    group_by(chrom) %>%
+    mutate(window_pos_2 = window_pos_2 - min(window_pos_1) + 1,
+           window_pos_1 = window_pos_1 - min(window_pos_1) + 1)
+  
+  # extract number of individuals in vcf
+  num_indiv <- as.numeric(gsub("sites/|fold/", "", str_split(pi_files[i], "_")[[1]][2]))
+  
+  # if diversity file excludes invariant sites, rescale denominator
+  # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
+  if(num_indiv == 231 | num_indiv == 2029){
+    cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
+    nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
+    nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
+  }
+  
+  rate_vs_div <- nuc_div %>%
+    left_join(adaptest, by = c("chrom", "window_pos_1", "window_pos_2"))
+  
+  # correlation between recombination rate and diversity
+  corr_results <- corr_ci_autocorr(
+    rate_vs_div$rate_cM_Mb[rate_vs_div$rate_cM_Mb <= 10],
+    rate_vs_div$avg_pi[rate_vs_div$rate_cM_Mb <= 10]
+  )
+  
+  # build plot title
+  title <- gsub("^ ", "", gsub("/|_", " ", gsub("../data/diversity|_pi.txt", "", pi_files[i])))
+  
+  title <- paste0(title,
+                  "\nr = ", 
+                  signif(corr_results$r, 2), 
+                  ", p = ", 
+                  format.pval(corr_results$p_value, digits = 2, eps = 0.001), 
+                  "\n95 % CI = [", 
+                  signif(corr_results$ci_lower, 2), 
+                  ", ", 
+                  signif(corr_results$ci_upper, 2), 
+                  "]")
+  
+  # diversity vs recombination rate
+  plot_adaptest <- ggplot(rate_vs_div, aes(x = rate_cM_Mb, y = avg_pi)) +
+    geom_point() +
+    geom_smooth(
+      data = subset(rate_vs_div, rate_cM_Mb <= 10), 
+      method = "lm", 
+      se = TRUE, 
+      color = "lightblue"
+    ) +
+    facet_zoom(rate_cM_Mb <= 10) +
+    theme(
+      # Draws a border line and shaded region for the connecting zoom lines
+      zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
+    labs(x = "Recombination rate (cM/Mb)", 
+         y = "Average nucleotide diversity",
+         title = title)
+  
+  plots_adaptest[[i]] <- plot_adaptest
+  ggsave(paste(results_path, "adaptest_", file_prefixes[i],"_recombination_vs_diversity.pdf", sep = ""), plot_adaptest, width = 5, height = 8)
+  
+}
+
+# adjust plots to fit them all together
+plots_adaptest <- purrr::map(plots_adaptest, ~ .x + theme(text = element_text(size = 12)))
+
+# trios of data
+ggarrange(plots_adaptest[[1]], 
+          plots_adaptest[[2]],
+          plots_adaptest[[3]], 
+          nrow = 1, 
+          ncol = 3)
+ggsave(paste0(results_path, "/adaptest_all_sites_gene_density_vs_diversity.pdf"),
+       width = 9,
+       height = 4.5, device = cairo_pdf)
+
+ggarrange(plots_adaptest[[4]],
+          plots_adaptest[[5]],
+          plots_adaptest[[6]],
+          nrow = 1,
+          ncol = 3)
+ggsave(paste0(results_path, "/adaptest_four_fold_gene_density_vs_diversity.pdf"),
+       width = 9,
+       height = 4.5, device = cairo_pdf)
+
+ggarrange(plots_adaptest[[7]],
+          plots_adaptest[[8]],
+          plots_adaptest[[9]],
+          nrow = 1,
+          ncol = 3)
+ggsave(paste0(results_path, "/adaptest_zero_fold_gene_density_vs_diversity.pdf"), 
+       width = 9,
+       height = 4.5, device = cairo_pdf)
+```
+
+## gene density vs diversity
+
+```{r}
+
+# compile diversity data, for crying out loud
+nuc_div_all <- NULL
+for(i in seq_along(pi_files)){
+  
+  # load data
+  nuc_div <- fread(pi_files[i])
+  names(nuc_div)[2] <- "chrom"
+  
+  # if windows are left shifted, correct them
+  nuc_div <- nuc_div %>%
+    group_by(chrom) %>%
+    mutate(window_pos_2 = window_pos_2 - min(window_pos_1) + 1,
+           window_pos_1 = window_pos_1 - min(window_pos_1) + 1,
+           window_pos_mid_Mb = (window_pos_2 + window_pos_1)/(2*1e6))
+  
+  # extract number of individuals in vcf
+  num_indiv <- as.numeric(gsub("sites/|fold/", "", str_split(pi_files[i], "_")[[1]][2]))
+  site_class <- gsub("../data/diversity/", "", str_split(pi_files[i], "_")[[1]][1])
+  
+  # if diversity file excludes invariant sites, rescale denominator
+  # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
+  if(num_indiv == 231 | num_indiv == 2029){
+    cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
+    nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
+    nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
+  }
+  
+  nuc_div$panel <- num_indiv
+  nuc_div$site_class <- site_class
+  nuc_div <- as.data.frame(nuc_div)
+  nuc_div_all <- rbind(nuc_div_all, nuc_div)
+  
+}
+
+#
+nuc_div_density_all <- nuc_div_all %>%
+  left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2"))
+
+# Evaluate derivative of model for windows
+rate_vs_div_all <- nuc_div_density_all %>%
+    left_join(best_mods, by = "chrom") %>%
+    group_by(chrom) %>%
+    mutate(rate = eval_deriv(model[[1]], window_pos_mid_Mb)) %>%
+    select(chrom, window_pos_mid_Mb, panel, site_class, rate, avg_pi, frac_cds) %>%
+    unnest(cols = c(rate))
+
+rate_density_cor <- rate_vs_div_all %>%
+  group_by(panel, site_class) %>%
+  filter(rate <= 10) %>%
+  reframe(r = corr_ci_autocorr(rate, frac_cds)$r,
+          p = corr_ci_autocorr(rate, frac_cds)$p_value)
+
+# plot density vs recombination rate
+ggplot(rate_vs_div_all %>% filter(site_class == "all", panel == 231), aes(y = frac_cds, x = rate)) +
+  geom_point(shape = 16) +
+  geom_smooth(method = "lm", color = "skyblue", data = subset(rate_vs_div_all, site_class == "all" & panel == 231 & rate <= 10)) +
+  facet_zoom(rate <= 10) +
+    theme(
+      zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
+  labs(x = "Fraction of window\nannotated CDS", 
+       y = "Recombination rate (cM/Mb)",
+title = paste0("r = ", signif(rate_density_cor$r, 2), ", p = ", format.pval(rate_density_cor$p, digits = 2, eps = 0.001)))
+
+ggsave(paste0(results_path, "/gene_density_vs_recombination_rate.pdf"), 
+       width = 4.5,
+       height = 5.5, device = cairo_pdf)
+
+# model of diversity as coding sequence density and recombination rate
+mod <- lm(log10(avg_pi) ~ rate + frac_cds, data = rate_vs_div_all %>% filter(site_class == "all", panel == 231, rate <= 10))
+summary(mod)
+  
 ```
 
 # Ne and VA(1) estimates
@@ -2837,7 +3169,8 @@ for(site in unique(sites)){
 # are values structured by year?
 for(i in unique(va_ne_whole$site)){
   data_subset <- va_ne_whole %>% 
-    filter(s == t & value > 0 & site == i)
+    filter(s == t & site == i) %>%
+    left_join(locations_data, by = "site")
   
   print(summary(lm(value ~ mean_ld + as.factor(s), data_subset)))
   
@@ -2849,14 +3182,17 @@ for(i in unique(va_ne_whole$site)){
 ggplot(data_subset, aes(x = mean_ld, y = value, color = as.factor(s))) +
   geom_point(shape = 16) +
   geom_smooth(method = "lm") +
-  facet_wrap(.~rep, scales = "free") +
-  scale_y_log10() +
-  labs(x = "Mean LD (r^2)", y = "Var(dpi)/(p0(1-p0))")
+  facet_wrap(.~rep) +
+  scale_color_scico_d(palette = "lipari") +
+  #scale_y_log10() +
+  scale_y_continuous(trans = pseudo_log_trans(base = 10, sigma = min(data_subset$value[data_subset$value > 0])), breaks = pretty_breaks(n = 3)) +
+  labs(x = "Mean LD", y = "Var(\u0394 pt)/(pt(1-pt))", color = "Generation", title = paste0("(", i, ") ", unique(data_subset$city_country)))
 
-ggsave(paste(results_path, i, "_variance_all_vs_ld_noNcorrection.png", sep = ""), height = 9, width = 9)
+ggsave(paste(results_path, i, "_variance_all_vs_ld.png", sep = ""), height = 9, width = 9)
 }
 
 ### try some custom modeling
+
 # Think slopes per site make more sense than one global slope
 site_slopes <- va_ne_whole %>%
   group_by(site) %>%
@@ -2870,7 +3206,108 @@ site_slopes <- va_ne_whole %>%
   }) %>%
   ungroup()
 
-# block bootstrapping
+# generate block bootstrap sample
+# sample the same blocks for every replicate WITHIN a site
+block_bootstrap_sample <- function(dat) {
+
+  # unique blocks available per site
+  blocks_by_site <- dat %>% distinct(site, block)
+
+  # resample blocks WITH replacement, once per site
+  # (identical draw is then applied to all reps within that site)
+  sampled_blocks <- blocks_by_site %>%
+    group_by(site) %>%
+    group_modify(~ {
+      n_blocks <- length(unique(.x$block))
+      tibble(
+        block   = sample(.x$block, size = n_blocks, replace = TRUE),
+        boot_id = seq_len(n_blocks)  # unique tag per draw, handles duplicate blocks
+      )
+    }) %>%
+    ungroup()
+
+  # pull ALL rows (all reps) matching each sampled block instance
+  boot_dat <- sampled_blocks %>%
+    left_join(dat, by = c("site", "block"),
+              relationship = "many-to-many")
+
+  boot_dat
+}
+
+# one bootstrap replicate:
+boot_sample <- block_bootstrap_sample(va_ne_whole %>% filter(s == t))
+
+# full block bootstrapping procedure
+B <- 1000
+output_boot_slopes <- paste0(results_path, "vardp_meanld_slope_bootstraps.txt")
+#check_file_exists(output_boot_slopes)
+
+for (i in 1:B) {
+  
+  cat("Bootstrap sample: ", i, "\n")
+  boot_dat <- block_bootstrap_sample(va_ne_whole %>% filter(s == t))
+
+  boot_results <- boot_dat %>% 
+    group_by(site) %>%
+  filter(s == t) %>% # variances only
+  group_modify(~ {
+    m <- lmer(value ~ mean_ld + (1 | rep) + (1 | s), data = .x)
+    tibble(
+      slope = fixef(m)["mean_ld"],
+      n_obs = nrow(.x)
+    )
+  }) %>%
+  ungroup()
+
+  boot_results$boot <- boot_results$boot <- i
+  append_table(boot_results, output_boot_slopes)
+}
+
+lmm_results <- fread(output_boot_slopes)
+
+conf_level = 0.05 
+lmm_cis <- lmm_results %>%
+  group_by(site) %>%
+  summarize(lwr_slope = quantile(slope, conf_level/2),
+            upr_slope = quantile(slope, 1-conf_level/2)) %>%
+  mutate(significant = ((lwr_slope > 0) & (upr_slope > 0)) | ((lwr_slope < 0) & (upr_slope < 0))) %>%
+  left_join(site_slopes, by = "site")
+
+
+for(sigma in c(1e-7, 1e-6, 1e-5, 1e-4, 1e-3)){
+
+  ggplot(lmm_cis, aes(x = reorder(site, -slope), y = slope, color = significant)) +
+  geom_pointrange(aes(ymin = lwr_slope, ymax = upr_slope)) +
+  scale_y_continuous(trans = pseudo_log_trans(base = 10, sigma = sigma)) +
+  scale_color_scico_d(palette = "bam") +
+    labs(x = "Location", y = "Var(\u0394 pt)/(pt(1-pt)) vs LD slope") +
+    theme(legend.position = "none")
+  
+  ggsave(paste0(results_path, "vardp_ld_slopes_", sigma, ".pdf"), device = cairo_pdf)
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 ### estimate va and ne
@@ -3054,7 +3491,6 @@ va_ne_blocks %>%
 va_ne_blocks %>%
   group_by(site, rep) %>%
   summarize(cor(a,b))
-
 
 mod_first_gen <- va_ne_blocks %>%
   group_by(site, rep) %>%
