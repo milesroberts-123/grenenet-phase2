@@ -2546,6 +2546,56 @@ for(w in unique(ld_decay_blocks$window)) {
 
 ```
 
+## compile diversity values
+
+```{r}
+# now loop over diversity files
+pi_files <- list.files(path = "../data/diversity", recursive = T, full.names = T, pattern = "_pi.txt$")
+
+file_prefixes <- gsub("/", "_", gsub("../data/diversity/|.txt", "", pi_files))
+
+plot_list <- list()
+
+for(i in seq_along(pi_files)){
+  
+  pi_file <- pi_files[i]
+  
+  cat(paste0("Processing ", pi_file, "...\n"))
+  
+  nuc_div <- fread(pi_file, header = T)
+
+  # calculate window midpoint
+  nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2
+  nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
+  
+  # match chromosome name across files
+  names(nuc_div)[2] <- "chrom"
+  
+  # extract number of individuals in vcf
+  num_indiv <- as.numeric(gsub("_pi.txt", "", str_split(pi_file, "/")[[1]][5]))
+  site_class <- str_split(pi_file, "/")[[1]][4]
+  # if diversity file excludes invariant sites, rescale denominator
+  # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
+  if( (num_indiv == 231 | num_indiv == 2029) & (site_class == "all_sites") ){
+    cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
+    nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
+    nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
+  }
+  
+  if( (num_indiv == 231 | num_indiv == 2029) & (site_class != "all_sites") ){
+    if(site_class == "four_fold"){
+      num_4_per_win <- fread("~/moi_lab_projects/grenenet-phase2/data/diversity/four_fold/four_fold_per_window.bed", col.names = c("chrom", "window_pos_1", "window_pos_2", "num_4"), colClasses = list(integer = 1:4))
+      num_4_per_win$V2 <- num_4_per_win$V2 + 1
+      nuc_div %>%
+        left_join(num_4_per_win, by = c("chrom", "window_pos_1", "window_pos_2"))
+    }
+    if(site_class == "zero_fold"){
+      
+    }
+  }
+
+```
+
 ## Diversity vs recombination rate
 
 ```{r}
@@ -3263,9 +3313,11 @@ for (i in 1:B) {
   append_table(boot_results, output_boot_slopes)
 }
 
+### plot lmm results
 lmm_results <- fread(output_boot_slopes)
 
-conf_level = 0.05 
+conf_level <- 0.05 
+
 lmm_cis <- lmm_results %>%
   group_by(site) %>%
   summarize(lwr_slope = quantile(slope, conf_level/2),
@@ -3274,7 +3326,7 @@ lmm_cis <- lmm_results %>%
   left_join(site_slopes, by = "site")
 
 
-for(sigma in c(1e-7, 1e-6, 1e-5, 1e-4, 1e-3)){
+for(sigma in c(1e-5, 1e-4, 1e-3)){
 
   ggplot(lmm_cis, aes(x = reorder(site, -slope), y = slope, color = significant)) +
   geom_pointrange(aes(ymin = lwr_slope, ymax = upr_slope)) +
@@ -3284,6 +3336,7 @@ for(sigma in c(1e-7, 1e-6, 1e-5, 1e-4, 1e-3)){
     theme(legend.position = "none")
   
   ggsave(paste0(results_path, "vardp_ld_slopes_", sigma, ".pdf"), device = cairo_pdf)
+  
 }
 
 
@@ -3307,7 +3360,7 @@ for(sigma in c(1e-7, 1e-6, 1e-5, 1e-4, 1e-3)){
 
 
 
-
+#### DEPRECATED ####
 
 
 ### estimate va and ne
@@ -3423,7 +3476,8 @@ plot_ne_bio1 <- ggplot() +
 
 save_plot_and_object(plot_obj = plot_ne_bio1, base_path = paste(results_path, "ne_per_site", sep = ""), img_ext = "pdf")
 
-# DEPRECATED #
+
+#### DEPRECATED ####
 
 
 
