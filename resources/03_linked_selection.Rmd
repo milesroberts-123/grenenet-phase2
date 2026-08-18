@@ -2840,6 +2840,55 @@ ggsave(paste0(results_path, "/zero_fold_cds_density_vs_diversity.pdf"), width = 
   
 ```
 
+## load binned expression
+
+```{r}
+# binned single-cell expression from workflow/expression_bins/
+bin_files <- list.files("../workflow/expression_bins", pattern = "\\.bins$", full.names = TRUE)
+
+exp_bins <- NULL
+for (f in bin_files) {
+  sample <- gsub("\\.bins$", "", basename(f))
+  bed <- paste0("../workflow/expression_bins/", sample, ".bed")
+  cell_types <- readLines(bed, n = 1) %>%
+    strsplit("\t") %>%
+    unlist() %>%
+    tail(-4)
+
+  bins <- read.table(f, col.names = c("chrom", "start", "end", cell_types),
+                     check.names = FALSE, na.strings = c("NA", ".")) %>%
+    mutate(chrom = as.integer(gsub("Chr", "", chrom)),
+           window_pos_1 = start + 1,
+           window_pos_2 = end,
+           sample = sample) %>%
+    mutate(across(all_of(cell_types), ~ replace_na(., 0)))
+
+  exp_bins <- rbind(exp_bins, bins)
+}
+
+# cell-type specificity (tau): 0 = ubiquitous, 1 = single cell type
+tau <- function(x) {
+  n <- length(x)
+  if (n <= 1 || max(x) == 0) return(NA_real_)
+  x <- x / max(x)
+  sum(1 - x) / (n - 1)
+}
+
+# all samples share the same cell-type set, so the last loop value is fine
+exp_bins$tau <- apply(exp_bins[, cell_types, drop = FALSE], 1, tau)
+
+exp_bins_long <- exp_bins %>%
+  pivot_longer(cols = all_of(cell_types), names_to = "cell_type", values_to = "cpm")
+
+# join to pi and gene density; pi_final has multiple site_class x num_indiv
+# combos per window, so rows are duplicated accordingly
+explore_df <- exp_bins_long %>%
+  left_join(pi_final, by = c("chrom", "window_pos_1", "window_pos_2")) %>%
+  left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2"))
+
+glimpse(explore_df)
+```
+
 ## adaptest recombination map
 
 ```{r}
@@ -5452,4 +5501,3 @@ for(i in seq_along(chroms)){
 
 head(lfmm_ft_only)
 ```
->>>>>>> Stashed changes
