@@ -41,13 +41,17 @@ rule expression_bins:
         temp("expression_bins/{sample}.sorted.bed")
     conda:
         "../envs/bcftools.yaml"
-    params:
-        map_cols=",".join(str(c) for c in config["expression_bins_map_cols"]),
-        map_ops=",".join(["sum"] * len(config["expression_bins_map_cols"]))
     shell:
         """
+        ncols=$(awk -F'\t' 'NR==1{{print NF}}' {input.bed})
+        if [ "$ncols" -lt 5 ]; then
+            echo "ERROR: {input.bed} has no cell-type columns (NF=$ncols)" >&2
+            exit 1
+        fi
+        map_cols=$(awk -v n=$ncols 'BEGIN{{for(i=5;i<=n;i++) printf "%s%d", (i>5?",":""), i}}')
+        map_ops=$(awk -v n=$ncols 'BEGIN{{for(i=5;i<=n;i++) printf "%ssum", (i>5?",":"")}}')
         tail -n +2 {input.bed} | sort -k1,1 -k2,2n > {output[1]}
-        bedtools map -a {input.windows} -b {output[1]} -c {params.map_cols} -o {params.map_ops} > {output[0]}
+        bedtools map -a {input.windows} -b {output[1]} -c $map_cols -o $map_ops > {output[0]}
         """
 
 rule plot_expression_bins:
