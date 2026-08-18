@@ -28,9 +28,12 @@ cell_types <- readLines(bed_path, n = 1) %>%
 
 exp_bins <- read.table(
   bins_path,
-  col.names = c("chrom", "start", "end", cell_types)
+  col.names = c("chrom", "start", "end", cell_types),
+  check.names = FALSE,
+  na.strings = c("NA", ".")
 ) %>%
-  filter(!(chrom %in% c("M", "C")))
+  filter(!(chrom %in% c("M", "C"))) %>%
+  mutate(across(all_of(cell_types), ~ replace_na(., 0)))
 
 # Cell-type specificity (tau): 0 = ubiquitous, 1 = single cell type.
 tau <- function(x) {
