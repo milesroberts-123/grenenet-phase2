@@ -58,6 +58,7 @@ p <- ggplot(bins_long, aes(x = bin_mid, y = count, fill = cell_type)) +
   geom_col() +
   facet_grid(cell_type ~ chrom, scales = "free") +
   scale_fill_scico_d(palette = "hawaii") +
+  theme_minimal() +
   theme(axis.text.x = element_blank(),
         axis.text.y = element_blank(),
         legend.position = "None") +
@@ -68,8 +69,8 @@ ggsave(out_path, p, width = width, height = width * 0.75, dpi = 150)
 p_tau <- ggplot(exp_bins, aes(x = (start + end) / 2, y = tau)) +
   geom_col() +
   facet_grid(. ~ chrom, scales = "free") +
-  theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank()) +
+  theme_minimal() +
+  theme(axis.text.x = element_blank()) +
   labs(x = "Window midpoint (bp)", y = "Cell-type Expression Specificity")
 
 ggsave(tau_path, p_tau, width = width, height = width * 0.75, dpi = 150)
