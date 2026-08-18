@@ -83,7 +83,16 @@ phase2_poolseq_samples: ~/config/samples_phase2_poolseq.tsv
 gff: "/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/arabidopsis_thaliana.gff"
 
 seurat_rds:
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_flower_250805.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_rosette_21d_230221.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_rosette_30d_230221.rds"
   - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seed_0d_230221.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seed_125d_250805.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seedling_12d_230221.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seedling_3d_250805.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seedling_6d_230221.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_silique_230221.rds"
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_stem_250805.rds"
 
 windows_bed: "/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/500kb_windows.bed"
 
