@@ -19,6 +19,8 @@ set-resources:
         cpus_per_task: 2
     iss:
         cpus_per_task: 4
+    expression_bed:
+        mem_mb_per_cpu: 16000
 #    iss_two_pop:
 #        cpus_per_task: 4
 

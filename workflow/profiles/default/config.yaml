@@ -34,6 +34,12 @@ set-resources:
         cpus_per_task: 2
     bwa_mem:
         cpus_per_task: 4
+    expression_bed:
+        runtime: "60m"
+    expression_bins:
+        runtime: "10m"
+    plot_expression_bins:
+        runtime: "10m"
 
 # parallelization with threads needs to be defined separately:
 # threads and cpus_per_task are supposed to be synonymous for this plugin, but for some reason I need to specify them separately

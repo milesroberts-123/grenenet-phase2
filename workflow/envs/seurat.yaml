@@ -1,0 +1,12 @@
+name: seurat
+channels:
+  - conda-forge
+  - bioconda
+dependencies:
+  - r-base
+  - r-seurat
+  - r-dplyr
+  - r-readr
+  - r-tidyr
+  - r-ggplot2
+  - r-scico

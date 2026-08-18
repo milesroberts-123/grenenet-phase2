@@ -78,3 +78,17 @@ phase2_poolseq_suffix:
  - "_R2_001.fastq.gz"
 
 phase2_poolseq_samples: ~/config/samples_phase2_poolseq.tsv
+
+# Single-cell expression bins ==========================================
+gff: "/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/arabidopsis_thaliana.gff"
+
+seurat_rds:
+  - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seed_0d_230221.rds"
+
+windows_bed: "/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/500kb_windows.bed"
+
+expression_bins_group_by: "CellType"
+
+expression_bins_map_cols: [5, 6, 7, 8, 9, 10]
+
+expression_bins_plot_width: 12

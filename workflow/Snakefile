@@ -31,6 +31,11 @@ sampling_times = pd.read_table(
     "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
 ).set_index(["ID"], drop=False)
 
+# single-cell expression bins
+seurat_samples = [
+    os.path.splitext(os.path.basename(p))[0] for p in config["seurat_rds"]
+]
+
 rule all_gt_sims:
     input:
         expand("slim_results/{ID}_neutfreqs.tsv", ID=gt_params["ID"])
@@ -46,6 +51,11 @@ rule all_poolseq:
     input:
         expand("freqk_call_results/{sample}.txt", sample=reads["sample"])
 
+rule all_expression_bins:
+    input:
+        expand("expression_bins/{sample}.bins", sample=seurat_samples),
+        expand("expression_bins/{sample}.png", sample=seurat_samples)
+
 #rule all_seed_mix:
 #    input:
 #        expand("freqk_call_results/{sample}.txt", sample=config["seed_samples"])
@@ -54,6 +64,7 @@ include: "rules/freqk.smk"
 include: "rules/fastp.smk"
 include: "rules/slim.smk"
 include: "rules/fst_sim.smk"
+include: "rules/expression_bins.smk"
 #include: "rules/legacy/kmc.smk"
 #include: "rules/legacy/kmc_contam_db.smk"
 #include: "rules/legacy/kmc_rm_contam.smk"
