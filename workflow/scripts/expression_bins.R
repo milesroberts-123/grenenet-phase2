@@ -7,6 +7,7 @@ suppressPackageStartupMessages({
   library(Seurat)
   library(dplyr)
   library(readr)
+  library(tidyr)
 })
 
 args <- commandArgs(trailingOnly = TRUE)
