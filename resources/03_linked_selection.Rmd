@@ -2735,119 +2735,108 @@ ggsave(paste0(results_path, "/zero_fold_recombionation_rate_vs_diversity.pdf"), 
 ## gene density vs diversity
 
 ```{r}
-gene_density <- fread("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/cds_per_window.bed")
+#gene_density <- fread("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/cds_per_window.bed")
+gene_density <- fread("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/pi_windows_with_cds_counts.bed")
 
-names(gene_density) <- c("chrom", "window_pos_1", "window_pos_2", "V4", "V5", "V6", "frac_cds")
+names(gene_density) <- c("chrom", "window_pos_1", "window_pos_2", "chrom_b", "window_pos_1_b", "window_pos_2_b","n_cds")
 
 gene_density$chrom <- as.integer(gene_density$chrom)
-gene_density$window_pos_1 <- gene_density$window_pos_1 + 1
 
-gene_density_vs_div_plot_list <- list()
+gene_density <- gene_density %>%
+  group_by(chrom, window_pos_1, window_pos_2) %>%
+  summarize(n_cds = sum(n_cds))
 
-for(i in seq_along(pi_files)){
+gene_density$frac_cds <- gene_density$n_cds/(gene_density$window_pos_2 - gene_density$window_pos_1 + 1)
+#gene_density$window_pos_1 <- gene_density$window_pos_1 + 1
+
+pi_final_density <- pi_final %>%
+  left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2"))
   
-  # load data
-  cat(paste0("Processing ", pi_files[i], "...\n"))
-  nuc_div <- fread(pi_files[i], header = T)
-  names(nuc_div)[2:4] <- c("chrom", "window_pos_1", "window_pos_2")
-  
-  # if windows are left shifted, correct them
-  nuc_div <- nuc_div %>%
-    group_by(chrom) %>%
-    mutate(window_pos_2 = window_pos_2 - min(window_pos_1) + 1,
-           window_pos_1 = window_pos_1 - min(window_pos_1) + 1)
-  
-  # combine density and diversity
-  nuc_div <- nuc_div %>%
-    left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2"))
-  
-  # plot title
-  title <- gsub("^ ", "", gsub("/|_", " ", gsub("../data/diversity|_pi.txt", "", pi_files[i])))
-  
-  # extract number of individuals in vcf
-  num_indiv <- as.numeric(str_split(title, " ")[[1]][3])
-  
-  # calculate window midpoint
-  nuc_div$window_pos_mid <- (nuc_div$window_pos_2 + nuc_div$window_pos_1 + 1)/2
-  nuc_div$window_pos_mid <- nuc_div$window_pos_mid/1e6 #per mb
-  
-  # if diversity file excludes invariant sites, rescale denominator
-  # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
-  if(num_indiv == 231 | num_indiv == 2029){
-    cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
-    nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
-    nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
-  }
-  
-  # Evaluate derivative of model for windows
-  rate_vs_div <- nuc_div %>%
+# Evaluate derivative of model for windows
+rate_vs_div <- pi_final_density %>%
     left_join(best_mods, by = "chrom") %>%
     group_by(chrom) %>%
     mutate(rate = eval_deriv(model[[1]], window_pos_mid)) %>%
-    select(chrom, window_pos_mid, rate, avg_pi, frac_cds) %>%
+    select(chrom, window_pos_mid, site_class, num_indiv, rate, avg_pi, frac_cds) %>%
     unnest(cols = c(rate))
   
   # filter out negative recombination rates
-  rate_vs_div <- rate_vs_div %>% filter(rate > 0)
+  rate_vs_div <- rate_vs_div %>% 
+    filter(rate > 0)
  
-  # correlation between gene_density and diversity
-  corr_results <- corr_ci_autocorr(
-    rate_vs_div$frac_cds,
-    rate_vs_div$avg_pi
-    )
+# correlation between recombination rate and diversity
+  corr_results <- rate_vs_div %>%
+    group_by(site_class, num_indiv) %>%
+    filter(rate <= 10 & frac_cds >= 0.2) %>%
+    reframe(corr_ci = list(corr_ci_autocorr(frac_cds, avg_pi)))
  
-   title <- paste0(title,
+  
+  
+ # 2. Create all unique combinations
+combinations <- crossing(x = c("all_sites", "zero_fold", "four_fold"), y = c(1135, 2029, 231))
+
+# 3. Loop over them using a function
+plot_list <- pmap(combinations, function(x, y) {
+  print(paste("site_class:", x, "| num_indiv:", y))
+  
+  # subset corr results
+  corr_result <- corr_results[(corr_results$site_class == x) & (corr_results$num_indiv == y), 3][[1]][[1]]
+  
+   # build plot title
+   title <- paste0(gsub("_", " ", x), 
+                   ", ", 
+                   y,
                   "\nr = ", 
-                  signif(corr_results$r, 2), 
+                  signif(corr_result$r, 2), 
                   ", p = ", 
-                  format.pval(corr_results$p_value, digits = 2, eps = 0.001), 
+                  format.pval(corr_result$p_value, digits = 2, eps = 0.001), 
                   "\n95 % CI = [", 
-                  signif(corr_results$ci_lower, 2), 
+                  signif(corr_result$ci_lower, 2), 
                   ", ", 
-                  signif(corr_results$ci_upper, 2), 
+                  signif(corr_result$ci_upper, 2), 
                   "]")
-   
-  # plot
-  plot_density_vs_div <- ggplot(rate_vs_div, aes(x = frac_cds, y = avg_pi)) +
+  
+  # diversity vs recombination rate
+  plotdata <- rate_vs_div %>%
+    filter((site_class == x) & (num_indiv == y))
+  
+  plot_rate_div <- ggplot(plotdata, aes(x = frac_cds, y = avg_pi)) +
     geom_point() +
+    #geom_smooth(method = "lm", color = "lightblue") + 
+    #stat_cor() +
+    #xlim(0, 10) +
     geom_smooth(
+      data = subset(plotdata, frac_cds >= 0.2),
       method = "lm", 
       se = TRUE, 
       color = "lightblue"
     ) +
-    labs(y = "Average nucleotide diversity (\u03c0)", 
-         x = "Fraction of window\nannotated CDS",
-         title = title) 
+    facet_zoom(frac_cds >= 0.2) +
+    theme(
+      # Draws a border line and shaded region for the connecting zoom lines
+      zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
+    labs(x = "CDS density", 
+         y = "Average nucleotide diversity",
+         title = title)
   
-  gene_density_vs_div_plot_list[[i]] <- plot_density_vs_div
+  ggsave(paste0(results_path, x, "_", y,"_cds_density_vs_diversity.pdf", sep = ""), plot_rate_div, width = 5.5, height = 8)
   
-    ggsave(paste(results_path, file_prefixes[i],"_gene_density_vs_diversity.pdf", sep = ""), plot_density_vs_div, width = 5.5, height = 8, device = cairo_pdf)
-    
-}
-
+  plot_rate_div # pmap automatically makes list of whatever iterations output
+  
+}) 
+  
+  
 # adjust plots to fit them all together
-gene_density_vs_div_plot_list <- purrr::map(gene_density_vs_div_plot_list, ~ .x + theme(text = element_text(size = 12)))
+plot_list <- purrr::map(plot_list, ~ .x + theme(text = element_text(size = 12)))
 
-ggarrange(gene_density_vs_div_plot_list[[1]], 
-          gene_density_vs_div_plot_list[[2]],
-          gene_density_vs_div_plot_list[[3]], 
-          nrow = 1, 
-          ncol = 3)
-ggsave(paste0(results_path, "/all_sites_gene_density_vs_diversity.pdf"), width = 9, height = 3.5, device = cairo_pdf)
+ggarrange(plot_list[[1]], plot_list[[2]], plot_list[[3]], nrow = 1, ncol = 3)
+ggsave(paste0(results_path, "/all_sites_cds_density_vs_diversity.pdf"), width = 9, height = 5)
 
-ggarrange(gene_density_vs_div_plot_list[[4]],
-          gene_density_vs_div_plot_list[[5]],
-          gene_density_vs_div_plot_list[[6]],
-          nrow = 1,
-          ncol = 3)
-ggsave(paste0(results_path, "/four_fold_gene_density_vs_diversity.pdf"), width = 9, height = 3.5, device = cairo_pdf)
+ggarrange(plot_list[[4]], plot_list[[5]], plot_list[[6]], nrow = 1, ncol = 3)
+ggsave(paste0(results_path, "/four_fold_cds_density_vs_diversity.pdf"), width = 9, height = 5)
 
-ggarrange(gene_density_vs_div_plot_list[[7]],
-          gene_density_vs_div_plot_list[[8]],
-          gene_density_vs_div_plot_list[[9]],
-          nrow = 1,
-          ncol = 3)
-ggsave(paste0(results_path, "/zero_fold_gene_density_vs_diversity.pdf"), width = 9, height = 3.5, device = cairo_pdf)
+ggarrange(plot_list[[7]], plot_list[[8]], plot_list[[9]], nrow = 1, ncol = 3)
+ggsave(paste0(results_path, "/zero_fold_cds_density_vs_diversity.pdf"), width = 9, height = 5)
   
 ```
 
@@ -4192,6 +4181,84 @@ for(site in as.numeric(unique(sites))){
 
 
 
+```
+
+# Single-cell expression bins
+
+```{r}
+
+library(Seurat)
+
+seurat_obj <- readRDS("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seed_0d_230221.rds")
+
+#
+# head(seurat_obj@meta.data)
+
+# Raw counts
+# counts <- LayerData(seurat_obj, assay = "RNA", layer = "counts")
+
+# psuedo-bulk counts
+pseudo <- AggregateExpression(
+  seurat_obj,
+  group.by = c("CellType"),   # can be one or more metadata columns
+  assays = "RNA",
+  return.seurat = TRUE
+)
+
+# normalize counts to concentration
+counts <- LayerData(pseudo, assay = "RNA", layer = "counts")
+
+calculate_cpm <- function(counts) {
+  lib_sizes <- colSums(counts)          # total counts per pseudobulk sample
+  cpm <- sweep(counts, 2, lib_sizes, "/") * 1e6
+  return(cpm)
+}
+
+cpm <- calculate_cpm(counts)
+
+rownames(cpm)
+
+# sanity check: each column should sum to exactly 1,000,000
+all(colSums(cpm) == 1e6)
+
+cpm <- as.data.frame(cpm)
+cpm$gene <- rownames(cpm)
+
+# merge with gene coordiantes
+# sort by coordinate
+# drop unmeasured genes
+genes <- read_tsv("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/genes.bed", col_names = c("chrom", "start", "end", "gene"))
+
+genes <- genes %>%
+  left_join(cpm, by = "gene") %>%
+  drop_na() %>%
+  arrange(chrom, start)
+
+write.table(genes, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/single-cell-atlas/seed_0d.bed", quote = F, row.names = F, sep = "\t")
+
+### try visualizing binned expression
+exp_bins <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/single-cell-atlas/seed_0d.bins", col.names = c("chrom", "start", "end", "Epidermal", "Guard", "Meristematic", "Seed coat", "Stele", "Unannotated"))
+
+exp_bins <- exp_bins %>%
+  filter(!(chrom %in% c("M", "C")))
+
+bins_long <- exp_bins %>%
+  pivot_longer(
+    cols = -c(chrom, start, end),
+    names_to = "cell_type",
+    values_to = "count"
+  ) %>%
+  mutate(bin_mid = (start + end) / 2,
+         count = as.numeric(count))
+
+ggplot(bins_long, aes(x = bin_mid, y = count, color = cell_type)) +
+  geom_col() +
+  facet_grid(cell_type~chrom, scales = "free") +
+  scale_color_scico_d(palette = "hawaii") +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        legend.position = "None") +
+  labs(x = "Window midpoint (bp)", y = "Expression (CPM)")
 ```
 
 # Final figures
