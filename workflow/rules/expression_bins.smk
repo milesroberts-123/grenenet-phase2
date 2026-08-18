@@ -60,12 +60,13 @@ rule plot_expression_bins:
         bins="expression_bins/{sample}.bins",
         bed="expression_bins/{sample}.bed"
     output:
-        "expression_bins/{sample}.png"
+        "expression_bins/{sample}.png",
+        "expression_bins/{sample}_tau.png"
     conda:
         "../envs/seurat.yaml"
     params:
         width=config["expression_bins_plot_width"]
     shell:
         """
-        Rscript scripts/plot_expression_bins.R {input.bins} {input.bed} {output} {params.width}
+        Rscript scripts/plot_expression_bins.R {input.bins} {input.bed} {output[0]} {output[1]} {params.width}
         """

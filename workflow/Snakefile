@@ -54,7 +54,8 @@ rule all_poolseq:
 rule all_expression_bins:
     input:
         expand("expression_bins/{sample}.bins", sample=seurat_samples),
-        expand("expression_bins/{sample}.png", sample=seurat_samples)
+        expand("expression_bins/{sample}.png", sample=seurat_samples),
+        expand("expression_bins/{sample}_tau.png", sample=seurat_samples)
 
 #rule all_seed_mix:
 #    input:
