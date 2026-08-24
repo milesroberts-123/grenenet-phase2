@@ -43,6 +43,8 @@ screen_genomes/
 logs/
 qmers/
 .snakemake/
+__pycache__/
+*.pyc
 multiqc_data/
 /target
 data/
