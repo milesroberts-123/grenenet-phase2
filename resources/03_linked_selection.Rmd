@@ -18,6 +18,7 @@ gc()
 # packages
 
 ```{r}
+
 library(ggplot2)
 library(scico)
 library(reshape2)
@@ -2579,22 +2580,13 @@ for(i in seq_along(pi_files)){
   
   # if diversity file excludes invariant sites, rescale denominator
   # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
-  if( (num_indiv == 231 | num_indiv == 2029) & (site_class == "all_sites") ){
+  if( ((num_indiv == 231 | num_indiv == 2029) & (site_class == "all_sites")) | (site_class == "no_invar") ){
     cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
     nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
     nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
   }
   
   if( (num_indiv == 231 | num_indiv == 2029) & (site_class != "all_sites") ){
-      # num_4_per_win <- fread("~/moi_lab_projects/grenenet-phase2/data/diversity/four_fold/four_fold_per_window.bed", col.names = c("chrom", "window_pos_1", "window_pos_2", "num_4"), colClasses = list(integer = 2:4))
-      # num_4_per_win$window_pos_1 <- num_4_per_win$window_pos_1 + 1
-      # num_4_per_win <- num_4_per_win %>% 
-      #   filter(!(chrom %in% c("M", "C")))
-      # num_4_per_win$chrom <- as.integer(num_4_per_win$chrom)
-      # nuc_div <- nuc_div %>%
-      #   left_join(num_4_per_win, by = c("chrom", "window_pos_1", "window_pos_2"))
-      # 
-      # nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$num_4)
     nuc_div$avg_pi <- nuc_div$count_diffs/(nuc_div$count_comparisons+nuc_div$count_missing)
   }
   
@@ -2645,7 +2637,7 @@ ggsave(paste(results_path, "marey_map_fitted.pdf", sep = ""), width = 7, height 
     left_join(best_mods, by = "chrom") %>%
     group_by(chrom) %>%
     mutate(rate = eval_deriv(model[[1]], window_pos_mid)) %>%
-    select(chrom, window_pos_mid, rate, avg_pi, site_class, num_indiv) %>%
+    select(chrom, window_pos_1, window_pos_2, window_pos_mid, rate, avg_pi, site_class, num_indiv) %>%
     unnest(cols = c(rate))
   
   # filter out negative recombination rates
@@ -2757,7 +2749,7 @@ rate_vs_div <- pi_final_density %>%
     left_join(best_mods, by = "chrom") %>%
     group_by(chrom) %>%
     mutate(rate = eval_deriv(model[[1]], window_pos_mid)) %>%
-    select(chrom, window_pos_mid, site_class, num_indiv, rate, avg_pi, frac_cds) %>%
+    select(chrom, window_pos_1, window_pos_2, window_pos_mid, site_class, num_indiv, rate, avg_pi, frac_cds) %>%
     unnest(cols = c(rate))
   
   # filter out negative recombination rates
@@ -2770,8 +2762,6 @@ rate_vs_div <- pi_final_density %>%
     filter(rate <= 10 & frac_cds >= 0.2) %>%
     reframe(corr_ci = list(corr_ci_autocorr(frac_cds, avg_pi)))
  
-  
-  
  # 2. Create all unique combinations
 combinations <- crossing(x = c("all_sites", "zero_fold", "four_fold"), y = c(1135, 2029, 231))
 
@@ -2844,27 +2834,7 @@ ggsave(paste0(results_path, "/zero_fold_cds_density_vs_diversity.pdf"), width = 
 
 ```{r}
 # binned single-cell expression from workflow/expression_bins/
-bin_files <- list.files("../workflow/expression_bins", pattern = "\\.bins$", full.names = TRUE)
-
-exp_bins <- NULL
-for (f in bin_files) {
-  sample <- gsub("\\.bins$", "", basename(f))
-  bed <- paste0("../workflow/expression_bins/", sample, ".bed")
-  cell_types <- readLines(bed, n = 1) %>%
-    strsplit("\t") %>%
-    unlist() %>%
-    tail(-4)
-
-  bins <- read.table(f, col.names = c("chrom", "start", "end", cell_types),
-                     check.names = FALSE, na.strings = c("NA", ".")) %>%
-    mutate(chrom = as.integer(gsub("Chr", "", chrom)),
-           window_pos_1 = start + 1,
-           window_pos_2 = end,
-           sample = sample) %>%
-    mutate(across(all_of(cell_types), ~ replace_na(., 0)))
-
-  exp_bins <- rbind(exp_bins, bins)
-}
+bin_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/expression_bins", pattern = "\\.bins$", full.names = TRUE)
 
 # cell-type specificity (tau): 0 = ubiquitous, 1 = single cell type
 tau <- function(x) {
@@ -2874,19 +2844,313 @@ tau <- function(x) {
   sum(1 - x) / (n - 1)
 }
 
-# all samples share the same cell-type set, so the last loop value is fine
-exp_bins$tau <- apply(exp_bins[, cell_types, drop = FALSE], 1, tau)
+# average of expression, conditioned on gene being expressed at all
+mean_no_zeros <- function(x){
+  y <- x[x != 0]
+  mean(y, na.rm = T)
+}
 
-exp_bins_long <- exp_bins %>%
-  pivot_longer(cols = all_of(cell_types), names_to = "cell_type", values_to = "cpm")
+tau_bins <- NULL
+exp_bins_long <- NULL
+exp_bins_wide <- read.table(
+  bin_files[1],
+  check.names = FALSE,
+  na.strings = c("NA", ".")
+) %>%
+  mutate(
+    chrom = as.integer(gsub("Chr", "", V1)),
+    window_pos_1 = V2 + 1,
+    window_pos_2 = V3,
+  ) %>%
+  dplyr::select(chrom, window_pos_1, window_pos_2)
+
+for (f in bin_files) {
+  sample <- gsub("\\.bins$", "", basename(f))
+  bed <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/expression_bins/", sample, ".bed")
+  cell_types <- readLines(bed, n = 1) %>%
+    strsplit("\t") %>%
+    unlist() %>%
+    tail(-4)
+
+  bins_wide <- read.table(f, col.names = c("chrom", "start", "end", cell_types),
+                     check.names = FALSE, na.strings = c("NA", ".")) %>%
+    mutate(chrom = as.integer(gsub("Chr", "", chrom)),
+           window_pos_1 = start + 1,
+           window_pos_2 = end,
+           sample = sample) %>%
+    mutate(across(all_of(cell_types), ~ replace_na(., 0))) %>%
+    select(chrom, window_pos_1, window_pos_2, sample, all_of(cell_types))
+
+   bins_long <- bins_wide %>%
+    pivot_longer(cols = -c(chrom, window_pos_1, window_pos_2, sample), names_to = "cell_type", values_to = "cpm")
+  
+  bins_wide$tau <- apply(bins_wide[, cell_types, drop = FALSE], 1, tau)
+
+  tau_bins <- rbind(tau_bins, bins_wide %>% select(chrom, window_pos_1, window_pos_2, sample, tau))
+  
+  exp_bins_long <- rbind(exp_bins_long, bins_long)
+  
+  exp_bins_wide <- cbind(exp_bins_wide, bins_wide[, cell_types, drop = FALSE])
+}
+
+exp_bins_wide$tau <- apply(exp_bins_wide[,-1:-3], 1, tau)
+exp_bins_wide$avg_exp <- apply(exp_bins_wide[,-1:-3], 1, mean_no_zeros)
+
+exp_bins_wide<-exp_bins_wide %>%
+  dplyr::select(chrom, window_pos_1, window_pos_2, tau, avg_exp) %>%
+  filter(!is.na(chrom)) %>%
+  mutate(window_pos_1 = window_pos_1 - 1,
+    window_pos_mid = (window_pos_1+window_pos_2)/(2*1e6))
+
+#
+exp_bins_wide <- rate_vs_div %>%
+  left_join(exp_bins_wide, by = c("chrom", "window_pos_1", "window_pos_2"))
+
+# visualize total average expression across the genome
+ggplot(exp_bins_wide %>% filter(window_pos_2 %% 500000 == 0), aes(x = (window_pos_1 + window_pos_2)/2, y = avg_exp)) +
+  geom_col() +
+  facet_grid(. ~ chrom, scales = "free") +
+  geom_smooth(method = "loess", span = 0.75, color = "green") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+	text = element_text(size = 14)) +
+  labs(x = "Window midpoint (bp)", y = "Mean binned expression (CPM)")
+
+ggsave(paste0("../results/by-date/", today, "/avg_expression_along_genome.pdf"), width = 7, height = 3)
+
+# visualize average expression across the genome, standardized for coding sequence density
+ggplot(exp_bins_wide %>% filter(window_pos_2 %% 500000 == 0), aes(x = (window_pos_1 + window_pos_2)/2, y = avg_exp/frac_cds)) +
+  geom_col() +
+  facet_grid(. ~ chrom, scales = "free") +
+  geom_smooth(method = "loess", span = 0.75, color = "green") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+	text = element_text(size = 14)) +
+  labs(x = "Window midpoint (bp)", y = "Mean binned expression (CPM)/\nFraction CDS")
+
+ggsave(paste0("../results/by-date/", today, "/avg_expression_along_genome_frac_cds_standardized.pdf"), width = 7, height = 3)
+
+# "total" expression-specificity along genome
+ggplot(exp_bins_wide  %>% filter(window_pos_2 %% 500000 == 0), aes(x = (window_pos_1 + window_pos_2)/2, y = tau)) +
+  geom_col() +
+  facet_grid(. ~ chrom, scales = "free") +
+  geom_smooth(method = "loess", span = 0.75, color = "green") +
+  theme_minimal() +
+  theme(axis.text.x = element_blank(),
+	text = element_text(size = 14)) +
+  labs(x = "Window midpoint (bp)", y = "Cell-type Expression Specificity")
+
+ggsave(paste0("../results/by-date/", today, "/tau_along_genome.pdf"), width = 7, height = 3)
+
+# expression specificity vs average expression
+ggplot(exp_bins_wide  %>% filter(window_pos_2 %% 500000 == 0), aes(x = avg_exp, y = tau, color = factor(chrom))) +
+  geom_point() +
+  geom_smooth(method = "lm", span = 0.75, color = "black") +
+  theme_minimal() +
+  scale_color_scico_d(palette = "bilbao") +
+  theme(axis.text.x = element_blank(),
+	text = element_text(size = 14)) +
+  labs(x = "Mean binned expression/Fraction CDS", y = "Cell-type Expression Specificity", color = "Chromosome")
+
+ggsave(paste0("../results/by-date/", today, "/tau_vs_avg_expression.pdf"), width = 6, height = 4)
+
+# expression specificity vs average expression, standardized by coding sequence density
+ggplot(exp_bins_wide  %>% filter(window_pos_2 %% 500000 == 0), aes(x = avg_exp/frac_cds, y = tau, color = factor(chrom))) +
+  geom_point() +
+  geom_smooth(method = "lm", span = 0.75, color = "black") +
+  theme_minimal() +
+  scale_color_scico_d(palette = "bilbao") +
+  theme(axis.text.x = element_blank(),
+	text = element_text(size = 14)) +
+  labs(x = "Mean binned expression/Fraction CDS", y = "Cell-type Expression Specificity", color = "Chromosome")
+
+ggsave(paste0("../results/by-date/", today, "/tau_vs_avg_expression_frac_cds.pdf"), width = 6, height = 4)
+
+## plot relationship between pi and expression per window
+data_list <- split(exp_bins_wide, list(exp_bins_wide$site_class, exp_bins_wide$num_indiv), drop = T)
+
+# Open the PDF device
+pdf(paste0("../results/by-date/", today, "/tau_vs_nucleotide_diversity.pdf"), width = 6, height = 6)
+
+# Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  
+  corr_result <- corr_ci_autocorr(sub_data$tau, sub_data$avg_pi)
+  
+  p <- ggplot(sub_data, aes(y = avg_pi, x = tau)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "lightgreen") +
+  theme_minimal() +
+  theme(text = element_text(size = 14)) +
+  labs(x = "Cell-type expression-specificity (tau)", 
+       y = "Nucleotide diversity", 
+       title = paste0("r = ",
+                      signif(corr_result$r, 2),
+                      ", p = ",
+                      format.pval(corr_result$p_value, digits = 2, eps = 0.001),
+                      "\nSites: ", 
+                      unique(sub_data$site_class), 
+                      ", Panel: ", 
+                      unique(sub_data$num_indiv)))
+  
+  print(p)
+})
+
+# Close the PDF device
+dev.off()
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+#### make one plot of tau vs pi ####
+corr_result <- corr_ci_autocorr(exp_bins_wide %>% filter(site_class == "all_sites" & num_indiv == "1135") %>% pull(tau), exp_bins_wide %>% filter(site_class == "all_sites" & num_indiv == "1135") %>% pull(avg_pi))
+  
+  ggplot(exp_bins_wide %>% filter(site_class == "all_sites" & num_indiv == 1135), aes(y = avg_pi, x = tau)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "lightgreen") +
+  theme_minimal() +
+  theme(text = element_text(size = 14)) +
+  labs(x = "Cell-type expression-specificity (tau)", 
+       y = "Nucleotide diversity", 
+       title = paste0("r = ",
+                      signif(corr_result$r, 2),
+                      ", p = ",
+                      format.pval(corr_result$p_value, digits = 2, eps = 0.001),
+                      "\nSites: ", 
+                      unique(exp_bins_wide$site_class), 
+                      ", Panel: ", 
+                      unique(exp_bins_wide$num_indiv)))
+
+  getwd()
+  ggsave(paste0("../results/by-date/", today, "/total_tau_vs_diversity.pdf"), width = 5, height = 5)
+  
+#### one plot of expression vs pi ####
+corr_result <- corr_ci_autocorr(exp_bins_wide$avg_exp/exp_bins_wide$frac_cds, exp_bins_wide$avg_pi)
+  
+  ggplot(exp_bins_wide %>% filter(site_class == "all_sites" & num_indiv == 1135), aes(y = avg_pi, x = avg_exp/frac_cds)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "lightgreen") +
+  labs(x = "Average binned expression", 
+       y = "Nucleotide diversity", 
+       title = paste0("r = ",
+                      signif(corr_result$r, 2),
+                      ", p = ",
+                      format.pval(corr_result$p_value, digits = 2, eps = 0.001),
+                      "\nSites: ", 
+                      unique(exp_bins_wide$site_class), 
+                      ", Panel: ", 
+                      unique(exp_bins_wide$num_indiv)))
+
+  getwd()
+  ggsave(paste0("../results/by-date/", today, "/total_tau_vs_diversity.pdf"), width = 7, height = 7)
+
+# exp_bins_long <- exp_bins %>%
+#   pivot_longer(cols = all_of(cell_types), names_to = "cell_type", values_to = "cpm")
 
 # join to pi and gene density; pi_final has multiple site_class x num_indiv
 # combos per window, so rows are duplicated accordingly
-explore_df <- exp_bins_long %>%
+pi_final_exp <- exp_bins_wide %>%
+  left_join(rate_vs_div, by = c("chrom", "window_pos_1", "window_pos_2")) %>%
+  left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2")) %>%
+  mutate(cpm_per_cds_density = cpm/frac_cds)
+
+glimpse(pi_final_exp)
+
+#### plot relationship between pi and expression per window ####
+data_list <- split(pi_final_exp, list(pi_final_exp$site_class, pi_final_exp$num_indiv, pi_final_exp$cell_type, pi_final_exp$sample), drop = T)
+
+# Open the PDF device
+pdf(paste0("../results/by-date/", today, "/expression_vs_nucleotide_diversity.pdf"), width = 7, height = 8)
+
+# Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  sub_data$sample <- gsub("_", " ", str_extract(sub_data$sample, "_.*_"))
+  
+  corr_result <- corr_ci_autocorr(sub_data$cpm_per_cds_density, sub_data$avg_pi)
+  
+  p <- ggplot(sub_data, aes(y = avg_pi, x = cpm_per_cds_density)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "lightgreen") +
+  labs(x = "CPM normalized for gene density", 
+       y = "Nucleotide diversity", 
+       title = paste0("r = ",
+                      signif(corr_result$r, 2),
+                      ", p = ",
+                      format.pval(corr_result$p_value, digits = 2, eps = 0.001),
+                      "\nCell-type: ", 
+                      unique(sub_data$cell_type), 
+                      "\nSample: ", 
+                      unique(sub_data$sample), 
+                      "\nSites: ", 
+                      unique(sub_data$site_class), 
+                      ", Panel: ", 
+                      unique(sub_data$num_indiv)))
+  
+  print(p)
+})
+
+# Close the PDF device
+dev.off()
+
+#### plot pi vs expression specificity per window ####
+pi_final_tau <- tau_bins %>%
   left_join(pi_final, by = c("chrom", "window_pos_1", "window_pos_2")) %>%
   left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2"))
 
-glimpse(explore_df)
+## plot relationship between pi and expression per window
+data_list <- split(pi_final_tau, list(pi_final_tau$site_class, pi_final_tau$num_indiv, pi_final_tau$sample), drop = T)
+
+# Open the PDF device
+pdf(paste0("../results/by-date/", today, "/tau_vs_nucleotide_diversity.pdf"), width = 7, height = 8)
+
+# Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  sub_data$sample <- gsub("_", " ", str_extract(sub_data$sample, "_.*_"))
+  
+  corr_result <- corr_ci_autocorr(sub_data$tau, sub_data$avg_pi)
+  
+  p <- ggplot(sub_data, aes(y = avg_pi, x = tau)) +
+  geom_point() +
+  geom_smooth(method = "lm", color = "lightgreen") +
+  labs(x = "Cell-type expression-specificity (tau)", 
+       y = "Nucleotide diversity", 
+       title = paste0("r = ",
+                      signif(corr_result$r, 2),
+                      ", p = ",
+                      format.pval(corr_result$p_value, digits = 2, eps = 0.001),
+                      "\nSample: ", 
+                      unique(sub_data$sample), 
+                      "\nSites: ", 
+                      unique(sub_data$site_class), 
+                      ", Panel: ", 
+                      unique(sub_data$num_indiv)))
+  
+  print(p)
+})
+
+# Close the PDF device
+dev.off()
+
+```
+## variance/covariance in allele frequency change vs gene expression
+
+```{r}
+
+
 ```
 
 ## adaptest recombination map
@@ -5237,10 +5501,7 @@ true_freq_traj %>% group_by(Var1) %>% summarize(p = mean(value))
 ## claude attempt
 
 ```{r}
-
- 
 ## ---- core functions --------------------------------------------------------
- 
 #' Allele frequency after one generation of selection (diploid, q = selected allele).
 #' AA = 1, Aa = 1 + h*s, aa = 1 + s.
 fitfreq <- function(q, h, s) {
@@ -5267,19 +5528,20 @@ WF.sel <- function(N, q, h, s, G) {
 }
  
 #' Pool-seq allele-frequency estimate (Buffalo & Coop 2020 PNAS structure).
-#' p = true frequency; n = pool size in INDIVIDUALS (2*n chromosomes sampled);
+#' p = true frequency; 
+#' n = pool size in INDIVIDUALS (2*n chromosomes sampled);
 #' d = mean read depth. One consistent realized depth d_obs is used throughout.
-simulate_af_est <- function(p, n, d) {
+simulate_af_est <- function(Np, Nq, n, d) {
   d_obs <- rpois(1, d)
   if (d_obs == 0) return(NA_real_)
-  chroms <- 2 * n                                  # diploid pool
-  x_obs  <- rbinom(1, size = chroms, prob = p)     # allele count in the pool
-  r_obs  <- rbinom(1, size = d_obs, prob = x_obs / chroms)  # reads carrying allele
+  num_chroms <- 2 * n                                  # diploid pool
+  #x_obs  <- rbinom(1, size = chroms, prob = p)     # allele count in the pool
+  x_obs <- rhyper(1, Np, Nq, k = num_chroms)
+  r_obs  <- rbinom(1, size = d_obs, prob = x_obs / num_chroms)  # reads carrying allele
   (r_obs + 0.5) / (d_obs + 1)                      # continuity correction -> (0,1)
 }
  
 ## ---- parameters ------------------------------------------------------------
- 
 a       <- 0.05          # significance threshold
 r       <- 12 * 4 * 3    # number of replicate cages
 t       <- 6             # number of sampled time points (generations 0 .. t-1)
@@ -5309,7 +5571,7 @@ for (i in seq_len(num_sims)) {
   df$n_pool <- rpois(nrow(df), n)
  
   ## observed pool-seq frequency estimate, one realized depth each
-  df$p_obs <- mapply(simulate_af_est, df$p_true, df$n_pool, MoreArgs = list(d = d))
+  df$p_obs <- mapply(simulate_af_est, df$p_true*n, 1-df$p_true*n, df$n_pool, MoreArgs = list(d = d))
  
   ## generation clock starts at 0 so intercept corresponds to p0
   df$gen <- df$Var1 - 1
@@ -5338,7 +5600,6 @@ power <- mean(all_mod_res$detect)
 cat(sprintf("Estimated power: %.3f\n", power))
 cat(sprintf("Mean slope estimate: %.4f (true per-gen logit signal ~ %.4f)\n",
             mean(all_mod_res$estimate), s * (h + (1 - 2 * h) * p0)))
-
 
 ```
 
