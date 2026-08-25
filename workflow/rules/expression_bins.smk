@@ -2,7 +2,6 @@ wildcard_constraints:
     sample="[^/]+"
 
 rule genes_bed:
-    group: "expression_bins"
     input:
         gff=config["gff"]
     output:

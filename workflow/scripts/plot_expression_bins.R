@@ -33,6 +33,7 @@ exp_bins <- read.table(
   na.strings = c("NA", ".")
 ) %>%
   filter(!(chrom %in% c("M", "C"))) %>%
+  filter(end %% 500000 == 0) %>% # filter to only the 500 kb bins
   mutate(across(all_of(cell_types), ~ replace_na(., 0)))
 
 # Cell-type specificity (tau): 0 = ubiquitous, 1 = single cell type.
@@ -53,6 +54,12 @@ bins_long <- exp_bins %>%
   ) %>%
   mutate(bin_mid = (start + end) / 2,
          count = as.numeric(count))
+
+message("Head of bins data:")
+print(head(bins_long))
+
+message("Head of expression-specificity data:")
+print(head(exp_bins))
 
 p <- ggplot(bins_long, aes(x = bin_mid, y = count, fill = cell_type)) +
   geom_col() +
