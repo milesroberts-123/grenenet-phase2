@@ -6,7 +6,7 @@ rule genes_bed:
     input:
         gff=config["gff"]
     output:
-        "expression_bins/ref/genes_coords.bed"
+        "results/expression_bins/ref/genes_coords.bed"
     shell:
         """
         grep "gene" {input.gff} | cut -f 1,4,5,9 | sed 's:ID.*Name=::g' > {output}
@@ -19,9 +19,9 @@ rule expression_bed:
             p for p in config["seurat_rds"]
             if os.path.splitext(os.path.basename(p))[0] == wildcards.sample
         ][0],
-        genes="expression_bins/ref/genes_coords.bed"
+        genes="results/expression_bins/ref/genes_coords.bed"
     output:
-        "expression_bins/{sample}.bed"
+        "results/expression_bins/{sample}.bed"
     conda:
         "../envs/seurat.yaml"
     params:
@@ -35,10 +35,10 @@ rule expression_bins:
     group: "expression_bins"
     input:
         windows=config["windows_bed"],
-        bed="expression_bins/{sample}.bed"
+        bed="results/expression_bins/{sample}.bed"
     output:
-        "expression_bins/{sample}.bins",
-        temp("expression_bins/{sample}.sorted.bed")
+        "results/expression_bins/{sample}.bins",
+        temp("results/expression_bins/{sample}.sorted.bed")
     conda:
         "../envs/bcftools.yaml"
     shell:
@@ -57,11 +57,11 @@ rule expression_bins:
 rule plot_expression_bins:
     group: "expression_bins"
     input:
-        bins="expression_bins/{sample}.bins",
-        bed="expression_bins/{sample}.bed"
+        bins="results/expression_bins/{sample}.bins",
+        bed="results/expression_bins/{sample}.bed"
     output:
-        "expression_bins/{sample}.png",
-        "expression_bins/{sample}_tau.png"
+        "results/expression_bins/{sample}.png",
+        "results/expression_bins/{sample}_tau.png"
     conda:
         "../envs/seurat.yaml"
     params:

@@ -1,3 +1,6 @@
+*.ld
+single-cell-atlas/
+archive/
 *.bim
 *.fam
 *.nosex

@@ -61,16 +61,18 @@ p <- ggplot(bins_long, aes(x = bin_mid, y = count, fill = cell_type)) +
   theme_minimal() +
   theme(axis.text.x = element_blank(),
         axis.text.y = element_blank(),
-        legend.position = "None") +
+        legend.position = "None",
+	text = element_text(size = 14)) +
   labs(x = "Window midpoint (bp)", y = "Expression (CPM)")
 
-ggsave(out_path, p, width = width, height = width * 0.75, dpi = 150)
+ggsave(out_path, p, width = width, height = width * 0.5, dpi = 300)
 
 p_tau <- ggplot(exp_bins, aes(x = (start + end) / 2, y = tau)) +
   geom_col() +
   facet_grid(. ~ chrom, scales = "free") +
   theme_minimal() +
-  theme(axis.text.x = element_blank()) +
+  theme(axis.text.x = element_blank(),
+	text = element_text(size = 14)) +
   labs(x = "Window midpoint (bp)", y = "Cell-type Expression Specificity")
 
-ggsave(tau_path, p_tau, width = width, height = width * 0.75, dpi = 150)
+ggsave(tau_path, p_tau, width = width, height = width * 0.5, dpi = 300)
