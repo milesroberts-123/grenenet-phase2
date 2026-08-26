@@ -94,7 +94,7 @@ seurat_rds:
   - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_silique_230221.rds"
   - "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_stem_250805.rds"
 
-windows_bed: "/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/500kb_windows.bed"
+windows_bed: "/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/pi_windows.bed"
 
 expression_bins_group_by: "CellType"
 

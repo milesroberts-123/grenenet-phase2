@@ -33,6 +33,7 @@ exp_bins <- read.table(
   na.strings = c("NA", ".")
 ) %>%
   filter(!(chrom %in% c("M", "C"))) %>%
+  filter(end %% 500000 == 0) %>% # filter to only the 500 kb bins
   mutate(across(all_of(cell_types), ~ replace_na(., 0)))
 
 # Cell-type specificity (tau): 0 = ubiquitous, 1 = single cell type.
@@ -54,6 +55,12 @@ bins_long <- exp_bins %>%
   mutate(bin_mid = (start + end) / 2,
          count = as.numeric(count))
 
+message("Head of bins data:")
+print(head(bins_long))
+
+message("Head of expression-specificity data:")
+print(head(exp_bins))
+
 p <- ggplot(bins_long, aes(x = bin_mid, y = count, fill = cell_type)) +
   geom_col() +
   facet_grid(cell_type ~ chrom, scales = "free") +
@@ -61,16 +68,18 @@ p <- ggplot(bins_long, aes(x = bin_mid, y = count, fill = cell_type)) +
   theme_minimal() +
   theme(axis.text.x = element_blank(),
         axis.text.y = element_blank(),
-        legend.position = "None") +
+        legend.position = "None",
+	text = element_text(size = 14)) +
   labs(x = "Window midpoint (bp)", y = "Expression (CPM)")
 
-ggsave(out_path, p, width = width, height = width * 0.75, dpi = 150)
+ggsave(out_path, p, width = width, height = width * 0.5, dpi = 300)
 
 p_tau <- ggplot(exp_bins, aes(x = (start + end) / 2, y = tau)) +
   geom_col() +
   facet_grid(. ~ chrom, scales = "free") +
   theme_minimal() +
-  theme(axis.text.x = element_blank()) +
+  theme(axis.text.x = element_blank(),
+	text = element_text(size = 14)) +
   labs(x = "Window midpoint (bp)", y = "Cell-type Expression Specificity")
 
-ggsave(tau_path, p_tau, width = width, height = width * 0.75, dpi = 150)
+ggsave(tau_path, p_tau, width = width, height = width * 0.5, dpi = 300)
