@@ -2833,6 +2833,7 @@ ggsave(paste0(results_path, "/zero_fold_cds_density_vs_diversity.pdf"), width = 
 ## load binned expression
 
 ```{r}
+
 # binned single-cell expression from workflow/expression_bins/
 bin_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/expression_bins", pattern = "\\.bins$", full.names = TRUE)
 
@@ -2845,11 +2846,12 @@ tau <- function(x) {
 }
 
 # average of expression, conditioned on gene being expressed at all
-mean_no_zeros <- function(x){
-  y <- x[x != 0]
+mean_no_zeros <- function(x, thresh){
+  y <- x[x > thresh]
   mean(y, na.rm = T)
 }
 
+# compile expression bins, calculate tau along genome
 tau_bins <- NULL
 exp_bins_long <- NULL
 exp_bins_wide <- read.table(
@@ -2894,7 +2896,7 @@ for (f in bin_files) {
 }
 
 exp_bins_wide$tau <- apply(exp_bins_wide[,-1:-3], 1, tau)
-exp_bins_wide$avg_exp <- apply(exp_bins_wide[,-1:-3], 1, mean_no_zeros)
+exp_bins_wide$avg_exp <- apply(exp_bins_wide[,-1:-3], 1, mean_no_zeros, thresh = 10)
 
 exp_bins_wide<-exp_bins_wide %>%
   dplyr::select(chrom, window_pos_1, window_pos_2, tau, avg_exp) %>%
@@ -2902,11 +2904,63 @@ exp_bins_wide<-exp_bins_wide %>%
   mutate(window_pos_1 = window_pos_1 - 1,
     window_pos_mid = (window_pos_1+window_pos_2)/(2*1e6))
 
-#
+# combine expression bins with recombination rate, gene density, diversity
 exp_bins_wide <- rate_vs_div %>%
   left_join(exp_bins_wide, by = c("chrom", "window_pos_1", "window_pos_2"))
 
-# visualize total average expression across the genome
+#### partial r-squared values ####
+data_list <- split(exp_bins_wide, list(exp_bins_wide$site_class, exp_bins_wide$num_indiv), drop = T)
+
+# Map over the list, generate a standard plot for each subset, and print
+rsq_results <- NULL
+walk(data_list, function(sub_data) {
+  
+  mod <- eval(bquote(
+    lm(avg_pi ~ I(avg_exp/frac_cds) + tau + frac_cds + rate, data = .(sub_data))
+  ))
+  
+  rsq_out <- rsq.partial(mod)
+
+  rsq_result <- as_tibble(rsq_out[c("variable", "partial.rsq")])
+  
+  rsq_result$site_class <- unique(sub_data$site_class)
+  rsq_result$num_indiv <- unique(sub_data$num_indiv)
+  
+  rsq_results <<- rbind(rsq_results, rsq_result)
+
+  print(unique(sub_data$site_class))
+  print(unique(sub_data$num_indiv))
+  print(rsq.partial(mod))
+
+})
+  
+# visualize partial R-squared values
+rsq_results <- rsq_results %>%
+  mutate(site_class = recode(site_class,
+                              "all_sites" = "All sites",
+                              "four_fold" = "Four-fold degenerate",
+                              "zero_fold" = "Zero-fold degenerate",
+                             "no_invar" = "Invariant excluded"),
+         variable = recode(variable,
+                           "frac_cds" = "CDS density",
+                           "tau" = "Specificity",
+                           "rate" = "Recombination",
+                           "I(avg_exp/frac_cds)" = "Mean expression"))
+
+ggplot(rsq_results, aes(x = variable, y = partial.rsq)) +
+  geom_col(color = "black", fill = "black") +
+  #geom_text(aes(label = signif(partial.rsq,2)), vjust = -0.5) + 
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 45, vjust = 1, hjust = 1),
+        plot.title = element_text(hjust = 0.5)) +
+  facet_wrap(num_indiv~site_class) +
+  labs(x = "Variable", y = "Partial R-squared", title = "\u03c0 ~ Expression + Specificity + CDS density + Recombination rate")
+
+ggsave(paste0("../results/by-date/", today, "/partial_rsq_values.pdf"), width = 7, height = 7, device = cairo_pdf)
+
+# bootstrap confidence intervals to partial rsq values
+
+# visualize total averasite_class# visualize total average expression across the genome
 ggplot(exp_bins_wide %>% filter(window_pos_2 %% 500000 == 0), aes(x = (window_pos_1 + window_pos_2)/2, y = avg_exp)) +
   geom_col() +
   facet_grid(. ~ chrom, scales = "free") +
@@ -2931,7 +2985,7 @@ ggplot(exp_bins_wide %>% filter(window_pos_2 %% 500000 == 0), aes(x = (window_po
 ggsave(paste0("../results/by-date/", today, "/avg_expression_along_genome_frac_cds_standardized.pdf"), width = 7, height = 3)
 
 # "total" expression-specificity along genome
-ggplot(exp_bins_wide  %>% filter(window_pos_2 %% 500000 == 0), aes(x = (window_pos_1 + window_pos_2)/2, y = tau)) +
+ggplot(exp_bins_wide  %>% filter(window_pos_2 %% 500000 == 0 & site_class == "all_sites" & num_indiv == 1135), aes(x = (window_pos_1 + window_pos_2)/2, y = tau)) +
   geom_col() +
   facet_grid(. ~ chrom, scales = "free") +
   geom_smooth(method = "loess", span = 0.75, color = "green") +
@@ -2947,10 +3001,9 @@ ggplot(exp_bins_wide  %>% filter(window_pos_2 %% 500000 == 0), aes(x = avg_exp, 
   geom_point() +
   geom_smooth(method = "lm", span = 0.75, color = "black") +
   theme_minimal() +
-  scale_color_scico_d(palette = "bilbao") +
-  theme(axis.text.x = element_blank(),
-	text = element_text(size = 14)) +
-  labs(x = "Mean binned expression/Fraction CDS", y = "Cell-type Expression Specificity", color = "Chromosome")
+  scale_color_scico_d(palette = "bilbao", begin = 0, end = 0.9) +
+  theme(text = element_text(size = 14)) +
+  labs(x = "Mean binned expression", y = "Cell-type Expression Specificity", color = "Chromosome")
 
 ggsave(paste0("../results/by-date/", today, "/tau_vs_avg_expression.pdf"), width = 6, height = 4)
 
@@ -2959,9 +3012,9 @@ ggplot(exp_bins_wide  %>% filter(window_pos_2 %% 500000 == 0), aes(x = avg_exp/f
   geom_point() +
   geom_smooth(method = "lm", span = 0.75, color = "black") +
   theme_minimal() +
-  scale_color_scico_d(palette = "bilbao") +
-  theme(axis.text.x = element_blank(),
-	text = element_text(size = 14)) +
+  scale_x_log10() +
+  scale_color_scico_d(palette = "bilbao", begin = 0, end = 0.9) +
+  theme(text = element_text(size = 14)) +
   labs(x = "Mean binned expression/Fraction CDS", y = "Cell-type Expression Specificity", color = "Chromosome")
 
 ggsave(paste0("../results/by-date/", today, "/tau_vs_avg_expression_frac_cds.pdf"), width = 6, height = 4)
@@ -3149,7 +3202,7 @@ dev.off()
 ## variance/covariance in allele frequency change vs gene expression
 
 ```{r}
-
+create_blocks()
 
 ```
 

@@ -351,21 +351,42 @@ append_table <- function(x, output_name) {
 #' @return
 #' @export
 #'
-create_blocks <- function(data, chrom_col_name, pos_col_name, window_size, sep){
-
+create_blocks <- function(data,
+                          chrom_col_name,
+                          pos_col_name,
+                          window_size,
+                          sep,
+                          block_by) {
+  # check data is sorted
   sort_check <- data %>%
     group_by({{ chrom_col_name }}) %>%
     summarise(is_sorted = all(diff({{ pos_col_name }}) >= 0))
-
-  if(!all(sort_check$is_sorted)){
+  
+  if (!all(sort_check$is_sorted)) {
     stop("Input data should be sorted by position within chromosome.")
   }
-
-  blocks <- data %>%
-    group_by({{ chrom_col_name }}) %>%
-    mutate(block = (row_number() - 1) %/% window_size + 1,
-           window = paste({{ chrom_col_name }}, block, sep = sep))
-
+  
+  
+  if (block_by == "snp") {
+    blocks <- data %>%
+      group_by({{ chrom_col_name }}) %>%
+      mutate(
+        block = (row_number() - 1) %/% window_size + 1,
+        window = paste({{ chrom_col_name }}, block, sep = sep)
+      )
+  }
+  
+  if (block_by == "base") {
+    blocks <- data %>%
+      group_by({{ chrom_col_name }}) %>%
+      mutate(
+        bin_start = ({{ pos_col_name }} %/% window_size) * window_size,
+        bin_end = bin_start + window_size,
+        block = ({{ pos_col_name }} %/% window_size),
+        window = paste({{ chrom_col_name }}, block, sep = sep)
+      )
+  }
+  
   return(blocks)
 }
 
