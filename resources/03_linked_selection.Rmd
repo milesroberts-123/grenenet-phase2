@@ -3268,83 +3268,132 @@ dev.off()
 
 ```
 
-
-
-## gene density vs diversity
+## save table of pi window data
 
 ```{r}
+write.table(pi_windows_all, paste0("../results/by-date/", today, "/pi_windows_all.txt"), sep = "\t")
+```
 
-# compile diversity data, for crying out loud
-nuc_div_all <- NULL
-for(i in seq_along(pi_files)){
+## partial regressions
+
+```{r}
+# partial regression of a variable
+partial_regressions <- function(data,
+                                dep_var,
+                                indep_var,
+                                primary_var,
+                                verbose = F,
+                                scale_vars = F,
+                                return_value = "coeff") {
+  # local helper -- only prints when verbose = TRUE
+  vprint <- function(...)
+    if (verbose)
+      print(...)
   
-  # load data
-  nuc_div <- fread(pi_files[i])
-  names(nuc_div)[2] <- "chrom"
+  sub_data <- data[, c(..dep_var, ..indep_var)]
+  vprint(head(sub_data))
   
-  # if windows are left shifted, correct them
-  nuc_div <- nuc_div %>%
-    group_by(chrom) %>%
-    mutate(window_pos_2 = window_pos_2 - min(window_pos_1) + 1,
-           window_pos_1 = window_pos_1 - min(window_pos_1) + 1,
-           window_pos_mid_Mb = (window_pos_2 + window_pos_1)/(2*1e6))
-  
-  # extract number of individuals in vcf
-  num_indiv <- as.numeric(gsub("sites/|fold/", "", str_split(pi_files[i], "_")[[1]][2]))
-  site_class <- gsub("../data/diversity/", "", str_split(pi_files[i], "_")[[1]][1])
-  
-  # if diversity file excludes invariant sites, rescale denominator
-  # count_comparisons = choose(<number of diploid individuals>*2,2)*no_sites
-  if(num_indiv == 231 | num_indiv == 2029){
-    cat("Rescaling pi denominator to assume all missing sites are invariant...\n")
-    nuc_div$count_comparisons <- choose(num_indiv*2,2)*(nuc_div$window_pos_2 - nuc_div$window_pos_1 + 1)
-    nuc_div$avg_pi <- nuc_div$count_diffs/nuc_div$count_comparisons
+  if (scale_vars) {
+    sub_data[, (indep_var) := lapply(.SD, function(x)
+      as.numeric(scale(x))), .SDcols = indep_var]
+    vprint("Scaled independent variables:")
+    vprint(head(sub_data))
   }
   
-  nuc_div$panel <- num_indiv
-  nuc_div$site_class <- site_class
-  nuc_div <- as.data.frame(nuc_div)
-  nuc_div_all <- rbind(nuc_div_all, nuc_div)
+  # Construct the formula string dynamically
+  form_str <- paste(dep_var, "~", paste(indep_var, collapse = " + "))
+  form_obj <- as.formula(form_str)
   
+  vprint("Formula:")
+  vprint(form_obj)
+  
+  secondary_var <- indep_var[(indep_var != primary_var)]
+  vprint("Secondary variables:")
+  vprint(secondary_var)
+  
+  # 2. Fit the model
+  model <- lm(form_obj, data = sub_data, na.action = na.exclude)
+  vprint(summary(model))
+  
+  vprint(head(sub_data))
+  X_prime <- as.matrix(sub_data[, ..secondary_var])
+  vprint("Secondary data:")
+  vprint(head(X_prime))
+  vprint(dim(X_prime))
+  
+  beta_prime <- model$coefficients[secondary_var]
+  vprint(beta_prime)
+  vprint(dim(beta_prime))
+  
+  intercept <- coefficients(model)["(Intercept)"]
+  fitted_values <- fitted(model)
+  
+  if (return_value == "partial") {
+    result <- data.frame(
+      x = sub_data[, ..primary_var],
+      y = fitted_values -  (X_prime %*% beta_prime) - residuals(model) - intercept
+    )
+  } else if (return_value == "coeff") {
+    result <- data.frame(term = names(coefficients(model)), value = coefficients(model))
+  } else{
+    stop("return_value is not one of valid options.")
+  }
+  return(result)
 }
 
+library(rsample)
+
+# standardize expression by CDS density
+pi_windows_all$avg_exp_over_frac_cds <- pi_windows_all$avg_exp/pi_windows_all$frac_cds
+
+ggplot(pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1), aes(x = frac_cds, y = avg_exp_over_frac_cds)) + geom_point()
+
 #
-nuc_div_density_all <- nuc_div_all %>%
-  left_join(gene_density, by = c("chrom", "window_pos_1", "window_pos_2"))
+mod <- lm(avg_pi ~ frac_cds + avg_exp_over_frac_cds + tau + rate, pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1))
 
-# Evaluate derivative of model for windows
-rate_vs_div_all <- nuc_div_density_all %>%
-    left_join(best_mods, by = "chrom") %>%
-    group_by(chrom) %>%
-    mutate(rate = eval_deriv(model[[1]], window_pos_mid_Mb)) %>%
-    select(chrom, window_pos_mid_Mb, panel, site_class, rate, avg_pi, frac_cds) %>%
-    unnest(cols = c(rate))
-
-rate_density_cor <- rate_vs_div_all %>%
-  group_by(panel, site_class) %>%
-  filter(rate <= 10) %>%
-  reframe(r = corr_ci_autocorr(rate, frac_cds)$r,
-          p = corr_ci_autocorr(rate, frac_cds)$p_value)
-
-# plot density vs recombination rate
-ggplot(rate_vs_div_all %>% filter(site_class == "all", panel == 231), aes(y = frac_cds, x = rate)) +
-  geom_point(shape = 16) +
-  geom_smooth(method = "lm", color = "skyblue", data = subset(rate_vs_div_all, site_class == "all" & panel == 231 & rate <= 10)) +
-  facet_zoom(rate <= 10) +
-    theme(
-      zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
-  labs(x = "Fraction of window\nannotated CDS", 
-       y = "Recombination rate (cM/Mb)",
-title = paste0("r = ", signif(rate_density_cor$r, 2), ", p = ", format.pval(rate_density_cor$p, digits = 2, eps = 0.001)))
-
-ggsave(paste0(results_path, "/gene_density_vs_recombination_rate.pdf"), 
-       width = 4.5,
-       height = 5.5, device = cairo_pdf)
-
-# model of diversity as coding sequence density and recombination rate
-mod <- lm(log10(avg_pi) ~ rate + frac_cds, data = rate_vs_div_all %>% filter(site_class == "all", panel == 231, rate <= 10))
 summary(mod)
-  
+plot(mod)
+
+# Bootstrap estimate standard errors for coefficients
+results <- bootstraps(pi_windows_all %>% 
+                        filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1), times = 1000) %>% 
+  mutate(
+    # as.data.frame(splits) extracts the actual resampled dataset
+    analysis_results = purrr::map(splits, ~ partial_regressions(as.data.frame(.x), dep_var = "avg_pi", indep_var = c("tau", "avg_exp_over_frac_cds", "frac_cds", "rate"), primary_var = "rate", verbose = F, scale_vars = T))
+  )
+
+# 3. Unnest the list-column to see all 100 results combined
+boot_df <- results %>% 
+  select(id, analysis_results) %>% 
+  tidyr::unnest(analysis_results) %>% # or tidyr::unnest(analysis_results)
+  dplyr::relocate(term, .after = dplyr::last_col())
+
+boot_sum <- boot_df %>%
+  group_by(term) %>%
+  summarize(lwr = quantile(value, 0.025),
+          med = median(value),
+          upr = quantile(value, 0.975))
+
+boot_sum <- boot_sum %>%
+  mutate(term = recode(term, "frac_cds" = "CDS density",
+                       "avg_exp_over_frac_cds" = "Avg. Expression/CDS density",
+                       "rate" = "Recombination rate (cM/Mb)",
+                       "tau" = "Expression specificity"))
+
+ggplot(boot_sum %>% filter(term != "(Intercept)"), aes(x = term, y = med)) +
+  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
+  #geom_sina(shape = 16) +
+  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
+  geom_point(shape = 16, color = "black") +
+  geom_linerange(aes(ymin = lwr, ymax = upr), color = "red", linewidth = 0.8) +
+  # 2. Layer the points on top (e.g., colored by group)
+  geom_hline(yintercept = 0, lty = 2) +
+  coord_flip() +
+  theme(title = element_text(size = 12)) +
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03c0 ~ Recombination + CDS density + Avg. Expression + Specificity")
+
+ggsave(paste0("../results/by-date/", today, "/pi_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
+
 ```
 
 # Ne and VA(1) estimates
