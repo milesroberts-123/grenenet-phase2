@@ -227,7 +227,7 @@ covmat_from_pmat <- function(pmat, n = NULL, correct_for_n = T, standard_by_het 
       # correct variances
       for(i in seq_len(ncol(covmat))){
         corrected_var <- mean((pdiff[,i])^2, na.rm = T) - mean(pmat[,i]*(1-pmat[,i])/(n[i] - 1), na.rm = T) - mean(pmat[,i+1]*(1-pmat[,i+1])/(n[i+1] - 1), na.rm = T)
-        if(corrected_var < 0) {
+        if( corrected_var < 0 | is.na(corrected_var) ) {
           print("Sample size correction makes variance negative. Setting variance to zero")
           covmat[i,i] <- 0
         } else{
