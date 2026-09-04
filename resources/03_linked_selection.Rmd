@@ -3148,7 +3148,7 @@ pi_windows_all <- pi_windows_vardp %>%
   left_join(pi_windows_all, by = c("chrom", "window_pos_1", "window_pos_2")) %>%
   relocate(chrom, window_pos_1, window_pos_2, site, rep, gen)
 
-#### recombination rate vs var(dp)
+#### recombination rate vs var(dp) ####
 # 1. Split the data frame into a list of data frames by your variable
 data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
 
@@ -3172,7 +3172,31 @@ p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & g
 # 4. Close the PDF device
 dev.off()
 
-#### recombination rate (Ruth) vs var(dp)
+#### recombination rate vs Cov(dp1, dp2) ####
+# 1. Split the data frame into a list of data frames by your variable
+data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
+
+# 2. Open the PDF device
+cairo_pdf(paste0("../results/by-date/", today, "/rate_MareyMap_vs_sum_abs_cov.pdf"), width = 6, height = 6)
+
+# 3. Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  max_gen <- max(sub_data$gen)
+p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & gen == max_gen), aes(x = rate, y = sum_abs_cov)) +
+  geom_point() +
+  facet_zoom(rate <= 10) +
+  #facet_wrap(~gen) +
+  theme(zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
+  geom_smooth(method = "loess", color = "lightgreen") +
+  labs(x = "Recombination rate (cM/Mb)", y = "\u03a3i\u2260j|Cov(\u0394pi, \u0394pj)|", title = paste0("Site: ", unique(sub_data$site), " Rep:", unique(sub_data$rep)," Gen:0-", max_gen))
+  
+  print(p)
+})
+
+# 4. Close the PDF device
+dev.off()
+
+#### recombination rate (Adaptest) vs var(dp) ####
 data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
 
 # 2. Open the PDF device
@@ -3195,7 +3219,30 @@ p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & g
 # 4. Close the PDF device
 dev.off()
 
-#### expression specificity vs var(dp)
+#### recombination rate (Adaptest) vs Cov(dp1, dp2) ####
+data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
+
+# 2. Open the PDF device
+cairo_pdf(paste0("../results/by-date/", today, "/rate_adaptest_vs_sum_abs_cov.pdf"), width = 6, height = 6)
+
+# 3. Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  max_gen <- max(sub_data$gen)
+p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & gen == max_gen), aes(x = rate_cM_Mb, y = sum_abs_cov)) +
+  geom_point() +
+  facet_zoom(rate_cM_Mb <= 10) +
+  #facet_wrap(~gen) +
+  theme(zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
+  geom_smooth(method = "loess", color = "lightgreen") +
+  labs(x = "Adaptest recombination rate (cM/Mb)", y = "\u03a3i\u2260j|Cov(\u0394pi, \u0394pj)|", title = paste0("Site: ", unique(sub_data$site), " Rep:", unique(sub_data$rep)," Gen:0-", max_gen))
+  
+  print(p)
+})
+
+# 4. Close the PDF device
+dev.off()
+
+#### expression specificity vs var(dp) ####
 # 1. Split the data frame into a list of data frames by your variable
 data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
 
@@ -3218,7 +3265,30 @@ p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & g
 # 4. Close the PDF device
 dev.off()
 
-#### expression specificity vs var(dp)
+#### expression specificity vs Cov(dp1, dp2) ####
+# 1. Split the data frame into a list of data frames by your variable
+data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
+
+# 2. Open the PDF device
+cairo_pdf(paste0("../results/by-date/", today, "/tau_vs_sum_abs_cov.pdf"), width = 8, height = 6)
+
+# 3. Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  max_gen <- max(sub_data$gen)
+p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & gen == max_gen), aes(x = tau, y = sum_var)) +
+  geom_point() +
+  #facet_zoom(rate <= 10) +
+  #facet_wrap(~gen) +
+  geom_smooth(method = "loess", color = "lightgreen") +
+  labs(x = "Expression specificity", y = "\u03a3i\u2260j|Cov(\u0394pi, \u0394pj)|", title = paste0("Site: ", unique(sub_data$site), " Rep:", unique(sub_data$rep)," Gen:0-", max_gen))
+  
+  print(p)
+})
+
+# 4. Close the PDF device
+dev.off()
+
+#### mean expression vs var(dp) ####
 # 1. Split the data frame into a list of data frames by your variable
 data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
 
@@ -3241,7 +3311,30 @@ p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & g
 # 4. Close the PDF device
 dev.off()
 
-#### manhattan-style plot of var dp
+#### mean expression vs Cov(dp1, dp2) ####
+# 1. Split the data frame into a list of data frames by your variable
+data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
+
+# 2. Open the PDF device
+cairo_pdf(paste0("../results/by-date/", today, "/mean_expression_vs_sum_abs_cov.pdf"), width = 8, height = 6)
+
+# 3. Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  max_gen <- max(sub_data$gen)
+p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231 & gen == max_gen), aes(x = avg_exp, y = sum_abs_cov)) +
+  geom_point() +
+  #facet_zoom(rate <= 10) +
+  #facet_wrap(~gen) +
+  geom_smooth(method = "loess", color = "lightgreen") +
+  labs(x = "Average expression", y = "\u03a3i\u2260j|Cov(\u0394pi, \u0394pj)|", title = paste0("Site: ", unique(sub_data$site), " Rep:", unique(sub_data$rep)," Gen:0-", max_gen))
+  
+  print(p)
+})
+
+# 4. Close the PDF device
+dev.off()
+
+#### manhattan-style plot of var dp ####
 # 1. Split the data frame into a list of data frames by your variable
 data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
 
@@ -3255,10 +3348,36 @@ p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231), a
   geom_point() +
   scale_color_scico_d(palette = "bilbao", end = 0.95) +
   #facet_zoom(rate <= 10) +
-  facet_wrap(~chrom, ncol = 5) +
+  facet_wrap(~chrom, ncol = 5, scales = "free_x") +
   geom_smooth(method = "loess", color = "black") +
   theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
   labs(x = "Window midpoint (bp)", y = "\u03a3Var(\u0394p)", title = paste0("Site: ", unique(sub_data$site), " Rep: ", unique(sub_data$rep)), color = "Gen")
+  
+  print(p)
+})
+
+# 4. Close the PDF device
+dev.off()
+
+#### manhattan-style plot of sum |Cov(dp1, dp2)| ####
+# 1. Split the data frame into a list of data frames by your variable
+data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
+
+# 2. Open the PDF device
+getwd()
+cairo_pdf(paste0("../results/by-date/", today, "/manhattan_sum_abs_cov_scans.pdf"), width = 8, height = 6)
+
+# 3. Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  
+p <- ggplot(sub_data %>% filter(site_class == "all_sites" & num_indiv == 231), aes(x = (window_pos_1+window_pos_2)/2, y = sum_abs_cov, color = as.factor(gen))) +
+  geom_point() +
+  scale_color_scico_d(palette = "bilbao", end = 0.95) +
+  #facet_zoom(rate <= 10) +
+  facet_wrap(~chrom, ncol = 5, scales = "free_x") +
+  geom_smooth(method = "loess", color = "black") +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1, vjust = 1)) +
+  labs(x = "Window midpoint (bp)", y = "\u03a3i\u2260j|Cov(\u0394pi, \u0394pj)|", title = paste0("Site: ", unique(sub_data$site), " Rep: ", unique(sub_data$rep)), color = "Gen")
   
   print(p)
 })
@@ -3271,12 +3390,14 @@ dev.off()
 ## save table of pi window data
 
 ```{r}
-write.table(pi_windows_all, paste0("../results/by-date/", today, "/pi_windows_all.txt"), sep = "\t")
+write.table(pi_windows_all, paste0("../results/by-date/", today, "/pi_windows_all.txt"), sep = "\t", row.names = F, quote = F)
 ```
 
 ## partial regressions
 
 ```{r}
+pi_windows_all <- fread("../results/by-date/2026-09-01/pi_windows_all.txt")
+
 # partial regression of a variable
 partial_regressions <- function(data,
                                 dep_var,
@@ -3346,15 +3467,162 @@ library(rsample)
 # standardize expression by CDS density
 pi_windows_all$avg_exp_over_frac_cds <- pi_windows_all$avg_exp/pi_windows_all$frac_cds
 
-ggplot(pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1), aes(x = frac_cds, y = avg_exp_over_frac_cds)) + geom_point()
+ggplot(pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1), aes(x = frac_cds, y = avg_exp_over_frac_cds)) + 
+  geom_point()
 
-#
+# test a few linear models
 mod <- lm(avg_pi ~ frac_cds + avg_exp_over_frac_cds + tau + rate, pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1))
-
 summary(mod)
 plot(mod)
 
-# Bootstrap estimate standard errors for coefficients
+mod <- lm(log10(sum_var + 1e-5) ~ frac_cds + avg_exp_over_frac_cds + tau + rate, pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 3 & gen == 3))
+summary(mod)
+plot(mod)
+
+mod <- lm(log10(sum_var + 1e-5) ~ frac_cds + avg_exp_over_frac_cds + tau + rate, pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 3 & gen == 3))
+
+# Pool at vardp into one linear model
+mod <- lmer(sum_var ~ scale(frac_cds) + scale(avg_exp_over_frac_cds) + scale(tau) + scale(rate) + (1|site) + gen, data = pi_windows_all %>% filter(num_indiv == 1135 & site_class == "all_sites"))
+
+summary(mod)
+
+# --- Data subset ---
+df <- pi_windows_all %>%
+  filter(num_indiv == 1135, site_class == "all_sites") %>%
+  group_by(site, rep) %>%
+  filter(gen == max(gen)) %>%
+  mutate(
+    frac_cds_z = as.numeric(scale(frac_cds)),
+    avg_exp_over_frac_cds_z = as.numeric(scale(avg_exp_over_frac_cds)),
+    tau_z = as.numeric(scale(tau)),
+    rate_z = as.numeric(scale(rate))
+  )
+
+mod <- lmer(
+  sum_var ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + (1 | site/rep),
+  data = df
+)
+ 
+# --- Fit the original model ---
+# mod <- lmer(
+#   sum_var ~ scale(frac_cds) + scale(avg_exp_over_frac_cds) +
+#     scale(tau) + scale(rate) + (1 | site/rep),
+#   data = df
+# )
+
+summary(mod)
+
+safe_fixef <- function(fit) {
+  term_names <- names(fixef(mod))
+  out <- rep(NA_real_, length(term_names))
+  names(out) <- term_names
+
+  result <- tryCatch(fixef(fit), error = function(e) {
+    message("Refit failed: ", conditionMessage(e))
+    NULL
+  })
+  if (!is.null(result)) {
+    out[names(result)] <- result
+  }
+  out
+}
+
+case_boot <- lmeresampler::bootstrap(
+  model = mod,
+  .f = safe_fixef,
+  type = "case",
+  B = 1000,
+  resample = c(FALSE, FALSE, TRUE)
+)
+
+case_boot  # prints a quick summary (bootstrap SE, bias) per term
+ 
+# --- Percentile confidence intervals per term ---
+boot_ci <- confint(case_boot, type = "perc")
+boot_ci
+ 
+# --- Combine point estimates with bootstrap CIs ---
+boot_summary <- tibble(
+  term = names(fixef(mod)),
+  estimate = fixef(mod)
+) %>%
+  left_join(boot_ci, by = "term")
+ 
+boot_summary <- boot_summary %>%
+  mutate(term = recode(term, "frac_cds_z" = "CDS density",
+                       "avg_exp_over_frac_cds_z" = "Avg. Expression/CDS density",
+                       "rate_z" = "Recombination rate (cM/Mb)",
+                       "tau_z" = "Expression specificity"))
+
+ggplot(boot_summary %>% filter(term != "(Intercept)"), aes(x = term, y = estimate.x)) +
+  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
+  #geom_sina(shape = 16) +
+  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
+  geom_linerange(aes(ymin = lower, ymax = upper), color = "red", linewidth = 1) +
+  geom_point(shape = 16, color = "black", size = 1.5) +
+  # 2. Layer the points on top (e.g., colored by group)
+  geom_hline(yintercept = 0, lty = 2) +
+  coord_flip() +
+  theme(title = element_text(size = 12)) +
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03a3Var(\u0394p) ~ Recombination + CDS density +\nAvg. Expression + Expression Specificity + (1 | Site/Rep)")
+
+ggsave(paste0("../results/by-date/", today, "/vardp_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
+
+
+
+
+
+ 
+# --- Function bootMer calls on each simulated/refit model: return fixed effects ---
+extract_fixef <- function(fit) {
+  fixef(fit)
+}
+ 
+# --- Parametric bootstrap (simulates response from fitted model, refits) ---
+boot_out <- bootMer(
+  mod,
+  FUN = extract_fixef,
+  nsim = 1000,
+  type = "parametric",     # use "semiparametric" for a residual/RE bootstrap instead
+  use.u = FALSE,            # FALSE = resimulate random effects too (recommended default)
+  .progress = "txt",
+  PBargs = list(style = 3)
+  #parallel = "multicore",   # use "snow" on Windows, or "no" to disable
+  #ncpus = parallel::detectCores() - 1
+)
+ 
+# --- Tidy summary with percentile CIs ---
+boot_summary <- tibble(
+  term = names(fixef(mod)),
+  estimate = fixef(mod),
+  boot_mean = colMeans(boot_out$t, na.rm = TRUE),
+  boot_se = apply(boot_out$t, 2, sd, na.rm = TRUE)
+) %>%
+  bind_cols(
+    map_dfr(seq_along(fixef(mod)), function(i) {
+      ci <- confint(boot_out, type = "perc")
+      tibble(lower_95 = ci[i,1], upper_95 = ci[i,2])
+    })
+  )
+ 
+boot_summary
+
+ggplot(boot_summary %>% filter(term != "(Intercept)"), aes(x = term, y = estimate)) +
+  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
+  #geom_sina(shape = 16) +
+  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
+  geom_point(shape = 16, color = "black") +
+  geom_linerange(aes(ymin = lower_95, ymax = upper_95), color = "red", linewidth = 0.8) +
+  # 2. Layer the points on top (e.g., colored by group)
+  geom_hline(yintercept = 0, lty = 2) +
+  coord_flip() +
+  theme(title = element_text(size = 12)) +
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03c0 ~ Recombination + CDS density + Avg. Expression + Specificity")
+
+ggsave(paste0("../results/by-date/", today, "/vardp_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
+
+
+#### Bootstrap estimates for pi model coefficients ####
 results <- bootstraps(pi_windows_all %>% 
                         filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1), times = 1000) %>% 
   mutate(
@@ -3394,6 +3662,61 @@ ggplot(boot_sum %>% filter(term != "(Intercept)"), aes(x = term, y = med)) +
 
 ggsave(paste0("../results/by-date/", today, "/pi_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
 
+#### Bootstrap estimates for var(dp) model coefficients ####
+# 1. Split the data frame into a list of data frames by your variable
+#data_list <- split(pi_windows_all %>% filter(site == 1 & rep == 1), list(pi_windows_all %>% filter(site == 1 & rep == 1) %>% pull(site), pi_windows_all %>% filter(site == 1 & rep == 1) %>% pull(rep)), drop = T)
+data_list <- split(pi_windows_all, list(pi_windows_all$site, pi_windows_all$rep), drop = T)
+
+# 2. Open the PDF device
+cairo_pdf(paste0("../results/by-date/", today, "/vardp_coeff.pdf"), width = 8, height = 6)
+
+# 3. Map over the list, generate a standard plot for each subset, and print
+walk(data_list, function(sub_data) {
+  max_gen <- max(sub_data$gen)
+  
+  sub_data <- sub_data %>% filter(gen == max_gen)
+  
+results <- bootstraps(sub_data, times = 1000) %>% 
+  mutate(
+    # as.data.frame(splits) extracts the actual resampled dataset
+    analysis_results = purrr::map(splits, ~ partial_regressions(as.data.frame(.x), dep_var = "sum_var", indep_var = c("tau", "avg_exp_over_frac_cds", "frac_cds", "rate"), primary_var = "rate", verbose = F, scale_vars = T))
+  )
+
+# 3. Unnest the list-column to see all 100 results combined
+boot_df <- results %>% 
+  select(id, analysis_results) %>% 
+  tidyr::unnest(analysis_results) %>% # or tidyr::unnest(analysis_results)
+  dplyr::relocate(term, .after = dplyr::last_col())
+
+boot_sum <- boot_df %>%
+  group_by(term) %>%
+  summarize(lwr = quantile(value, 0.025),
+          med = median(value),
+          upr = quantile(value, 0.975))
+
+boot_sum <- boot_sum %>%
+  mutate(term = recode(term, "frac_cds" = "CDS density",
+                       "avg_exp_over_frac_cds" = "Avg. Expression/CDS density",
+                       "rate" = "Recombination rate (cM/Mb)",
+                       "tau" = "Expression specificity"))
+
+p <- ggplot(boot_sum %>% filter(term != "(Intercept)"), aes(x = term, y = med)) +
+  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
+  #geom_sina(shape = 16) +
+  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
+  geom_point(shape = 16, color = "black") +
+  geom_linerange(aes(ymin = lwr, ymax = upr), color = "red", linewidth = 0.8) +
+  # 2. Layer the points on top (e.g., colored by group)
+  geom_hline(yintercept = 0, lty = 2) +
+  coord_flip() +
+  theme(title = element_text(size = 12)) +
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = paste0("\u03a3Var(\u0394p) ~ Recombination + CDS density\n+ Avg. Expression + Specificity\n", "Site: ", unique(sub_data$site), " Rep: ", unique(sub_data$rep), " Gen: 0-", max_gen))
+
+  print(p)
+})
+
+# 4. Close the PDF device
+dev.off()
 ```
 
 # Ne and VA(1) estimates
