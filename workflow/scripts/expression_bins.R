@@ -26,28 +26,33 @@ pseudo <- AggregateExpression(
   seurat_obj,
   group.by = c(group_by),
   assays = "RNA",
+  normalization.method = "RC",
+  scale.factor = 1e6,
   return.seurat = TRUE
 )
 
 counts <- LayerData(pseudo, assay = "RNA", layer = "counts")
 
-calculate_cpm <- function(counts) {
-  lib_sizes <- colSums(counts)
-  cpm <- sweep(counts, 2, lib_sizes, "/") * 1e6
-  return(cpm)
-}
+#calculate_cpm <- function(counts) {
+#  lib_sizes <- colSums(counts)
+#  cpm <- sweep(counts, 2, lib_sizes, "/") * 1e6
+#  return(cpm)
+#}
 
-cpm <- calculate_cpm(counts)
+#cpm <- calculate_cpm(counts)
 
 #stopifnot(all(colSums(cpm) == 1e6))
 
-cpm <- as.data.frame(cpm)
-cpm$gene <- rownames(cpm)
+#cpm <- as.data.frame(cpm)
+#cpm$gene <- rownames(cpm)
+
+counts <- as.data.frame(counts)
+counts$gene <- rownames(counts)
 
 genes <- read_tsv(genes_path, col_names = c("chrom", "start", "end", "gene"))
 
 genes <- genes %>%
-  left_join(cpm, by = "gene") %>%
+  left_join(counts, by = "gene") %>%
   drop_na() %>%
   arrange(chrom, start)
 

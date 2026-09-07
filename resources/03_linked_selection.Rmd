@@ -3489,17 +3489,21 @@ summary(mod)
 # --- Data subset ---
 df <- pi_windows_all %>%
   filter(num_indiv == 1135, site_class == "all_sites") %>%
-  group_by(site, rep) %>%
-  filter(gen == max(gen)) %>%
   mutate(
     frac_cds_z = as.numeric(scale(frac_cds)),
     avg_exp_over_frac_cds_z = as.numeric(scale(avg_exp_over_frac_cds)),
     tau_z = as.numeric(scale(tau)),
-    rate_z = as.numeric(scale(rate))
-  )
+    rate_z = as.numeric(scale(rate)),
+    sum_var_z = as.numeric(scale(sum_var)),
+    sum_abs_cov_z = as.numeric(scale(sum_abs_cov)),
+    avg_pi_z = as.numeric(scale(avg_pi))
+  ) %>%
+  group_by(site, rep) %>%
+  filter(gen == max(gen))
 
-mod <- lmer(
-  sum_var ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + (1 | site/rep),
+
+mod_sum_var <- lmer(
+  sum_var_z ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + (1 | site/rep),
   data = df
 )
  
@@ -3510,7 +3514,7 @@ mod <- lmer(
 #   data = df
 # )
 
-summary(mod)
+summary(mod_sum_var)
 
 safe_fixef <- function(fit) {
   term_names <- names(fixef(mod))
@@ -3528,7 +3532,7 @@ safe_fixef <- function(fit) {
 }
 
 case_boot <- lmeresampler::bootstrap(
-  model = mod,
+  model = mod_sum_var,
   .f = safe_fixef,
   type = "case",
   B = 1000,
@@ -3567,6 +3571,100 @@ ggplot(boot_summary %>% filter(term != "(Intercept)"), aes(x = term, y = estimat
   labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03a3Var(\u0394p) ~ Recombination + CDS density +\nAvg. Expression + Expression Specificity + (1 | Site/Rep)")
 
 ggsave(paste0("../results/by-date/", today, "/vardp_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
+
+
+#### Cov(dp1, dp2) ####
+mod_sum_abs_cov <- lmer(
+  sum_abs_cov ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + (1 | site/rep),
+  data = df
+)
+
+summary(mod_sum_abs_cov) 
+# --- Fit the original model ---
+case_boot <- lmeresampler::bootstrap(
+  model = mod_sum_abs_cov,
+  .f = safe_fixef,
+  type = "case",
+  B = 1000,
+  resample = c(FALSE, FALSE, TRUE)
+)
+
+case_boot  # prints a quick summary (bootstrap SE, bias) per term
+ 
+# --- Percentile confidence intervals per term ---
+boot_ci <- confint(case_boot, type = "perc")
+boot_ci
+ 
+# --- Combine point estimates with bootstrap CIs ---
+boot_summary <- tibble(
+  term = names(fixef(mod)),
+  estimate = fixef(mod)
+) %>%
+  left_join(boot_ci, by = "term")
+ 
+boot_summary <- boot_summary %>%
+  mutate(term = recode(term, "frac_cds_z" = "CDS density",
+                       "avg_exp_over_frac_cds_z" = "Avg. Expression/CDS density",
+                       "rate_z" = "Recombination rate (cM/Mb)",
+                       "tau_z" = "Expression specificity"))
+
+ggplot(boot_summary %>% filter(term != "(Intercept)"), aes(x = term, y = estimate.y)) +
+  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
+  #geom_sina(shape = 16) +
+  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
+  geom_linerange(aes(ymin = lower, ymax = upper), color = "red", linewidth = 1) +
+  geom_point(shape = 16, color = "black", size = 1.5) +
+  # 2. Layer the points on top (e.g., colored by group)
+  geom_hline(yintercept = 0, lty = 2) +
+  coord_flip() +
+  theme(title = element_text(size = 12)) +
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03a3i\u2260j|Cov(\u0394pi, \u0394pj)| ~ Recombination + CDS density +\nAvg. Expression + Expression Specificity + (1 | Site/Rep)")
+
+ggsave(paste0("../results/by-date/", today, "/sum_abs_cov_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
+
+#### Bootstrap estimates for pi model coefficients ####
+results <- bootstraps(pi_windows_all %>% 
+                        filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1), times = 1000) %>% 
+  mutate(
+    # as.data.frame(splits) extracts the actual resampled dataset
+    analysis_results = purrr::map(splits, ~ partial_regressions(as.data.frame(.x), dep_var = "avg_pi", indep_var = c("tau", "avg_exp_over_frac_cds", "frac_cds", "rate"), primary_var = "rate", verbose = F, scale_vars = T))
+  )
+
+# 3. Unnest the list-column to see all 100 results combined
+boot_df <- results %>% 
+  select(id, analysis_results) %>% 
+  tidyr::unnest(analysis_results) %>% # or tidyr::unnest(analysis_results)
+  dplyr::relocate(term, .after = dplyr::last_col())
+
+boot_sum <- boot_df %>%
+  group_by(term) %>%
+  summarize(lwr = quantile(value, 0.025),
+          med = median(value),
+          upr = quantile(value, 0.975))
+
+boot_sum <- boot_sum %>%
+  mutate(term = recode(term, "frac_cds" = "CDS density",
+                       "avg_exp_over_frac_cds" = "Avg. Expression/CDS density",
+                       "rate" = "Recombination rate (cM/Mb)",
+                       "tau" = "Expression specificity"))
+
+ggplot(boot_sum %>% filter(term != "(Intercept)"), aes(x = term, y = med)) +
+  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
+  #geom_sina(shape = 16) +
+  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
+  geom_point(shape = 16, color = "black") +
+  geom_linerange(aes(ymin = lwr, ymax = upr), color = "red", linewidth = 0.8) +
+  # 2. Layer the points on top (e.g., colored by group)
+  geom_hline(yintercept = 0, lty = 2) +
+  coord_flip() +
+  theme(title = element_text(size = 12)) +
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03c0 ~ Recombination + CDS density + Avg. Expression + Specificity")
+
+ggsave(paste0("../results/by-date/", today, "/pi_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
+
+
+
+
 
 
 
@@ -3622,45 +3720,7 @@ ggplot(boot_summary %>% filter(term != "(Intercept)"), aes(x = term, y = estimat
 ggsave(paste0("../results/by-date/", today, "/vardp_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
 
 
-#### Bootstrap estimates for pi model coefficients ####
-results <- bootstraps(pi_windows_all %>% 
-                        filter(num_indiv == 1135 & site_class == "all_sites" & site == 1 & rep == 1 & gen == 1), times = 1000) %>% 
-  mutate(
-    # as.data.frame(splits) extracts the actual resampled dataset
-    analysis_results = purrr::map(splits, ~ partial_regressions(as.data.frame(.x), dep_var = "avg_pi", indep_var = c("tau", "avg_exp_over_frac_cds", "frac_cds", "rate"), primary_var = "rate", verbose = F, scale_vars = T))
-  )
 
-# 3. Unnest the list-column to see all 100 results combined
-boot_df <- results %>% 
-  select(id, analysis_results) %>% 
-  tidyr::unnest(analysis_results) %>% # or tidyr::unnest(analysis_results)
-  dplyr::relocate(term, .after = dplyr::last_col())
-
-boot_sum <- boot_df %>%
-  group_by(term) %>%
-  summarize(lwr = quantile(value, 0.025),
-          med = median(value),
-          upr = quantile(value, 0.975))
-
-boot_sum <- boot_sum %>%
-  mutate(term = recode(term, "frac_cds" = "CDS density",
-                       "avg_exp_over_frac_cds" = "Avg. Expression/CDS density",
-                       "rate" = "Recombination rate (cM/Mb)",
-                       "tau" = "Expression specificity"))
-
-ggplot(boot_sum %>% filter(term != "(Intercept)"), aes(x = term, y = med)) +
-  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
-  #geom_sina(shape = 16) +
-  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
-  geom_point(shape = 16, color = "black") +
-  geom_linerange(aes(ymin = lwr, ymax = upr), color = "red", linewidth = 0.8) +
-  # 2. Layer the points on top (e.g., colored by group)
-  geom_hline(yintercept = 0, lty = 2) +
-  coord_flip() +
-  theme(title = element_text(size = 12)) +
-  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03c0 ~ Recombination + CDS density + Avg. Expression + Specificity")
-
-ggsave(paste0("../results/by-date/", today, "/pi_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
 
 #### Bootstrap estimates for var(dp) model coefficients ####
 # 1. Split the data frame into a list of data frames by your variable
