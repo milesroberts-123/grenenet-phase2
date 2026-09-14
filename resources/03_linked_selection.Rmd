@@ -2371,12 +2371,51 @@ rep_gt_perm %>%
 
 ```
 
+# Plot OST1 over cell-types
+
+```{r}
+# load all expression bins
+
+# melt expression rows
+bed_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/expression_bins", pattern = "\\.bed$", full.names = TRUE)
+
+id_cols <- c("chrom", "start", "end", "gene")
+
+bed_comb <- files %>%
+  map_df(function(f) {
+    read.delim(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE,
+               check.names = FALSE) %>%           # keeps spaces in col names as-is
+      pivot_longer(
+        cols = -all_of(id_cols),
+        names_to = "cell_type",
+        values_to = "count"
+      ) %>%
+      mutate(source_file = basename(f))
+  })
+
+# extract tissue labels
+bed_comb$tissue <- gsub("_", "", str_extract(bed_comb$source_file, "_.*_"))
+
+# normalize counts
+bed_comb <- bed_comb %>% 
+  group_by(tissue) %>%
+  mutate(cpm = count/sum(count)*1e6)
+
+# plot average expression in each cell-type and context
+ggplot(data=bed_comb %>% filter(gene == "AT4G33950"), mapping=aes(x=cell_type,y=count)) +
+  geom_col() +
+  facet_grid(cols=vars(tissue), scales="free_x", space="free_x", switch="x") +
+  theme(axis.title=element_text(size=12,face="bold"),
+        axis.title.x=element_blank(),
+        axis.text=element_text(size=10, color="black", angle = 45, hjust = 1, vjust = 1))
+
+```
+
 # Recombination rate vs pi
 
 ## load, format, and filter recombination map
 
 ```{r}
-#
 data("Arabidopsis_thaliana")
 
 recom_map_1 <- data.frame(
@@ -3054,7 +3093,7 @@ dev.off()
 
 ```
 
-## (one-time) variance/covariance in allele frequency change vs gene expression
+## (one-time) variance/covariance in allele frequency change in genomic windows
 
 ```{r}
 pi_windows <- fread("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/pi_windows.bed", col.names = c("chrom", "window_pos_1", "window_pos_2"))
