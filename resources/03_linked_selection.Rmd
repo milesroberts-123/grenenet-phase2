@@ -2402,12 +2402,16 @@ bed_comb <- bed_comb %>%
   mutate(cpm = count/sum(count)*1e6)
 
 # plot average expression in each cell-type and context
-ggplot(data=bed_comb %>% filter(gene == "AT4G33950"), mapping=aes(x=cell_type,y=count)) +
+ggplot(data=bed_comb %>% filter(gene == "AT4G33950"), mapping=aes(x=cell_type,y=cpm)) +
   geom_col() +
   facet_grid(cols=vars(tissue), scales="free_x", space="free_x", switch="x") +
   theme(axis.title=element_text(size=12,face="bold"),
         axis.title.x=element_blank(),
-        axis.text=element_text(size=10, color="black", angle = 45, hjust = 1, vjust = 1))
+        axis.text=element_text(size=10, color="black", angle = 90, hjust = 1, vjust = 1),
+        strip.text.x = element_text(size = 9)) +
+  labs(x = "Cell type", y = "Expression (CPM)", title = "OST1 Expression")
+
+ggsave(paste0("../results/by-date/", today, "/OST1_single-cell-atlas.pdf"), width = 9.5)
 
 ```
 
