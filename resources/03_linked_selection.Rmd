@@ -34,6 +34,7 @@ library(maps)
 library(lme4)
 library(scales)
 library(rsq)
+library(grumpy)
 
 box::use(./R/gt[...],
          ./R/plot[...],
@@ -2369,6 +2370,233 @@ rep_gt_perm %>%
       rep_gt_abs = weighted.mean(mean_covar_abs, S)/weighted.mean(mean_var_abs, S),
     )
 
+```
+
+# G(t) curves for SV and SNP classes
+
+kMate class matrices: per-record ALT allele frequencies for SNPs and structural
+variants, estimated from pooled sequencing against the 231-founder pangenome
+panel (`resources/class_matrices/` on Savio). Rows are pools (`site` × `plot`,
+flower-weighted merge of collection timepoints), columns are records. Gen0 is
+the founding seed mix (8 reps). Here we compute gt curves per pool with
+`covmat_from_pmat()` + `gt_from_covmat()`, treating the 8 seed-mix reps'
+average as the gen0 column and gen1-3 as subsequent time points.
+
+## load class matrices
+
+```{r}
+# directory on savio
+class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
+
+# .npy files are read with grumpy::read_npy(), which handles all numpy
+# dtypes (incl. the float16 data-raw layer), any shape, and both C- and
+# Fortran-order storage (class_matrices files are Fortran-order)
+
+# pool metadata, one row per pool (pool,site,plot,...)
+pools <- lapply(0:3, function(g) fread(paste0(class_dir, "gen", g, ".pools.csv")))
+# gen0 pools are the 8 seed-mix replicates (pool == SEEDMIX_S1..S8)
+stopifnot(all(grepl("^SEEDMIX_S", pools[[1]]$pool)))
+
+# pools sampled in every evolved generation; pool name encodes site_plot
+common_pools <- Reduce(intersect, lapply(pools[2:4], `[[`, "pool"))
+print(paste("Common pools across gen1-3:", length(common_pools)))
+
+# flower-weighted pseudo chromosome counts, n = 2*total_flowers per pool-generation
+# (gen0 is a pooled seed-mix estimate: large pseudo-n, correction negligible)
+pseudo_n <- vector("list", 4)
+pseudo_n[[1]] <- data.frame(pool = pools[[1]]$pool, n = 1e5)
+for (g in 2:4) {
+  pseudo_n[[g]] <- pools[[g]][, c("pool", "total_flowers")]
+  pseudo_n[[g]]$n <- 2 * pseudo_n[[g]]$total_flowers
+}
+names(pseudo_n) <- paste0("gen", 0:3)
+
+# helper: intersect record keys across generations
+# join on full key (chrom, pos, ref_len, alt_len): 2.14% of positions carry
+# multiple ALT alleles, so chrom:pos alone is not unique
+add_record_key <- function(rec) {
+  rec$record_key <- paste(rec$chrom, rec$pos, rec$ref_len, rec$alt_len, sep = ":")
+  rec
+}
+
+record_sets <- list()
+for (cls in c("snp", "sv")) {
+  recs <- lapply(0:3, function(g) {
+    add_record_key(fread(paste0(class_dir, cls, "_gen", g, ".records.csv")))
+  })
+
+  keys_in_all <- Reduce(intersect, lapply(recs, `[[`, "record_key"))
+  print(paste(cls, "records present in all 4 generations:", length(keys_in_all)))
+
+  # per generation: column index of each intersected record (sorted by key)
+  col_idx <- lapply(recs, function(r) {
+    m <- match(keys_in_all, r$record_key)
+    stopifnot(!anyNA(m))
+    m
+  })
+  names(col_idx) <- paste0("gen", 0:3)
+
+  # per generation: n_called for the intersected records
+  n_called <- lapply(recs, function(r) {
+    r$n_called[match(keys_in_all, r$record_key)]
+  })
+  names(n_called) <- paste0("gen", 0:3)
+
+  record_sets[[cls]] <- list(
+    keys = keys_in_all,
+    col_idx = col_idx,
+    n_called = n_called,
+    n_records = length(keys_in_all)
+  )
+}
+
+# load af matrices, slice to (common pools x intersected records), then free
+# gen0: mean across the 8 seed-mix replicate rows
+class_pmat <- list()
+for (cls in names(record_sets)) {
+  print(paste("Loading", cls, "matrices..."))
+
+  p0 <- read_npy(paste0(class_dir, cls, "_gen0_af.npy"))
+  stopifnot(identical(dim(p0), c(nrow(pools[[1]]), nrow(recs[[cls]][[1]]))))
+  p0_mean <- colMeans(p0[, record_sets[[cls]]$col_idx$gen0, drop = FALSE])
+  rm(p0); gc()
+
+  p1 <- read_npy(paste0(class_dir, cls, "_gen1_af.npy"))
+  p1 <- p1[match(common_pools, pools[[2]]$pool), record_sets[[cls]]$col_idx$gen1, drop = FALSE]
+  gc()
+
+  p2 <- read_npy(paste0(class_dir, cls, "_gen2_af.npy"))
+  p2 <- p2[match(common_pools, pools[[3]]$pool), record_sets[[cls]]$col_idx$gen2, drop = FALSE]
+  gc()
+
+  p3 <- read_npy(paste0(class_dir, cls, "_gen3_af.npy"))
+  p3 <- p3[match(common_pools, pools[[4]]$pool), record_sets[[cls]]$col_idx$gen3, drop = FALSE]
+  gc()
+
+  class_pmat[[cls]] <- list(p0 = p0_mean, p1 = p1, p2 = p2, p3 = p3)
+  print(paste(cls, "done:", nrow(p1), "pools x", ncol(p1), "records"))
+}
+
+# n per pool-generation for pools that are present (NA otherwise)
+# gen0 pseudo_n is keyed on SEEDMIX_S* pool names, not evolved pool names, so
+# every evolved pool maps to NA there; use the single seed-mix pseudo-n directly
+pool_n <- list(
+  gen0 = rep(pseudo_n$gen0$n[1], length(common_pools)),
+  gen1 = pseudo_n$gen1$n[match(common_pools, pseudo_n$gen1$pool)],
+  gen2 = pseudo_n$gen2$n[match(common_pools, pseudo_n$gen2$pool)],
+  gen3 = pseudo_n$gen3$n[match(common_pools, pseudo_n$gen3$pool)]
+)
+```
+
+## gt curves per pool
+
+```{r}
+output_gt_class <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/gt_point_estimates_sv_snp.tsv",
+  sep = ""
+)
+
+for (cls in names(class_pmat)) {
+  print(paste("Class:", cls))
+  p0 <- class_pmat[[cls]]$p0
+  p1 <- class_pmat[[cls]]$p1
+  p2 <- class_pmat[[cls]]$p2
+  p3 <- class_pmat[[cls]]$p3
+
+  for (p in seq_along(common_pools)) {
+    pool_name <- common_pools[p]
+
+    # sample sizes: skip pools missing flowers in any generation
+    n_g <- c(pool_n$gen0[p], pool_n$gen1[p], pool_n$gen2[p], pool_n$gen3[p])
+    if (any(is.na(n_g)) || any(n_g < 2)) {
+      print(paste("Skipping", pool_name, ": missing or too small sample size"))
+      next
+    }
+
+    # columns are time points: gen0 (seed mix average), gen1, gen2, gen3
+    pmat <- cbind(p0[p], p1[, p], p2[, p], p3[, p])
+
+    covmat <- covmat_from_pmat(pmat,
+                               n = n_g,
+                               correct_for_n = T,
+                               input_asin_trans = F,
+                               procedure = "none")
+
+    gt_result <- gt_from_covmat(covmat)
+
+    gt_result$class <- cls
+    gt_result$pool <- pool_name
+    gt_result$site <- as.integer(sub("_.*", "", pool_name))
+    gt_result$plot <- as.integer(sub(".*_", "", pool_name))
+
+    append_table(gt_result, output_gt_class)
+  }
+}
+
+gt_class <- fread(output_gt_class)
+```
+
+## plots
+
+```{r}
+# mean G(t) and Gabs(t) curves by class, ratio of mean sums
+gt_class_mean <- gt_class %>%
+  group_by(class, gen) %>%
+  summarize(gt = mean(sum_cov)/mean(sum_cov + sum_var),
+            gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov + sum_var),
+            .groups = "drop")
+
+ggplot(gt_class_mean, aes(x = gen, y = gt, group = class, color = class)) +
+  geom_point() +
+  geom_line() +
+  scale_x_discrete(name = "Generation", limits = c(1:3)) +
+  labs(x = "Generation", y = expression(G(t)), color = "Variant class")
+
+ggsave(paste0(results_path, "/gt_curves_sv_snp.pdf"), device = cairo_pdf,
+       height = 4.5, width = 6)
+
+ggplot(gt_class_mean, aes(x = gen, y = gt_abs, group = class, color = class)) +
+  geom_point() +
+  geom_line() +
+  scale_x_discrete(name = "Generation", limits = c(1:3)) +
+  labs(x = "Generation", y = expression(G[abs](t)), color = "Variant class")
+
+ggsave(paste0(results_path, "/gabs_curves_sv_snp.pdf"), device = cairo_pdf,
+       height = 4.5, width = 6)
+
+# across-pool spread of gt at each generation
+gt_final <- gt_class %>%
+  group_by(class, gen) %>%
+  summarize(gt_pool_sd = sd(gt),
+            gt_abs_pool_sd = sd(gt_abs),
+            .groups = "drop")
+
+# distribution of Gabs across pools at the final generation, by class
+ggplot(gt_class %>%
+         filter(gen == max(gt_class$gen)),
+       aes(x = class, y = gt_abs, fill = class)) +
+  geom_violin(quantiles = 0.5, quantile.linetype = 1) +
+  labs(x = "Variant class", y = expression(G[abs](t)), fill = "Variant class")
+
+ggsave(paste0(results_path, "/gabs_final_gen_sv_snp.pdf"), device = cairo_pdf,
+       height = 4.5, width = 5)
+
+# per-site final-generation Gabs: SNP vs SV
+gt_site <- gt_class %>%
+  filter(gen == max(gt_class$gen)) %>%
+  group_by(class, site) %>%
+  summarize(gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov + sum_var),
+            .groups = "drop")
+
+ggplot(gt_site, aes(x = site, y = gt_abs, fill = class)) +
+  geom_col(position = position_dodge()) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(x = "Site", y = expression(G[abs](t)), fill = "Variant class")
+
+ggsave(paste0(results_path, "/gabs_final_gen_by_site_sv_snp.pdf"), device = cairo_pdf,
+       height = 4.5, width = 9)
 ```
 
 # Plot OST1 over cell-types
