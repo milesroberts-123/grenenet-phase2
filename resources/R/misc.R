@@ -366,7 +366,6 @@ create_blocks <- function(data,
     stop("Input data should be sorted by position within chromosome.")
   }
   
-  
   if (block_by == "snp") {
     blocks <- data %>%
       group_by({{ chrom_col_name }}) %>%
@@ -400,9 +399,9 @@ create_blocks <- function(data,
 #' @return
 #' @export
 #'
-grab_sample_sizes <- function(n_data, sample_col, samples, first_n){
+grab_sample_sizes <- function(n_data, sample_col, samples, first_n, n_col){
     rep_n <- n_data %>% dplyr::filter({{ sample_col }} %in% samples)
-    rep_n <- rbind(c(0, first_n), rep_n)
+    rep_n <- rbind(c(0, first_n), rep_n %>% select({{sample_col}}, {{ n_col }}))
     rep_n <- rep_n %>% arrange({{ sample_col }})
     return(rep_n)
 }

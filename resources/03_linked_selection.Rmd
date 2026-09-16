@@ -2372,7 +2372,7 @@ rep_gt_perm %>%
 
 ```
 
-# G(t) curves for SV and SNP classes
+# G(t) curves including SVs
 
 kMate class matrices: per-record ALT allele frequencies for SNPs and structural
 variants, estimated from pooled sequencing against the 231-founder pangenome
@@ -2382,11 +2382,14 @@ the founding seed mix (8 reps). Here we compute gt curves per pool with
 `covmat_from_pmat()` + `gt_from_covmat()`, treating the 8 seed-mix reps'
 average as the gen0 column and gen1-3 as subsequent time points.
 
-## load class matrices
+## directory on savio
+```{r}
+class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
+```
+
+## one-time: load class matrices
 
 ```{r}
-# directory on savio
-class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
 
 # load af matrices, slice to (common pools x intersected records), then free
 # gen0: mean across the 8 seed-mix replicate rows
@@ -2474,27 +2477,45 @@ fwrite(pmat_final %>% select(-chrom, -pos, -class, -X0_0_0), "/global/scratch/us
     
 ```
 
-## collect sample sizes
+## load data
 
 ```{r}
 
+# seedmix
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_seedmix.csv")
+
+# write all other generations
+# one time conversion
+if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet")){
+  open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
+  write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet", format = "parquet", max_rows_per_file = 50000L)
+}
+
+# now can just read it
+hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet")
+
+# hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv")
+
+flower_counts <- list.files(path = class_dir, pattern = "[1-3].pools.csv", full.names = T)
+
+flower_counts <- read_csv(flower_counts, id = "file_path")
 
 ```
 
-## randomly switch tracked allele
+## one-time: randomly switch tracked allele
 
 ```{r}
 
 ```
 
-## gt curves
+## gt curves - point estimates
 
 ```{r}
 
 # parition af data
-hapfire <- pmat_final %>% select(-chrom, -pos, -class, -X0_0_0)
-gen0 <- pmat_final %>% select(chrom, pos, class, X0_0_0)
-rm(pmat_final); gc()
+# hapfire <- pmat_final %>% select(-chrom, -pos, -class, -X0_0_0)
+# gen0 <- pmat_final %>% select(chrom, pos, class, X0_0_0)
+# rm(pmat_final); gc()
 
 # make list of sites
 # for now, ignore some sites
@@ -2507,7 +2528,14 @@ output_gt_class <- paste(
   sep = ""
 )
 
-#check_file_exists(output_gt_class)
+# delete previous run
+check_file_exists(output_gt_class)
+
+# check that directory exists
+folder_path <- dirname(output_gt_class)
+if (!dir.exists(folder_path)) {
+  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
+}
 
 # loop over sites
 for (site in unique(sites)) {
@@ -2518,7 +2546,8 @@ for (site in unique(sites)) {
   for (exprep in 1:12) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>%
-      dplyr::select(ends_with(paste("_", exprep, sep = "")))
+      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+      collect()
     
     # sort names to be in order of generation
     hap_rep <- hap_rep %>%
@@ -2529,15 +2558,15 @@ for (site in unique(sites)) {
       next
     }
     
-    #rep_n <- grab_sample_sizes(sample_sizes, site_gen_plot, colnames(hap_rep), 10000)
+    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
     
     hap_rep <- cbind(gen0$X0_0_0, hap_rep)
     colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
     
     covmat <- covmat_from_pmat(
       hap_rep,
-      #rep_n$n,
-      correct_for_n = F,
+      rep_n$total_flowers*2,
+      correct_for_n = T,
       input_asin_trans = F
       #procedure = "window",
       #windows = sign_permute_blocks$window
@@ -2555,68 +2584,101 @@ for (site in unique(sites)) {
 }
 
 gt_class <- fread(output_gt_class)
+
+ggplot(gt_class %>% left_join(locations_data, by = "site"), aes(x = factor(gen), y = gt_abs, group = rep)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~city_country+site, scales = "free_y") +
+  labs(x = "Generation", y = "Gabs(t)")
+
+ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"), width = 10, height = 10)
 ```
 
-## plots
+## gt curves - bootstrap intervals
 
 ```{r}
-# mean G(t) and Gabs(t) curves by class, ratio of mean sums
-gt_class_mean <- gt_class %>%
-  group_by(class, gen) %>%
-  summarize(gt = mean(sum_cov)/mean(sum_cov + sum_var),
-            gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov + sum_var),
-            .groups = "drop")
 
-ggplot(gt_class_mean, aes(x = gen, y = gt, group = class, color = class)) +
-  geom_point() +
-  geom_line() +
-  scale_x_discrete(name = "Generation", limits = c(1:3)) +
-  labs(x = "Generation", y = expression(G(t)), color = "Variant class")
+blocks <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
 
-ggsave(paste0(results_path, "/gt_curves_sv_snp.pdf"), device = cairo_pdf,
-       height = 4.5, width = 6)
+length(unique(blocks$window))
 
-ggplot(gt_class_mean, aes(x = gen, y = gt_abs, group = class, color = class)) +
-  geom_point() +
-  geom_line() +
-  scale_x_discrete(name = "Generation", limits = c(1:3)) +
-  labs(x = "Generation", y = expression(G[abs](t)), color = "Variant class")
+output_gt_class_blocks <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/gt_blocks_sv_snp.tsv",
+  sep = ""
+)
 
-ggsave(paste0(results_path, "/gabs_curves_sv_snp.pdf"), device = cairo_pdf,
-       height = 4.5, width = 6)
+# delete previous run
+check_file_exists(output_gt_class_blocks)
 
-# across-pool spread of gt at each generation
-gt_final <- gt_class %>%
-  group_by(class, gen) %>%
-  summarize(gt_pool_sd = sd(gt),
-            gt_abs_pool_sd = sd(gt_abs),
-            .groups = "drop")
+# check that directory exists
+folder_path <- dirname(output_gt_class_blocks)
+if (!dir.exists(folder_path)) {
+  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
+}
 
-# distribution of Gabs across pools at the final generation, by class
-ggplot(gt_class %>%
-         filter(gen == max(gt_class$gen)),
-       aes(x = class, y = gt_abs, fill = class)) +
-  geom_violin(quantiles = 0.5, quantile.linetype = 1) +
-  labs(x = "Variant class", y = expression(G[abs](t)), fill = "Variant class")
+# loop over sites
+for (site in unique(sites)) {
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for (exprep in 1:12) {
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>%
+      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+      collect()
+    
+    hap_rep$window <- blocks$window
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>%
+      relocate(all_of(sort(colnames(hap_rep))))
+    
+    if (ncol(hap_rep) < 3) {
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
+    
+    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
+    
+    hap_rep <- cbind(gen0$X0_0_0, hap_rep)
+    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
+    
+    for(w in unique(blocks$window)){
+      hap_wind <- hap_rep %>%
+        filter(window == w) %>%
+        select(-window)
+      
+      covmat <- covmat_from_pmat(
+        hap_wind,
+        rep_n$total_flowers*2,
+        correct_for_n = T,
+        input_asin_trans = F
+      )
+      
+      gt_result <- gt_from_covmat(covmat)
+      
+      gt_result$site = site
+      gt_result$rep = exprep
+      gt_result$block = w
+      
+      append_table(gt_result, output_gt_class_blocks)
+    }
+  }
+}
 
-ggsave(paste0(results_path, "/gabs_final_gen_sv_snp.pdf"), device = cairo_pdf,
-       height = 4.5, width = 5)
 
-# per-site final-generation Gabs: SNP vs SV
-gt_site <- gt_class %>%
-  filter(gen == max(gt_class$gen)) %>%
-  group_by(class, site) %>%
-  summarize(gt_abs = mean(sum_abs_cov)/mean(sum_abs_cov + sum_var),
-            .groups = "drop")
-
-ggplot(gt_site, aes(x = site, y = gt_abs, fill = class)) +
-  geom_col(position = position_dodge()) +
-  theme(axis.text.x = element_text(angle = 45, hjust = 1)) +
-  labs(x = "Site", y = expression(G[abs](t)), fill = "Variant class")
-
-ggsave(paste0(results_path, "/gabs_final_gen_by_site_sv_snp.pdf"), device = cairo_pdf,
-       height = 4.5, width = 9)
 ```
+
+## gt curves - sign permutation 
+
+```{r}
+
+
+```
+
 
 # Plot OST1 over cell-types
 
