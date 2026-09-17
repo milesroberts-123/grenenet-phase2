@@ -2519,34 +2519,133 @@ for (site in unique(sites)) {
 ## ONE-TIME: calculate block bootstraps
 
 ```{r}
-gt_kmate_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_blocks_sv_snp.tsv")
+gt_kmate_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_kmate.tsv")
 
+gt_point_est <- gt_kmate_blocks %>%
+  group_by(site, rep, gen) %>%
+  summarize(
+    sum_pool_abs_cov = abs(sum(weight*sum_cov)/sum(weight)),
+    sum_pool_var = sum(weight*sum_var)/sum(weight),
+    gt_abs = sum_pool_abs_cov/(sum_pool_abs_cov+sum_pool_var)
+  )
+  
 boot_once <- function(data, i) {
   data %>%
     group_by(site, rep, gen) %>%
     slice_sample(prop = 1, replace = TRUE) %>%
-    summarize(gt_abs = sum(weight*sum_abs_cov)/sum(weight*(sum_abs_cov+sum_var)), .groups = "drop") %>%
+    summarize(
+      sum_pool_abs_cov = abs(sum(weight*sum_cov)/sum(weight)),
+      sum_pool_var = sum(weight*sum_var)/sum(weight),
+      gt_abs = sum(weight*sum_pool_abs_cov)/sum(weight*(sum_pool_abs_cov+sum_pool_var)), .groups = "drop") %>%
     mutate(boot_id = i)
 }
 
 n_boot <- 1000
 boot_results <- map_dfr(1:n_boot, ~boot_once(gt_kmate_blocks, .x))
 
-write.csv(boot_results, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_blocks_bootstrap_kmate.tsv")
-
 boot_summary <- boot_results %>%
   group_by(site, rep, gen) %>%
-  summarize(lwr = quantile(gt_abs, 0.005),
-            med = quantile(gt_abs, 0.5),
-            upr = quantile(gt_abs, 0.995))
+  summarize(q025 = quantile(gt_abs, 0.025),
+            q975 = quantile(gt_abs, 0.975)) %>%
+  left_join(gt_point_est, by = c("site", "rep", "gen")) %>%
+  mutate(lci = 2*gt_abs - q975,
+         uci = 2*gt_abs - q025,
+         lci = if_else(lci < 0, 0, lci),
+         uci = if_else(uci > 1, 1, uci))
+  
+write.csv(boot_results, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_kmate.tsv")
 
-write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_blocks_bootstrap_summary_kmate.tsv")
+write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
 ```
 
 ## ONE-TIME: gt curves - sign permutation 
 
 ```{r}
 
+blocks <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
+
+length(unique(blocks$window))
+
+output_gt_class_blocks <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/gt_sign_permutations_kmate.tsv",
+  sep = ""
+)
+
+# delete previous run
+check_file_exists(output_gt_class_blocks)
+
+# check that directory exists
+folder_path <- dirname(output_gt_class_blocks)
+if (!dir.exists(folder_path)) {
+  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
+}
+
+# make list of sites
+# for now, ignore some sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+
+# number of sign permutations
+num_perm = 1:1000
+
+# loop over sites
+for (site in unique(sites)) {
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for (exprep in 1:12) {
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>%
+      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+      collect()
+    
+    hap_rep$window <- blocks$window
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>%
+      relocate(all_of(sort(colnames(hap_rep))))
+    
+    if (ncol(hap_rep) < 3) {
+      print("Need at least two increments. Skipping to next replicate...")
+      next
+    }
+    
+    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
+    
+    hap_rep <- cbind(gen0$X0_0_0, hap_rep)
+    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
+    
+    for(w in unique(blocks$window)){
+      hap_wind <- hap_rep %>%
+        filter(window == w) %>%
+        select(-window)
+      
+      for(p in num_perm){
+        
+        covmat <- covmat_from_pmat(
+          hap_wind %>% select(-window),
+          rep_n$total_flowers*2,
+          correct_for_n = T,
+          input_asin_trans = F,
+          procedure = "window",
+          windows = hap_wind %>% pull(window)
+        )
+        
+        gt_result <- gt_from_covmat(covmat)
+        
+        gt_result$site = site
+        gt_result$rep = exprep
+        gt_result$block = w
+        gt_result$weight = nrow(hap_wind)
+        gt_result$perm = p
+        
+        append_table(gt_result, output_gt_class_blocks)
+      }
+    }
+  }
+}
 
 ```
 
@@ -2556,16 +2655,15 @@ write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/gre
 ```{r}
 gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
 
-gt_points %>%
-  left_join(boot_summary, by = c("site", "rep", "gen")) %>%
-  select(site, rep, gen, gt_abs, lwr, med, upr)
-
-ggplot(gt_points, aes(x = gen, y = gt_abs, group = rep )) +
+ggplot(boot_summary, aes(x = gen, y = gt_abs, group = rep)) +
   geom_point() +
   geom_line() +
-  geom_errorbar(boot_summary, aes(ymin=lwr, ymax=upr), width=.2, color = "red") +
-  facet_wrap(~site) +
-  theme_minimal()
+  geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
+  facet_wrap(~site, scales = "free_y") +
+  theme_minimal() +
+  labs(x = "Generation", y = "Gabs(t)")
+
+ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"))
 ```
 
 # Plot OST1 over cell-types
