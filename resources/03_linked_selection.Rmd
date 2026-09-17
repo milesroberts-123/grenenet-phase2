@@ -2196,6 +2196,7 @@ the founding seed mix (8 reps). Here we compute gt curves per pool with
 average as the gen0 column and gen1-3 as subsequent time points.
 
 ## directory on savio
+
 ```{r}
 class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
 ```
@@ -2403,11 +2404,9 @@ for (cls in var_class_loop_list) {
       )
       
       gt_result <- gt_from_covmat(covmat)
-      
       gt_result$site = site
       gt_result$rep = exprep
       gt_result$class = paste(cls, collapse = "_")
-      
       append_table(gt_result, output_gt_class)
     }
   }
@@ -2445,7 +2444,7 @@ length(unique(blocks$window))
 output_gt_class_blocks <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_blocks_kmate.tsv",
+  "/gt_blocks_kmate_long.tsv",
   sep = ""
 )
 
@@ -2502,14 +2501,24 @@ for (site in unique(sites)) {
         input_asin_trans = F
       )
       
-      gt_result <- gt_from_covmat(covmat)
+      covlong <- covmat %>% 
+        as.data.frame() %>% 
+        rownames_to_column(var = "A") %>% 
+        pivot_longer(cols = -A, names_to = "B", values_to = "cov")
       
-      gt_result$site = site
-      gt_result$rep = exprep
-      gt_result$block = w
-      gt_result$weight = nrow(hap_wind)
+      covlong$site <- site
+      covlong$rep <- exprep
+      #covlong$class <- cls
+      covlong$block <- w
+      covlong$weight <- nrow(hap_wind)
+      append_table(covlong, output_gt_class_blocks)
       
-      append_table(gt_result, output_gt_class_blocks)
+      # gt_result <- gt_from_covmat(covmat)
+      # gt_result$site = site
+      # gt_result$rep = exprep
+      # gt_result$block = w
+      # gt_result$weight = nrow(hap_wind)
+      # append_table(gt_result, output_gt_class_blocks)
     }
   }
 }
@@ -2519,7 +2528,97 @@ for (site in unique(sites)) {
 ## ONE-TIME: calculate block bootstraps
 
 ```{r}
-gt_kmate_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_kmate.tsv")
+gt_kmate_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_kmate_long.tsv")
+
+# 1. Pool across blocks, KEEP SIGN (no abs here)
+gt_mean_cov <- gt_kmate_blocks %>%
+  group_by(A, B, site, rep) %>%
+  summarise(mean_cov = sum(weight * cov) / sum(weight), .groups = "drop")
+
+parse_time <- function(x) as.integer(str_split_fixed(x, "_", 3)[, 2])
+
+vcov_long <- gt_mean_cov %>%
+  mutate(time_A = parse_time(A), time_B = parse_time(B))
+
+# 2. V(g): diagonal terms (variance is already positive)
+V_tab <- vcov_long %>%
+  filter(time_A == time_B) %>%
+  transmute(site, rep, g = time_A, V = mean_cov)
+
+# 3. C(g): every EARLIER interval paired with g, summed with sign, per (site, rep, g)
+C_tab <- vcov_long %>%
+  filter(time_A != time_B) %>%
+  group_by(site, rep, g = pmax(time_A, time_B)) %>%
+  summarise(C = sum(mean_cov), .groups = "drop")  # both directions included -> natural factor of 2
+
+# 4. Combine, abs() exactly once per g, then cumulate
+G_tab <- full_join(V_tab, C_tab, by = c("site", "rep", "g")) %>%
+  arrange(site, rep, g) %>%
+  group_by(site, rep) %>%
+  mutate(
+    V       = replace_na(V, 0),
+    absC    = abs(replace_na(C, 0)),   # abs applied once, after summing same-g pairs
+    cumV    = cumsum(V),
+    cumAbsC = cumsum(absC),
+    G       = cumAbsC / (cumV + cumAbsC)
+  ) %>%
+  ungroup()
+
+
+
+
+
+
+
+
+
+
+
+# check weighted blocks match point estimates
+gt_mean_cov <- gt_kmate_blocks %>%
+  group_by(A, B, site, rep) %>%
+  summarise(mean_cov = abs(sum(weight*cov)/sum(weight)), .groups = "drop")
+
+parse_time <- function(x) as.integer(str_split_fixed(x, "_", 3)[, 2])
+
+vcov_long <- gt_mean_cov %>%
+  mutate(time_A = parse_time(A),
+         time_B = parse_time(B))
+
+# V(g): diagonal terms
+V_tab <- vcov_long %>%
+  filter(time_A == time_B) %>%
+  transmute(site, rep, s = time_A, V = mean_cov)
+
+# C(g): adjacent-interval covariances only (avoid double-counting the symmetric matrix)
+C_tab <- vcov_long %>%
+  filter(time_B != time_A) %>%
+  transmute(site, rep, s = time_A, t = time_B, C = mean_cov)
+
+# Combine and compute cumulative G(t), abs() applied AFTER pooling (already pooled per site/rep here)
+G_tab <- full_join(V_tab, C_tab, by = c("site", "rep", "s")) %>%
+  arrange(site, rep, g) %>%
+  group_by(site, rep) %>%
+  mutate(
+    V        = replace_na(V, 0),
+    C        = (replace_na(C, 0)),
+    cumV     = cumsum(V),
+    cumC  = cumsum(C),
+    G        = cumC / (cumV + cumC)
+  ) %>%
+  ungroup()
+
+
+print(G_tab)
+
+
+
+# calculate G(t)
+gt_mean_cov$is_var <- gt_mean_cov$A == gt_mean_cov$B
+
+gt_mean_cov$t1 <- 
+
+
 
 gt_point_est <- gt_kmate_blocks %>%
   group_by(site, rep, gen) %>%
@@ -2565,6 +2664,11 @@ write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/gre
 blocks <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
 
 length(unique(blocks$window))
+
+# add a random sign 
+# blocks <- blocks %>%
+#   group_by(window) %>%
+#   mutate(sign_flip = sample(c(-1, 1), size = 1, replace = T))
 
 output_gt_class_blocks <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
@@ -2617,35 +2721,29 @@ for (site in unique(sites)) {
     hap_rep <- cbind(gen0$X0_0_0, hap_rep)
     colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
     
-    for(w in unique(blocks$window)){
-      hap_wind <- hap_rep %>%
-        filter(window == w) %>%
-        select(-window)
-      
       for(p in num_perm){
         
         covmat <- covmat_from_pmat(
-          hap_wind %>% select(-window),
+          hap_rep %>% select(-window),
           rep_n$total_flowers*2,
           correct_for_n = T,
           input_asin_trans = F,
           procedure = "window",
-          windows = hap_wind %>% pull(window)
+          windows = hap_rep %>% pull(window)
         )
         
         gt_result <- gt_from_covmat(covmat)
         
         gt_result$site = site
         gt_result$rep = exprep
-        gt_result$block = w
-        gt_result$weight = nrow(hap_wind)
+        # gt_result$block = w
+        # gt_result$weight = nrow(hap_wind)
         gt_result$perm = p
         
         append_table(gt_result, output_gt_class_blocks)
       }
     }
   }
-}
 
 ```
 
