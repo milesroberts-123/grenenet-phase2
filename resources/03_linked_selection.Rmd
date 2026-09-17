@@ -63,6 +63,8 @@ theme_set(
       panel.grid.minor = element_blank()
     )
 )
+
+# color palettes
 ```
 
 # Prepare allele frequencies
@@ -369,195 +371,6 @@ ld_matrix <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/g
 ```
 
 # Feder test
-
-## LD pruned data
-
-```{r}
-# subset different generations
-gen1 <- hapfire[,grepl("_1_", names(hapfire))] 
-
-gen2 <- hapfire[,grepl("_2_", names(hapfire))] 
-
-gen3 <- hapfire[,grepl("_3_", names(hapfire))]
-
-gen4 <- hapfire[,grepl("_4_", names(hapfire))] 
-
-# subset to only plots present in all 3 years
-shared_gen1 <- (gsub("_1_","_",names(gen1)) %in% gsub("_2_","_",names(gen2)))& (gsub("_1_","_",names(gen1)) %in% gsub("_3_","_",names(gen3))) & (gsub("_1_","_",names(gen1)) %in% gsub("_4_","_",names(gen4)))
-
-shared_gen2 <- (gsub("_2_","_",names(gen2)) %in% gsub("_3_","_",names(gen3))) & (gsub("_2_","_",names(gen2)) %in% gsub("_1_","_",names(gen1))) & (gsub("_2_","_",names(gen2)) %in% gsub("_4_","_",names(gen4)))
-
-shared_gen3 <- (gsub("_3_","_",names(gen3)) %in% gsub("_2_","_",names(gen2))) & (gsub("_3_","_",names(gen3)) %in% gsub("_1_","_",names(gen1))) & (gsub("_3_","_",names(gen3)) %in% gsub("_4_","_",names(gen4)))
-
-shared_gen4 <- (gsub("_4_","_",names(gen4)) %in% gsub("_2_","_",names(gen2))) & (gsub("_4_","_",names(gen4)) %in% gsub("_1_","_",names(gen1))) & (gsub("_4_","_",names(gen4)) %in% gsub("_3_","_",names(gen3)))
-
-gen1_sub <- gen1[,shared_gen1]
-
-gen2_sub <- gen2[,shared_gen2]
-
-gen3_sub <- gen3[,shared_gen3]
-
-gen4_sub <- gen4[,shared_gen4]
-
-# sort columns to match
-gen4_sub <- gen4_sub[,paste("1_4", c(1,4,5,6,7,8,9,10,11,12), sep = "_")]
-
-# calculate statistic
-y1 <- (gen1_sub - gen0$V3)/sqrt(2*gen0$V3*(1-gen0$V3)*(1-0))
-y1$gen <- 1
-y1$CHROM <- gen0$V1
-y1$POS <- gen0$V2
-y1 <- melt(y1, id = c("gen", "CHROM", "POS"))
-
-y2 <- (gen2_sub - gen1_sub)/sqrt(2*gen1_sub*(1-gen1_sub)*(2-1))
-y2$gen <- 2
-y2$CHROM <- gen0$V1
-y2$POS <- gen0$V2
-y2 <- melt(y2, id = c("gen", "CHROM", "POS"))
-
-y3 <- (gen3_sub - gen2_sub)/sqrt(2*gen2_sub*(1-gen2_sub)*(3-2))
-y3$gen <- 3
-y3$CHROM <- gen0$V1
-y3$POS <- gen0$V2
-y3 <- melt(y3, id = c("gen", "CHROM", "POS"))
-
-yvalues <- rbind(y1, y2, y3)
-yvalues$SITE <- gsub("X", "", gsub("_.*", "", yvalues$variable))
-yvalues$REP <- gsub(".*_", "", yvalues$variable)
-
-t_test_stat <- yvalues %>% group_by(CHROM, POS, SITE) %>% summarize(ybar = mean(value, na.rm = T), s2 = var(value, na.rm = T), n = n())
-
-t_test_stat$tvalue <- t_test_stat$ybar/sqrt(t_test_stat$s2/t_test_stat$n)
-
-t_test_stat$pvalue <- dt(t_test_stat$tvalue, df = t_test_stat$n)
-
-# Manhattan plot
-map(unique(t_test_stat$SITE), ~plot_manhattan_by_site(data = t_test_stat, site = .x, today, height = 4, width = 10))
-
-#load("../data/allele_allyears_frequencies_long_raw_climate.rda")
-# calculate mean and average
-
-# ybar <- (y1 + y2 + y3)/3
-# 
-# s2 <- (1/(3-1))*( (y1 - ybar)^2 + (y2 - ybar)^2 + (y3 - ybar)^2 )
-# 
-# t_test_stat <- ybar/sqrt(s2/3)
-# 
-# # 
-# t_test_stat$CHROM <- gen0$V1
-# 
-# t_test_stat$POS <- gen0$V2
-# 
-# t_test_stat <- melt(t_test_stat, id = c("CHROM", "POS"))
-# 
-# t_test_stat$SITE <- gsub("X", "", gsub("_.*", "", t_test_stat$variable))
-# 
-# t_test_stat$REP <- gsub(".*_", "", t_test_stat$variable)
-# 
-# # average across reps of each pos at each site
-# mean_t_stat <- t_test_stat %>% 
-#   group_by(CHROM, POS, SITE) %>% 
-#   summarize(MEANT = mean(value, na.rm = T), SDT = sd(value, na.rm = T))
-# 
-# # calculate p-values
-# #
-# mean_t_stat$PVALUE <- dt(mean_t_stat$MEANT, df = 2)
-# 
-# # adjust p-values
-# mean_t_stat$ADJPVALUE <- p.adjust(mean_t_stat$PVALUE, method = "bonferroni")
-# 
-# # plot distribution of stats across positions and sites
-# ggplot(mean_t_stat, aes(x = MEANT)) +
-#   geom_density()
-#   xlim(c(-10, 10))
-#   
-# # Manhattan plot
-# map(unique(mean_t_stat$SITE), ~manhattan_by_site(data = mean_t_stat, site = .x, today, height = 4, width = 10))
-
-#
-#summary(unlist(as.vector(t_test_stat)))
-
-```
-
-## Phase 1 data
-
-```{r}
-
-# Source - https://stackoverflow.com/a/33051935
-# Posted by scoa
-# Retrieved 2026-02-27, License - CC BY-SA 3.0
-# con <- file("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/merged_hapFIRE_allele_frequency.csv","r")
-# F_header <- readLines(con,n=1)
-# close(con)
-# 
-# F_subset <- read_csv("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/merged_hapFIRE_allele_frequency.csv", col_select = "1_1_1")
-
-gen0 <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/average_seedmix_p0.txt", sep = "\t")
-
-process_F <- function(gen0, chunk_size, output) {
-  function(x, pos) {
-    print(pos)
-    print(Sys.time())
-    gen0 <- gen0[pos:(pos + chunk_size - 1),]
-    # generations
-    header_names <- names(x)
-    gen1 <- x[,grepl("_1_", header_names)] 
-    gen2 <- x[,grepl("_2_", header_names)] 
-    gen3 <- x[,grepl("_3_", header_names)]
-    
-    # subset to populations shared across generations
-    names_gen1 <- names(gen1)
-    names_gen2 <- names(gen2)
-    names_gen3 <- names(gen3)
-    
-    shared_gen1 <- (gsub("_1_","_",names_gen1) %in% gsub("_2_","_",names_gen2)) & (gsub("_1_","_",names_gen1) %in% gsub("_3_","_",names(gen3)))
-    shared_gen2 <- (gsub("_2_","_",names_gen2) %in% gsub("_3_","_",names_gen3)) & (gsub("_2_","_",names_gen2) %in% gsub("_1_","_",names_gen1))
-    shared_gen3 <- (gsub("_3_","_",names_gen3) %in% gsub("_2_","_",names_gen2)) & (gsub("_3_","_",names_gen3) %in% gsub("_1_","_",names_gen1))
-    
-    gen1_sub <- gen1[,shared_gen1]
-    gen2_sub <- gen2[,shared_gen2]
-    gen3_sub <- gen3[,shared_gen3] 
-    # calculate statistic
-    y1 <- (gen1_sub - gen0$V3)/sqrt(2*gen0$V3*(1-gen0$V3)*(1-0))
-    y1$gen <- 1
-    y1$CHROM <- gen0$V1
-    y1$POS <- gen0$V2
-    y1 <- melt(y1, id = c("gen", "CHROM", "POS"))
-    
-    y2 <- (gen2_sub - gen1_sub)/sqrt(2*gen1_sub*(1-gen1_sub)*(2-1))
-    y2$gen <- 2
-    y2$CHROM <- gen0$V1
-    y2$POS <- gen0$V2
-    y2 <- melt(y2, id = c("gen", "CHROM", "POS"))
-    
-    y3 <- (gen3_sub - gen2_sub)/sqrt(2*gen2_sub*(1-gen2_sub)*(3-2))
-    y3$gen <- 3
-    y3$CHROM <- gen0$V1
-    y3$POS <- gen0$V2
-    y3 <- melt(y3, id = c("gen", "CHROM", "POS"))
-    
-    yvalues <- rbind(y1, y2, y3)
-    yvalues$SITE <- gsub("X", "", gsub("_.*", "", yvalues$variable))
-    yvalues$REP <- gsub(".*_", "", yvalues$variable)
-    
-    t_test_stat <- yvalues %>% group_by(CHROM, POS, SITE) %>% summarize(ybar = mean(value, na.rm = T), s2 = var(value, na.rm = T), n = n())
-    
-    t_test_stat$tvalue <- t_test_stat$ybar/sqrt(t_test_stat$s2/t_test_stat$n)
-    
-    t_test_stat$pvalue <- dt(t_test_stat$tvalue, df = t_test_stat$n)
-    
-    write.table(t_test_stat, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
-  }
-}
-
-read_csv_chunked(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/merged_hapFIRE_allele_frequency.csv",
-  #callback = SideEffectChunkCallback$new(function(x, pos){print(pos)}),
-  callback = SideEffectChunkCallback$new(process_F(gen0, 1000, "feder_t_test.txt")),
-  chunk_size = 1000)
-                
-
-```
 
 ## Phase 2 data
 
@@ -2502,7 +2315,7 @@ flower_counts <- read_csv(flower_counts, id = "file_path")
 
 ```
 
-## one-time: randomly switch tracked allele
+## ONE-TIME: randomly switch tracked allele
 
 ```{r}
 
@@ -2524,7 +2337,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 output_gt_class <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_point_estimates_sv_snp.tsv",
+  "/gt_point_estimates_kmate_classes.tsv",
   sep = ""
 )
 
@@ -2537,64 +2350,91 @@ if (!dir.exists(folder_path)) {
   dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
 }
 
-# loop over sites
-for (site in unique(sites)) {
-  print(paste("Site:", site))
-  hap_site <- hapfire %>% 
-    dplyr::select(starts_with(paste(site, "_", sep = "")))
+# estimate curves once for each class of variants
+var_classes <- unique(gen0$class)
+var_class_loop_list <- list(var_classes, var_classes[1], var_classes[2], var_classes[3])
+
+for (cls in var_class_loop_list) {
   
-  for (exprep in 1:12) {
-    print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>%
-      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
-      collect()
+  print(paste("Looping for variant class: ", cls, "...", collapse = "_"))
+  cls_idx <- gen0 %>% 
+    mutate(row_idx = row_number()) %>% 
+    filter(class %in% cls) %>%
+    pull(row_idx)
+  
+  # loop over sites
+  for (site in unique(sites)) {
+    print(paste("Site:", site))
+    hap_site <- hapfire %>% 
+      dplyr::select(starts_with(paste(site, "_", sep = "")))
     
-    # sort names to be in order of generation
-    hap_rep <- hap_rep %>%
-      relocate(all_of(sort(colnames(hap_rep))))
-    
-    if (ncol(hap_rep) <= 2) {
-      print("Need at least two increments. Skipping to next replicate...")
-      next
+    for (exprep in 1:12) {
+      print(paste("Rep:", exprep))
+      hap_rep <- hap_site %>%
+        dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+        collect()
+      
+      # subset to variant class
+      gen0_cls <- gen0 %>%
+        filter(row_number() %in% cls_idx)
+      
+      hap_cls <- hap_rep %>%
+        filter(row_number() %in% cls_idx)
+      
+      # sort names to be in order of generation
+      hap_cls <- hap_cls %>%
+        relocate(all_of(sort(colnames(hap_cls))))
+      
+      if (ncol(hap_cls) <= 2) {
+        print("Need at least two increments. Skipping to next replicate...")
+        next
+      }
+      
+      rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_cls), 10000, total_flowers)
+      
+      hap_cls <- cbind(gen0_cls$X0_0_0, hap_cls)
+      colnames(hap_cls)[1] = paste(site, "_0_", exprep, sep = "")
+      
+      covmat <- covmat_from_pmat(
+        hap_cls,
+        rep_n$total_flowers*2,
+        correct_for_n = T,
+        input_asin_trans = F
+      )
+      
+      gt_result <- gt_from_covmat(covmat)
+      
+      gt_result$site = site
+      gt_result$rep = exprep
+      gt_result$class = paste(cls, collapse = "_")
+      
+      append_table(gt_result, output_gt_class)
     }
-    
-    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
-    
-    hap_rep <- cbind(gen0$X0_0_0, hap_rep)
-    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
-    
-    covmat <- covmat_from_pmat(
-      hap_rep,
-      rep_n$total_flowers*2,
-      correct_for_n = T,
-      input_asin_trans = F
-      #procedure = "window",
-      #windows = sign_permute_blocks$window
-    )
-    
-    gt_result <- gt_from_covmat(covmat)
-    
-    gt_result$site = site
-    gt_result$rep = exprep
-    #gt_result$perm = p
-    
-    append_table(gt_result, output_gt_class)
-    #gt_perm_results <- rbind(gt_perm_results, gt_perm_result)
   }
 }
 
 gt_class <- fread(output_gt_class)
 
-ggplot(gt_class %>% left_join(locations_data, by = "site"), aes(x = factor(gen), y = gt_abs, group = rep)) +
+gt_class$class <- gsub("smallindel_sv_snp", "all", gt_class$class)
+gt_class$class <- gsub("smallindel", "indel", gt_class$class)
+
+ggplot(gt_class, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) +
   geom_point() +
   geom_line() +
-  facet_wrap(~city_country+site, scales = "free_y") +
+  facet_wrap(~site+class) +
   labs(x = "Generation", y = "Gabs(t)")
 
-ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"), width = 10, height = 10)
+ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_classes.pdf"), width = 10, height = 10)
+
+my_comparisons <- list( c("sv", "snp") )
+ggplot(gt_class %>% filter(gen == 3), aes(x = factor(gen), y = gt_abs, color = class)) +
+  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+  labs(x = "Generation", y = "Gabs(t)") +
+  stat_compare_means()
+
 ```
 
-## gt curves - bootstrap intervals
+## ONE-TIME: gt curves - bootstrap intervals
 
 ```{r}
 
@@ -2605,7 +2445,7 @@ length(unique(blocks$window))
 output_gt_class_blocks <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_blocks_sv_snp.tsv",
+  "/gt_blocks_kmate.tsv",
   sep = ""
 )
 
@@ -2617,6 +2457,10 @@ folder_path <- dirname(output_gt_class_blocks)
 if (!dir.exists(folder_path)) {
   dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
 }
+
+# make list of sites
+# for now, ignore some sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # loop over sites
 for (site in unique(sites)) {
@@ -2663,22 +2507,66 @@ for (site in unique(sites)) {
       gt_result$site = site
       gt_result$rep = exprep
       gt_result$block = w
+      gt_result$weight = nrow(hap_wind)
       
       append_table(gt_result, output_gt_class_blocks)
     }
   }
 }
 
-
 ```
 
-## gt curves - sign permutation 
+## ONE-TIME: calculate block bootstraps
+
+```{r}
+gt_kmate_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_blocks_sv_snp.tsv")
+
+boot_once <- function(data, i) {
+  data %>%
+    group_by(site, rep, gen) %>%
+    slice_sample(prop = 1, replace = TRUE) %>%
+    summarize(gt_abs = sum(weight*sum_abs_cov)/sum(weight*(sum_abs_cov+sum_var)), .groups = "drop") %>%
+    mutate(boot_id = i)
+}
+
+n_boot <- 1000
+boot_results <- map_dfr(1:n_boot, ~boot_once(gt_kmate_blocks, .x))
+
+write.csv(boot_results, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_blocks_bootstrap_kmate.tsv")
+
+boot_summary <- boot_results %>%
+  group_by(site, rep, gen) %>%
+  summarize(lwr = quantile(gt_abs, 0.005),
+            med = quantile(gt_abs, 0.5),
+            upr = quantile(gt_abs, 0.995))
+
+write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_blocks_bootstrap_summary_kmate.tsv")
+```
+
+## ONE-TIME: gt curves - sign permutation 
 
 ```{r}
 
 
 ```
 
+
+## all together: gt curves with CI and null
+
+```{r}
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
+
+gt_points %>%
+  left_join(boot_summary, by = c("site", "rep", "gen")) %>%
+  select(site, rep, gen, gt_abs, lwr, med, upr)
+
+ggplot(gt_points, aes(x = gen, y = gt_abs, group = rep )) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(boot_summary, aes(ymin=lwr, ymax=upr), width=.2, color = "red") +
+  facet_wrap(~site) +
+  theme_minimal()
+```
 
 # Plot OST1 over cell-types
 
