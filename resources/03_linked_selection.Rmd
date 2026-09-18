@@ -36,13 +36,7 @@ library(scales)
 library(rsq)
 library(grumpy)
 
-box::use(./R/gt[...],
-         ./R/plot[...],
-         ./R/misc[...],
-         )
-
-# test modules
-test_file("./R/tests.R")
+box::use(rventures[...])
 
 # file paths
 today <- Sys.Date()
@@ -796,7 +790,8 @@ Q_climate <- cov(clim_matrix)
 # Correlation version
 R_climate <- cor(clim_matrix)
 
-plot_var_cov_matrix(R_climate, paste("../results/", today, "/climate_increment_correlations.pdf", sep = ""), legend_name = "Mean\ncor(\u0394Ti, \u0394Tj)", low_col = "#023198", mid_col = "white", high_col = "#7E1700")
+p_climate_cor <- plot_var_cov_matrix(R_climate, legend_name = "Mean\ncor(\u0394Ti, \u0394Tj)", low_col = "#023198", mid_col = "white", high_col = "#7E1700")
+ggsave(paste("../results/", today, "/climate_increment_correlations.pdf", sep = ""), p_climate_cor, device = cairo_pdf)
 
 # see if covariant allele frequency trajectories follow covariant temperate trajectories, by site
 #mean_dp_cov_by_site <- as.data.frame(melted_cov_dps %>% group_by(site, Var1, Var2) %>% summarize(mean_cov = mean(value)) %>% filter(!str_detect(Var1, "0") & !str_detect(Var2, "0")))
@@ -806,29 +801,23 @@ mean_dp_cov_by_site <- as.data.frame(melted_cov_dps %>% filter(!str_detect(Var1,
 mean_dp_cov_by_site <- mean_dp_cov_by_site[!duplicated(mean_dp_cov_by_site$value),]
 
 # observation
-obs_dp_dt_match <- check_dp_match_dt(mean_dp_cov_by_site, clim_increments)
+# LEGACY (climate-dt null section; depends on the never-loaded `permute` pkg and
+# check_dp_match_dt, which was not migrated to rventures):
+# obs_dp_dt_match <- check_dp_match_dt(mean_dp_cov_by_site, clim_increments)
 
-# permutation test
-permuted_dp <- permute(mean_dp_cov_by_site, n = 1000, value)
-
-permuted_dt <- permute(clim_increments, n = 1000, dT)
-
-list_of_dps <- permuted_dp$perm %>% 
-  map(as.data.frame)
-
-list_of_dts <-permuted_dt$perm %>% 
-  map(as.data.frame)
-
-null_dist <- mapply(check_dp_match_dt, x = list_of_dps, y = list_of_dts)
-
-null_dist <- as.data.frame(t(null_dist))
-
-ggplot(null_dist, aes(x = `TRUE`/(`TRUE`+`FALSE`))) +
-  geom_density(lwd = 2) +
-  geom_vline(xintercept = obs_dp_dt_match["TRUE"]/sum(obs_dp_dt_match), lwd = 2, color = "red",) +
-  labs(x = "Proportion of sgn Cov(\u0394pi, \u0394pj) = sgn \u0394Ti\u0394Tj", title = "Permuted null")
-
-ggsave(paste("../results/", today, "/linked_selection_cov_matches_bio1.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
+# LEGACY (climate-dt null section; depends on the never-loaded `permute` pkg and
+# check_dp_match_dt, which was not migrated to rventures):
+# permuted_dp <- permute(mean_dp_cov_by_site, n = 1000, value)
+# permuted_dt <- permute(clim_increments, n = 1000, dT)
+# list_of_dps <- permuted_dp$perm %>% map(as.data.frame)
+# list_of_dts <- permuted_dt$perm %>% map(as.data.frame)
+# null_dist <- mapply(check_dp_match_dt, x = list_of_dps, y = list_of_dts)
+# null_dist <- as.data.frame(t(null_dist))
+# ggplot(null_dist, aes(x = `TRUE`/(`TRUE`+`FALSE`))) +
+#   geom_density(lwd = 2) +
+#   geom_vline(xintercept = obs_dp_dt_match["TRUE"]/sum(obs_dp_dt_match), lwd = 2, color = "red",) +
+#   labs(x = "Proportion of sgn Cov(\u0394pi, \u0394pj) = sgn \u0394Ti\u0394Tj", title = "Permuted null")
+# ggsave(paste("../results/", today, "/linked_selection_cov_matches_bio1.pdf", sep = ""), height = 7, width = 7, device = cairo_pdf)
 
 # Compute anomalies
 # "anomaly" is bio1 - average bio1 (residual bio1), which means there will by definition be some positive and some negative anomalies at each site
@@ -900,7 +889,8 @@ Cor_anom <- cor(anom_matrix)
 
 cat("\nAnomaly covariance matrix (TerraClim - bioclim baseline):\n")
 
-plot_var_cov_matrix(Cor_anom, paste("../results/", today, "/climate_anomalies_correlations.pdf", sep = ""), legend_name = "Mean\ncor(Ai, Aj)", low_col = "#023198", mid_col = "#C0E9C2", high_col = "#7E1700")
+p_anom_cor <- plot_var_cov_matrix(Cor_anom, legend_name = "Mean\ncor(Ai, Aj)", low_col = "#023198", mid_col = "#C0E9C2", high_col = "#7E1700")
+ggsave(paste("../results/", today, "/climate_anomalies_correlations.pdf", sep = ""), p_anom_cor, device = cairo_pdf)
 
 # try cmip6 model
 bbox <- get_1km_bbox(37.8715, -122.2730)
@@ -5668,9 +5658,11 @@ if(!exists(unbiased_cov_pdiffs)){
 }
 
 # plot the entire matrix as a heatmap
-plot_var_cov_matrix(cov2cor(unbiased_cov_pdiffs_mat), paste(results_path, "unbiased_cor_mat_heatmap.pdf"), include_values = F, include_tick_labels = F, width = 7, height = 7, tile_or_raster = "raster")
+p_unbiased_cor <- plot_var_cov_matrix(cov2cor(unbiased_cov_pdiffs_mat), include_values = F, include_tick_labels = F, width = 7, height = 7, tile_or_raster = "raster")
+ggsave(paste(results_path, "unbiased_cor_mat_heatmap.pdf"), p_unbiased_cor)
 
-plot_var_cov_matrix(sign(unbiased_cov_pdiffs_mat) == 1, paste(results_path, "unbiased_var_cov_mat_heatmap.pdf"), include_values = F, include_tick_labels = F, width = 7, height = 7, tile_or_raster = "raster", discrete_or_continuous = "discrete")
+p_unbiased_sign <- plot_var_cov_matrix(sign(unbiased_cov_pdiffs_mat) == 1, include_values = F, include_tick_labels = F, width = 7, height = 7, tile_or_raster = "raster", discrete_or_continuous = "discrete")
+ggsave(paste(results_path, "unbiased_var_cov_mat_heatmap.pdf"), p_unbiased_sign)
 
 # Try doing a PCA from bias-corrected increment covariances
 cor_matrix   <- cov2cor(unbiased_cov_pdiffs_mat)
@@ -6048,11 +6040,11 @@ h = 0.5
 s = 0.05
 q0 = 0.5
 
-selection = WF.sel(N, q0, h, rep(s, times = gen), gen)
+selection = WF_sel(N, q0, h, rep(s, times = gen), gen)
 
-drift = WF.sel(N, q0, h, rep(0,times = gen), gen)
+drift = WF_sel(N, q0, h, rep(0,times = gen), gen)
 
-fluct <- WF.sel(N, q0, h, c(rep(s, times = gen/2), rep(-3*s, times = gen/2)), gen)
+fluct <- WF_sel(N, q0, h, c(rep(s, times = gen/2), rep(-3*s, times = gen/2)), gen)
 
 plotdata <- data.frame(
   gen = 0:gen,
@@ -6077,10 +6069,10 @@ set.seed(123)
 
 plotdata <- data.frame(
   gen = 0:gen,
-  selection_1 = c(q0, WF.sel(N, q0, h, rep(s, times = gen), gen)/N),
-  selection_2 = c(q0, WF.sel(N, q0, h, rep(s, times = gen), gen)/N),
-  drift_1 = c(q0, WF.sel(N, q0, h, rep(0, times = gen), gen)/N),
-  drift_2 = c(q0, WF.sel(N, q0, h, rep(0, times = gen), gen)/N)
+  selection_1 = c(q0, WF_sel(N, q0, h, rep(s, times = gen), gen)/N),
+  selection_2 = c(q0, WF_sel(N, q0, h, rep(s, times = gen), gen)/N),
+  drift_1 = c(q0, WF_sel(N, q0, h, rep(0, times = gen), gen)/N),
+  drift_2 = c(q0, WF_sel(N, q0, h, rep(0, times = gen), gen)/N)
 )
 
 plotdata <- reshape2::melt(plotdata, id = "gen")
@@ -6101,16 +6093,16 @@ ggsave(paste("../results/by-date/", today, "/replicate_covariances.pdf", sep = "
 
 plotdata2 <- data.frame(
   gen = 0:gen,
-  n1 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n2 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n3 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n4 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n5 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n6 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n7 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n8 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n9 =  c(q0, WF.sel(N, q0, h, 0, gen)/N),
-  n10=  c(q0, WF.sel(N, q0, h, 0, gen)/N)
+  n1 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n2 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n3 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n4 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n5 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n6 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n7 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n8 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n9 =  c(q0, WF_sel(N, q0, h, 0, gen)/N),
+  n10=  c(q0, WF_sel(N, q0, h, 0, gen)/N)
 )
 
 plotdata2 <- melt(plotdata2, id = "gen")
@@ -6269,6 +6261,8 @@ n = 250 # average pool size in number of individuals
 d = 10000 # high depth, because of reconstruction
 h = 0.5
 
+# NOTE: WF_sel and simulate_af_est here shadow the rventures versions; this
+# self-contained simulation section keeps its own local definitions (below).
 r*t*n # want to target 100,000 survivors
 
 # Simulation loop ======================================
@@ -6282,7 +6276,7 @@ for(i in 1:num_sims){
   sampling_sizes <- 2*rpois(t, n)
   
   # allele frequency trajectory
-  true_freq_traj <- reshape2::melt(replicate(r, WF.sel(2*N, p0, h, rep(s, times = t), t)))
+  true_freq_traj <- reshape2::melt(replicate(r, WF_sel(2*N, p0, h, rep(s, times = t), t)))
   
   # assuming constant depth across time points
   obs_freq_traj <- mapply(simulate_af_est, true_freq_traj$value, sampling_sizes, MoreArgs = list(d = d))
@@ -6336,6 +6330,11 @@ true_freq_traj %>% group_by(Var1) %>% summarize(p = mean(value))
 
 ```{r}
 ## ---- core functions --------------------------------------------------------
+## Local (notebook-scoped) versions of fitfreq / WF_sel / simulate_af_est used
+## only by the pool-seq power-analysis simulation; they intentionally shadow the
+## rventures exports (different signatures: simulate_af_est takes Np/Nq for the
+## hypergeometric sampler).
+## NOTE: these override the rventures versions in the global env from here on.
 #' Allele frequency after one generation of selection (diploid, q = selected allele).
 #' AA = 1, Aa = 1 + h*s, aa = 1 + s.
 fitfreq <- function(q, h, s) {
@@ -6397,7 +6396,7 @@ all_mod_res <- vector("list", num_sims)
 for (i in seq_len(num_sims)) {
  
   ## allele frequency trajectories: t x r matrix -> long (Var1 = gen, Var2 = rep)
-  traj <- replicate(r, WF.sel(2 * N_dip, p0, h, rep(s, t), t))
+  traj <- replicate(r, WF_sel(2 * N_dip, p0, h, rep(s, t), t))
   df   <- reshape2::melt(traj)              # columns: Var1, Var2, value
   names(df)[names(df) == "value"] <- "p_true"
  
