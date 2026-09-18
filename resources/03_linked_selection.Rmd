@@ -2607,9 +2607,9 @@ boot_summary <- boot_results %>%
          lci = if_else(lci < 0, 0, lci),
          uci = if_else(uci > 1, 1, uci))
 
-write.csv(boot_results, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_kmate.tsv")
+write.csv(boot_results, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_kmate.tsv", quote = F, row.names = F)
 
-write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
+write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv", quote = F, row.names = F)
 ```
 
 ## ONE-TIME: gt curves - sign permutation 
@@ -2646,7 +2646,7 @@ if (!dir.exists(folder_path)) {
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # number of sign permutations
-num_perm = 1:100
+num_perm = 1:500
 
 # loop over sites
 for (site in unique(sites)) {
@@ -2727,7 +2727,7 @@ ggplot(boot_summary, aes(x = factor(g), y = G, group = rep)) +
   theme_minimal() +
   labs(x = "Generation", y = "Gabs(t)")
 
-ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"))
+ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"), width = 9, height = 9)
 ```
 
 # Plot OST1 over cell-types
