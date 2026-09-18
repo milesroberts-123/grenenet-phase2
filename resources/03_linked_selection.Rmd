@@ -2530,8 +2530,12 @@ for (site in unique(sites)) {
 ```{r}
 gt_kmate_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_kmate_long.tsv")
 
+#### Point estimates ####
+
+gt_from_blocked_long_varcov <- function(data) {
+  
 # 1. Pool across blocks, KEEP SIGN (no abs here)
-gt_mean_cov <- gt_kmate_blocks %>%
+gt_mean_cov <- data %>%
   group_by(A, B, site, rep) %>%
   summarise(mean_cov = sum(weight * cov) / sum(weight), .groups = "drop")
 
@@ -2562,96 +2566,47 @@ G_tab <- full_join(V_tab, C_tab, by = c("site", "rep", "g")) %>%
     cumAbsC = cumsum(absC),
     G       = cumAbsC / (cumV + cumAbsC)
   ) %>%
-  ungroup()
-
-
-
-
-
-
-
-
-
-
-
-# check weighted blocks match point estimates
-gt_mean_cov <- gt_kmate_blocks %>%
-  group_by(A, B, site, rep) %>%
-  summarise(mean_cov = abs(sum(weight*cov)/sum(weight)), .groups = "drop")
-
-parse_time <- function(x) as.integer(str_split_fixed(x, "_", 3)[, 2])
-
-vcov_long <- gt_mean_cov %>%
-  mutate(time_A = parse_time(A),
-         time_B = parse_time(B))
-
-# V(g): diagonal terms
-V_tab <- vcov_long %>%
-  filter(time_A == time_B) %>%
-  transmute(site, rep, s = time_A, V = mean_cov)
-
-# C(g): adjacent-interval covariances only (avoid double-counting the symmetric matrix)
-C_tab <- vcov_long %>%
-  filter(time_B != time_A) %>%
-  transmute(site, rep, s = time_A, t = time_B, C = mean_cov)
-
-# Combine and compute cumulative G(t), abs() applied AFTER pooling (already pooled per site/rep here)
-G_tab <- full_join(V_tab, C_tab, by = c("site", "rep", "s")) %>%
-  arrange(site, rep, g) %>%
-  group_by(site, rep) %>%
-  mutate(
-    V        = replace_na(V, 0),
-    C        = (replace_na(C, 0)),
-    cumV     = cumsum(V),
-    cumC  = cumsum(C),
-    G        = cumC / (cumV + cumC)
-  ) %>%
-  ungroup()
-
-
-print(G_tab)
-
-
-
-# calculate G(t)
-gt_mean_cov$is_var <- gt_mean_cov$A == gt_mean_cov$B
-
-gt_mean_cov$t1 <- 
-
-
-
-gt_point_est <- gt_kmate_blocks %>%
-  group_by(site, rep, gen) %>%
-  summarize(
-    sum_pool_abs_cov = abs(sum(weight*sum_cov)/sum(weight)),
-    sum_pool_var = sum(weight*sum_var)/sum(weight),
-    gt_abs = sum_pool_abs_cov/(sum_pool_abs_cov+sum_pool_var)
-  )
+  complete(g = 1:max(g), fill = list(V = 0, absC = 0, cumV = 0, cumAbsC = 0, G = 0)) %>%
+  ungroup() 
   
+
+return(G_tab)
+
+}
+
+gt_point_est <- gt_from_blocked_long_varcov(gt_kmate_blocks)
+
+ggplot(gt_point_est, aes(x = factor(g), y = G, group = rep)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~site, scales = "free_y") +
+  labs(x = "Generation", y = "Gabs(t)")
+
+ggsave(paste0("../results/by-date/", today, "/g_abs_pooled.pdf"), width = 9 , height = 9)
+
+
+#### Block bootstraps ####
 boot_once <- function(data, i) {
   data %>%
-    group_by(site, rep, gen) %>%
+    group_by(site, rep, A, B) %>%
     slice_sample(prop = 1, replace = TRUE) %>%
-    summarize(
-      sum_pool_abs_cov = abs(sum(weight*sum_cov)/sum(weight)),
-      sum_pool_var = sum(weight*sum_var)/sum(weight),
-      gt_abs = sum(weight*sum_pool_abs_cov)/sum(weight*(sum_pool_abs_cov+sum_pool_var)), .groups = "drop") %>%
+    gt_from_blocked_long_varcov() %>%
     mutate(boot_id = i)
-}
+  }
 
 n_boot <- 1000
 boot_results <- map_dfr(1:n_boot, ~boot_once(gt_kmate_blocks, .x))
 
 boot_summary <- boot_results %>%
-  group_by(site, rep, gen) %>%
-  summarize(q025 = quantile(gt_abs, 0.025),
-            q975 = quantile(gt_abs, 0.975)) %>%
-  left_join(gt_point_est, by = c("site", "rep", "gen")) %>%
-  mutate(lci = 2*gt_abs - q975,
-         uci = 2*gt_abs - q025,
+  group_by(site, rep, g) %>%
+  summarize(q025 = quantile(G, 0.025),
+            q975 = quantile(G, 0.975)) %>%
+  left_join(gt_point_est, by = c("site", "rep", "g")) %>%
+  mutate(lci = 2*G - q975,
+         uci = 2*G - q025,
          lci = if_else(lci < 0, 0, lci),
          uci = if_else(uci > 1, 1, uci))
-  
+
 write.csv(boot_results, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_kmate.tsv")
 
 write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
@@ -2670,7 +2625,7 @@ length(unique(blocks$window))
 #   group_by(window) %>%
 #   mutate(sign_flip = sample(c(-1, 1), size = 1, replace = T))
 
-output_gt_class_blocks <- paste(
+output_gt_kmate_perms <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
   "/gt_sign_permutations_kmate.tsv",
@@ -2678,10 +2633,10 @@ output_gt_class_blocks <- paste(
 )
 
 # delete previous run
-check_file_exists(output_gt_class_blocks)
+check_file_exists(output_gt_kmate_perms)
 
 # check that directory exists
-folder_path <- dirname(output_gt_class_blocks)
+folder_path <- dirname(output_gt_kmate_perms)
 if (!dir.exists(folder_path)) {
   dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
 }
@@ -2691,7 +2646,7 @@ if (!dir.exists(folder_path)) {
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # number of sign permutations
-num_perm = 1:1000
+num_perm = 1:100
 
 # loop over sites
 for (site in unique(sites)) {
@@ -2740,7 +2695,7 @@ for (site in unique(sites)) {
         # gt_result$weight = nrow(hap_wind)
         gt_result$perm = p
         
-        append_table(gt_result, output_gt_class_blocks)
+        append_table(gt_result, output_gt_kmate_perms)
       }
     }
   }
@@ -2753,10 +2708,21 @@ for (site in unique(sites)) {
 ```{r}
 gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
 
-ggplot(boot_summary, aes(x = gen, y = gt_abs, group = rep)) +
+boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
+
+gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_sign_permutations_kmate.tsv")
+
+gt_null <- gt_perms %>%
+  group_by(site, rep, gen) %>%
+  summarize(lpi = quantile(gt_abs, 0.025),
+            upi = quantile(gt_abs, 0.975),
+            G = NA)
+
+ggplot(boot_summary, aes(x = factor(g), y = G, group = rep)) +
   geom_point() +
   geom_line() +
   geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
+  geom_ribbon(data = gt_null, mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
   facet_wrap(~site, scales = "free_y") +
   theme_minimal() +
   labs(x = "Generation", y = "Gabs(t)")
