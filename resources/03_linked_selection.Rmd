@@ -2191,7 +2191,7 @@ average as the gen0 column and gen1-3 as subsequent time points.
 class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
 ```
 
-## one-time: load class matrices
+## ONE-TIME: load and merge yearly variant data
 
 ```{r}
 
@@ -2200,13 +2200,16 @@ class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase
 pmat_final <- NULL
 for (cls in c("sv", "smallindel", "snp")) {
   pmat_cls <- NULL
-  for(g in 0:3){
+  for(g in 0:5){
     
     print(paste("Loading", cls, "matrices", "for generation", g, "..."))
     
     # af matrix
-    pmat <- read_npy(paste0(class_dir, cls, "_gen", g, "_af.npy"))
-    #stopifnot(identical(dim(p0), c(nrow(pools[[1]]), nrow(recs[[cls]][[1]]))))
+    if(g <= 3){
+      pmat <- read_npy(paste0(class_dir, cls, "_gen", g, "_af.npy"))
+    } else {
+      pmat <- read_npy(paste0(class_dir, "phase2_matrices/gen", g, "_", cls, "_af.npy"))
+    }
 
     # convert to dataframe
     pmat <- as.data.frame(t(pmat))
@@ -2217,19 +2220,56 @@ for (cls in c("sv", "smallindel", "snp")) {
       pmat <- data.frame(
         `0_0_0` = rowMeans(pmat)
       )
-    } else {
+    } else if (g >=1 & g <= 3) {
       print("Adding pool names...")
       pool_names <- fread(paste0(class_dir, "gen", g, ".pools.csv"))
+      colnames(pmat) <- pool_names$pool
+    } else if (g > 3){
+      pool_names <- fread(paste0(class_dir, "phase2_matrices/gen", g, ".rowmeta.csv"))
+      pool_names$pool <- paste(pool_names$site, pool_names$generation, pool_names$plot, sep = "_")
       colnames(pmat) <- pool_names$pool
     }
     
     # variant info
     print("Reading variant info...")
-    prec <- fread(paste0(class_dir, cls, "_gen", g, ".records.csv"))
+    if(g >= 0 & g <= 3){
+      prec <- fread(paste0(class_dir, cls, "_gen", g, ".records.csv"))
+    } else {
+      prec <- fread(paste0(class_dir, "phase2_matrices/", cls, "_column_index.csv"))
+      prec <- prec %>% select(chrom, pos)
+    }
+
     
     # add chromosome and position info so that we can merge by this
     print("cbinding variant info...")
     pmat <- cbind(prec[,1:2], pmat)
+    
+    # For phase 2 data, we must calculate
+    # weighted average by flower count
+    if(g > 3){
+      # Separate your identification columns from your data columns
+      id_cols <- pmat[, .(chrom, pos)]
+      data_cols <- pmat[, 3:ncol(pmat)]
+      
+      # Multiply every column by its corresponding weight
+      weighted_data <- as.matrix(data_cols) %*% diag(pool_names$flowerscollected)
+      
+      # Find the unique column names we need to aggregate
+      unique_names <- unique(colnames(data_cols))
+      
+      # Sum up the values and the weights for duplicate groups
+      result_list <- lapply(unique_names, function(name) {
+        # Find matching column positions
+        idx <- which(colnames(data_cols) == name)
+        
+        # Calculate: Sum(Value * Weight) / Sum(Weights)
+        rowSums(weighted_data[, idx, drop = FALSE]) / sum(pool_names$flowerscollected[idx])
+      })
+      
+      # Bind everything back into your final data.table
+      pmat <- cbind(id_cols, as.data.table(result_list))
+      setnames(pmat, c("chrom", "pos", unique_names))
+    }
     
     # drop multi-alleleic sites
     print("drop multi-alleleic sites within a class...")
@@ -2274,10 +2314,10 @@ pmat_final <- pmat_final %>%
   filter(if_any(everything(), ~ !is.na(.)))
 
 # write seed mix
-write.csv(pmat_final %>% select(chrom, pos, class, X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_seedmix.csv", row.names = F, quote = F)
+write.csv(pmat_final %>% select(chrom, pos, class, X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE2_SV_SNP_INDEL_allele_frequency_seedmix.csv", row.names = F, quote = F)
 
 # write all other generations
-fwrite(pmat_final %>% select(-chrom, -pos, -class, -X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv", row.names = F, quote = F)
+fwrite(pmat_final %>% select(-chrom, -pos, -class, -X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE2_SV_SNP_INDEL_allele_frequency_trays.csv", row.names = F, quote = F)
     
 ```
 
