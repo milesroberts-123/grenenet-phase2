@@ -2314,12 +2314,116 @@ pmat_final <- pmat_final %>%
   filter(if_any(everything(), ~ !is.na(.)))
 
 # write seed mix
-write.csv(pmat_final %>% select(chrom, pos, class, X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE2_SV_SNP_INDEL_allele_frequency_seedmix.csv", row.names = F, quote = F)
+write.csv(pmat_final %>% select(chrom, pos, class, X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix.csv", row.names = F, quote = F)
 
 # write all other generations
-fwrite(pmat_final %>% select(-chrom, -pos, -class, -X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE2_SV_SNP_INDEL_allele_frequency_trays.csv", row.names = F, quote = F)
+fwrite(pmat_final %>% select(-chrom, -pos, -class, -X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays.csv", row.names = F, quote = F)
     
 ```
+
+## ONE-TIME: randomly switch tracked allele
+
+```{r}
+# full dataset
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix.csv")
+
+# randomly swith which allele is being tracked
+# right now, the non-reference allele is always the one we're tracking
+idx <- sample(c(T,F), size = nrow(gen0), replace = T)
+gen0[idx,"X0_0_0"] <- 1 - gen0[idx,"X0_0_0"]
+
+write.csv(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv", quote = F, row.names = F)
+
+process_one_minus <- function(idx, chunk_size, output) {
+  function(x, pos) {
+    print(pos)
+    print(Sys.time())
+    # calculate end
+    chunk_size <- nrow(x)
+    end <- pos + chunk_size - 1
+    # subtract 1 from some alleles
+    print(paste("Start:", pos, "End:", end))
+    idx_sub <- idx[pos:end]
+    x[idx_sub,] <- 1 - x[idx_sub,]
+    write.table(x, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
+  }
+}
+
+# phase 1
+read_csv_chunked(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays.csv",
+  callback = SideEffectChunkCallback$new(
+    process_one_minus(
+      idx,
+      5000,
+      "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv"
+    )
+  ),
+  chunk_size = 5000
+)
+```
+
+## ONE-TIME: drop allele frequencies near absorbind boundaries
+
+```{r}
+
+# initial generation
+# tracked allele randomly switched
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv", data.table = F)
+
+# later gen
+# tracked allele randomly switched
+hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv", data.table = F)
+
+# omit allele frequencies that start near abosrbing boundaries
+non_abosrbing_freq <- (gen0$X3 >= 1/231) & (gen0$X3 <= 1 - 1/231)
+gen0 <- gen0[non_abosrbing_freq,]
+hapfire <- hapfire[non_abosrbing_freq,]
+
+rm(non_abosrbing_freq)
+gc()
+
+# output filtered seedmix frequencies
+write.table(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
+
+# omit allele frequencies that later reach absorbing boundaries
+# it is possible that measurement errors cause frequency to reach 1 and then come back down
+hapfire[(hapfire < 1/231) | (hapfire > 1 - 1/231)] <- NA
+
+# loop over site - replicate combinations
+# remove allele frequency trajectory after first fixation/loss 
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+hapfire_nas <- NULL
+for(site in unique(sites)){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    
+    if(ncol(hap_rep) > 1){
+      hap_rep_na <- t(apply(hap_rep, MARGIN = 1, rm_na_after_na))
+      colnames(hap_rep_na) <- colnames(hap_rep_na)
+    } else {
+      hap_rep_na <- hap_rep
+    }
+    
+    hapfire_nas <- cbind(hapfire_nas, hap_rep_na)
+  }
+}
+
+# summary of frequencies that were removed
+print("Percentage of frequencies at loss/fixation:")
+sum(is.na(hapfire_nas))/prod(dim(hapfire_nas)) * 100
+
+# output filtered hapfire frequencies
+write.table(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
+
+```
+
 
 ## load data
 
@@ -2343,12 +2447,6 @@ hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/gre
 flower_counts <- list.files(path = class_dir, pattern = "[1-3].pools.csv", full.names = T)
 
 flower_counts <- read_csv(flower_counts, id = "file_path")
-
-```
-
-## ONE-TIME: randomly switch tracked allele
-
-```{r}
 
 ```
 
