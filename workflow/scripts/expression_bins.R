@@ -2,6 +2,10 @@
 
 # Aggregate single-cell expression by cell type, normalize to CPM, and
 # join to gene coordinates to produce a BED file for bedtools map.
+# CPM values are taken from the returned object's "data" layer, which
+# Seurat populates with RelativeCounts (scale.factor = 1e6). Requires
+# Seurat >= 5.3.0: earlier versions silently drop scale.factor here and
+# would produce columns summing to 1e4 instead of 1e6.
 
 suppressPackageStartupMessages({
   library(Seurat)
@@ -9,6 +13,8 @@ suppressPackageStartupMessages({
   library(readr)
   library(tidyr)
 })
+
+stopifnot(packageVersion("Seurat") >= "5.3.0")
 
 args <- commandArgs(trailingOnly = TRUE)
 if (length(args) != 4) {
@@ -31,28 +37,17 @@ pseudo <- AggregateExpression(
   return.seurat = TRUE
 )
 
-counts <- LayerData(pseudo, assay = "RNA", layer = "counts")
+cpm <- LayerData(pseudo, assay = "RNA", layer = "data")
 
-#calculate_cpm <- function(counts) {
-#  lib_sizes <- colSums(counts)
-#  cpm <- sweep(counts, 2, lib_sizes, "/") * 1e6
-#  return(cpm)
-#}
+stopifnot(all(abs(colSums(cpm) - 1e6) < 0.01))
 
-#cpm <- calculate_cpm(counts)
-
-#stopifnot(all(colSums(cpm) == 1e6))
-
-#cpm <- as.data.frame(cpm)
-#cpm$gene <- rownames(cpm)
-
-counts <- as.data.frame(counts)
-counts$gene <- rownames(counts)
+cpm <- as.data.frame(cpm)
+cpm$gene <- rownames(cpm)
 
 genes <- read_tsv(genes_path, col_names = c("chrom", "start", "end", "gene"))
 
 genes <- genes %>%
-  left_join(counts, by = "gene") %>%
+  left_join(cpm, by = "gene") %>%
   drop_na() %>%
   arrange(chrom, start)
 
