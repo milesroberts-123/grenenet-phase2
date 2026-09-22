@@ -2363,7 +2363,9 @@ read_csv_chunked(
 )
 ```
 
-## ONE-TIME: drop allele frequencies near absorbind boundaries
+## ONE-TIME: drop allele frequencies near absorbing boundaries
+
+kmate allele frequencies all seem to start within the absorbing boundaries, so there's little point in scanning through the allele frequency matrix to remove frequencies.
 
 ```{r}
 
@@ -2373,22 +2375,20 @@ gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phas
 
 # later gen
 # tracked allele randomly switched
-hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv", data.table = F)
+if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")){
+  open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
+    write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch", format = "parquet", max_rows_per_file = 50000L)
+}
 
-# omit allele frequencies that start near abosrbing boundaries
-non_abosrbing_freq <- (gen0$X3 >= 1/231) & (gen0$X3 <= 1 - 1/231)
+# now can just read it
+hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")
+
+# omit allele frequencies that start near absorbing boundaries
+non_abosrbing_freq <- (gen0$X0_0_0 >= 1/231) & (gen0$X0_0_0 <= 1 - 1/231)
 gen0 <- gen0[non_abosrbing_freq,]
-hapfire <- hapfire[non_abosrbing_freq,]
-
-rm(non_abosrbing_freq)
-gc()
 
 # output filtered seedmix frequencies
 write.table(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
-
-# omit allele frequencies that later reach absorbing boundaries
-# it is possible that measurement errors cause frequency to reach 1 and then come back down
-hapfire[(hapfire < 1/231) | (hapfire > 1 - 1/231)] <- NA
 
 # loop over site - replicate combinations
 # remove allele frequency trajectory after first fixation/loss 
@@ -2396,22 +2396,38 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 hapfire_nas <- NULL
 for(site in unique(sites)){
   print(paste("Site:", site))
-  hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = "")))
   for(exprep in 1:12){
     print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
+    print("Loading data for replicate...")
+    hap_rep <- hap_site %>% 
+      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+      collect()
+    
+    # remove variants that are NA in seedmix
+    print("Removing variants fixed in seedmix...")
+    hap_rep <- hap_rep[non_abosrbing_freq,]
+    
+    # omit allele frequencies that later reach absorbing boundaries
+    # it is possible that measurement errors cause frequency to reach 1 and then come back down
+    # print("Removing measurements near absorbing boundaries...")
+    # hap_rep[(hap_rep < 1/231) | (hap_rep > 1 - 1/231)] <- NA
     
     # sort names to be in order of generation
-    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    print("Sorting columns...")
+    hap_rep <- hap_rep %>% 
+      relocate(all_of(sort(colnames(hap_rep))))
     
+    print("Removing NAs...")
     if(ncol(hap_rep) > 1){
       hap_rep_na <- t(apply(hap_rep, MARGIN = 1, rm_na_after_na))
-      colnames(hap_rep_na) <- colnames(hap_rep_na)
+      colnames(hap_rep_na) <- colnames(hap_rep)
     } else {
       hap_rep_na <- hap_rep
     }
-    
     hapfire_nas <- cbind(hapfire_nas, hap_rep_na)
+    rm(hap_rep_na, hap_rep); gc()
   }
 }
 
@@ -2420,7 +2436,7 @@ print("Percentage of frequencies at loss/fixation:")
 sum(is.na(hapfire_nas))/prod(dim(hapfire_nas)) * 100
 
 # output filtered hapfire frequencies
-write.table(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
+fwrite(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
 
 ```
 
@@ -2430,23 +2446,103 @@ write.table(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/gr
 ```{r}
 
 # seedmix
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_seedmix.csv")
-
-# write all other generations
-# one time conversion
-if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet")){
-  open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
-  write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet", format = "parquet", max_rows_per_file = 50000L)
-}
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv")
 
 # now can just read it
-hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet")
+hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")
 
 # hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv")
 
+# sample sizes
 flower_counts <- list.files(path = class_dir, pattern = "[1-3].pools.csv", full.names = T)
-
 flower_counts <- read_csv(flower_counts, id = "file_path")
+
+flower_counts_2 <- list.files(path = paste0(class_dir,"phase2_matrices/"), pattern = "rowmeta.csv", full.names = T)
+flower_counts_2 <- read_csv(flower_counts_2, id = "file_path")
+
+flower_counts_2$pool <- paste(flower_counts_2$site, flower_counts_2$generation, flower_counts_2$plot, sep = "_")
+
+flower_counts_2 <- flower_counts_2 %>%
+  group_by(pool, site, generation, plot) %>%
+  summarize(total_flowers = sum(flowerscollected))
+
+flower_counts <- bind_rows(flower_counts %>% select(pool, site, generation, plot, total_flowers), flower_counts_2)
+
+rm(flower_counts_2); gc()
+
+```
+
+## feder t-test
+
+```{r}
+
+# parition af data
+# hapfire <- pmat_final %>% select(-chrom, -pos, -class, -X0_0_0)
+# gen0 <- pmat_final %>% select(chrom, pos, class, X0_0_0)
+# rm(pmat_final); gc()
+
+# make list of sites
+# for now, ignore some sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+
+output_feder_kmate <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/feder_t_test_kmate.tsv",
+  sep = ""
+)
+
+# delete previous run
+check_file_exists(output_feder_kmate)
+
+# check that directory exists
+folder_path <- dirname(output_feder_kmate)
+if (!dir.exists(folder_path)) {
+  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
+}
+
+# loop over sites
+for (site in unique(sites)) {
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for (exprep in 1:12) {
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>%
+      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+      collect()
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>%
+      relocate(all_of(sort(colnames(hap_rep))))
+    
+    if (ncol(hap_rep) < 1) {
+      print("Need at least one increment. Skipping to next replicate...")
+      next
+    }
+    
+    hap_rep <- cbind(gen0$X0_0_0, hap_rep)
+    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
+    
+    gens <- as.integer(gsub("_", "", str_extract(colnames(hap_rep), "_[0-9]_")))
+    dp <- t(apply((hap_rep), MARGIN = 1, FUN = diff))
+    v_i_minus_1 <- (hap_rep)[,-1*ncol(hap_rep)]
+    g_i_minus_1 <- gens[-length(gens)]
+    y_i <- dp/(v_i_minus_1*(1 - v_i_minus_1)*diff(gens))
+    
+    y_i$chrom <- (gen0$chrom)
+    y_i$pos <- (gen0$pos)
+    y_i$site <- site
+    y_i$rep <- exprep
+    
+    y_i <- y_i %>% 
+      pivot_longer(cols = c(-chrom, -pos, -site, -rep), names_to = "pool", values_to = "yi")
+    
+    append_table(y_i, output_feder_kmate)
+  }
+}
+
 
 ```
 
@@ -2466,7 +2562,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 output_gt_class <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_point_estimates_kmate_classes.tsv",
+  "/gt_point_estimates_kmate_all_reps.tsv",
   sep = ""
 )
 
@@ -2481,18 +2577,18 @@ if (!dir.exists(folder_path)) {
 
 # estimate curves once for each class of variants
 var_classes <- unique(gen0$class)
-var_class_loop_list <- list(var_classes, var_classes[1], var_classes[2], var_classes[3])
+var_class_loop_list <- list(var_classes[2], var_classes[1], var_classes[3], var_classes)
 
-for (cls in var_class_loop_list) {
+for (cls in var_class_loop_list[4]) {
   
-  print(paste("Looping for variant class: ", cls, "...", collapse = "_"))
+  print(paste("Looping for variant class: ", paste(cls, sep = "_"), "..."))
   cls_idx <- gen0 %>% 
     mutate(row_idx = row_number()) %>% 
     filter(class %in% cls) %>%
     pull(row_idx)
   
   # loop over sites
-  for (site in unique(sites)) {
+  for (site in unique(sites)[23:31]) {
     print(paste("Site:", site))
     hap_site <- hapfire %>% 
       dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -2514,7 +2610,7 @@ for (cls in var_class_loop_list) {
       hap_cls <- hap_cls %>%
         relocate(all_of(sort(colnames(hap_cls))))
       
-      if (ncol(hap_cls) <= 2) {
+      if (ncol(hap_cls) < 2) {
         print("Need at least two increments. Skipping to next replicate...")
         next
       }
@@ -2540,24 +2636,28 @@ for (cls in var_class_loop_list) {
   }
 }
 
-gt_class <- fread(output_gt_class)
+gt_class <- fread(output_gt_class) %>%
+  distinct(site, rep, gen, class, .keep_all = T)
 
 gt_class$class <- gsub("smallindel_sv_snp", "all", gt_class$class)
 gt_class$class <- gsub("smallindel", "indel", gt_class$class)
 
+getwd()
 ggplot(gt_class, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) +
   geom_point() +
   geom_line() +
   facet_wrap(~site+class) +
-  labs(x = "Generation", y = "Gabs(t)")
-
-ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_classes.pdf"), width = 10, height = 10)
-
-my_comparisons <- list( c("sv", "snp") )
-ggplot(gt_class %>% filter(gen == 3), aes(x = factor(gen), y = gt_abs, color = class)) +
-  geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+  scale_color_scico_d(palette = "batlow") +
   labs(x = "Generation", y = "Gabs(t)") +
-  stat_compare_means()
+  scale_y_continuous(n.breaks = 3) 
+
+ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"), width = 11, height = 12)
+
+# ggplot(gt_class %>% filter(gen == 5), aes(x = factor(gen), y = gt_abs, color = class)) +
+#   geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+#   geom_point() +
+#   labs(x = "Generation", y = "Gabs(t)") +
+#   stat_compare_means()
 
 ```
 
@@ -2565,22 +2665,24 @@ ggplot(gt_class %>% filter(gen == 3), aes(x = factor(gen), y = gt_abs, color = c
 
 ```{r}
 
+num_block_boots <- 100
+
 blocks <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
 
-length(unique(blocks$window))
+num_blocks <- length(unique(blocks$window))
 
-output_gt_class_blocks <- paste(
+output_gt_kmate_blocks <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_blocks_kmate_long.tsv",
+  "/gt_boots_kmate.tsv",
   sep = ""
 )
 
 # delete previous run
-check_file_exists(output_gt_class_blocks)
+check_file_exists(output_gt_kmate_blocks)
 
 # check that directory exists
-folder_path <- dirname(output_gt_class_blocks)
+folder_path <- dirname(output_gt_kmate_blocks)
 if (!dir.exists(folder_path)) {
   dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
 }
@@ -2590,67 +2692,91 @@ if (!dir.exists(folder_path)) {
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # loop over sites
-for (site in unique(sites)) {
-  print(paste("Site:", site))
-  hap_site <- hapfire %>% 
-    dplyr::select(starts_with(paste(site, "_", sep = "")))
+for (cls in var_class_loop_list[4]) {
   
-  for (exprep in 1:12) {
-    print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>%
-      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
-      collect()
+  print(paste(Sys.time(), "- Looping for variant class: ", paste(cls, sep = "_"), "..."))
+  
+  cls_idx <- gen0 %>% 
+    mutate(row_idx = row_number()) %>% 
+    filter(class %in% cls) %>%
+    pull(row_idx)
+  
+  # subset to variant class
+  gen0_cls <- gen0 %>%
+    filter(row_number() %in% cls_idx)
+  
+  for (site in unique(sites)) {
+    print(paste(Sys.time(), "- Site:", site))
+    hap_site <- hapfire %>% 
+      dplyr::select(starts_with(paste(site, "_", sep = "")))
     
-    hap_rep$window <- blocks$window
-    
-    # sort names to be in order of generation
-    hap_rep <- hap_rep %>%
-      relocate(all_of(sort(colnames(hap_rep))))
-    
-    if (ncol(hap_rep) < 3) {
-      print("Need at least two increments. Skipping to next replicate...")
-      next
-    }
-    
-    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
-    
-    hap_rep <- cbind(gen0$X0_0_0, hap_rep)
-    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
-    
-    for(w in unique(blocks$window)){
-      hap_wind <- hap_rep %>%
-        filter(window == w) %>%
-        select(-window)
+    for (exprep in 1:12) {
+      print(paste(Sys.time(), "- Rep:", exprep))
+      hap_rep <- hap_site %>%
+        dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+        collect() %>%
+        filter(row_number() %in% cls_idx) %>% # subset to variant class
+        mutate(window = blocks$window) # add block ids
       
-      covmat <- covmat_from_pmat(
-        hap_wind,
-        rep_n$total_flowers*2,
-        correct_for_n = T,
-        input_asin_trans = F
-      )
+      # sort names to be in order of generation
+      hap_rep <- hap_rep %>%
+        relocate(all_of(sort(colnames(hap_rep))))
       
-      covlong <- covmat %>% 
-        as.data.frame() %>% 
-        rownames_to_column(var = "A") %>% 
-        pivot_longer(cols = -A, names_to = "B", values_to = "cov")
+      if (ncol(hap_rep) < 2) {
+        print("Need at least two increments. Skipping to next replicate...")
+        next
+      }
       
-      covlong$site <- site
-      covlong$rep <- exprep
-      #covlong$class <- cls
-      covlong$block <- w
-      covlong$weight <- nrow(hap_wind)
-      append_table(covlong, output_gt_class_blocks)
+      rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
       
-      # gt_result <- gt_from_covmat(covmat)
-      # gt_result$site = site
-      # gt_result$rep = exprep
-      # gt_result$block = w
-      # gt_result$weight = nrow(hap_wind)
-      # append_table(gt_result, output_gt_class_blocks)
+      hap_rep <- cbind(gen0_cls$X0_0_0, hap_rep)
+      colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
+      
+      for(b in 1:num_block_boots){
+        
+        if(b %% 25 == 0){
+          print(paste(Sys.time(), "- Bootstraps done:", b))
+        }
+        
+        hap_boot <- hap_rep %>%
+          nest(data = -window) %>% 
+          slice_sample(n = num_blocks, replace = TRUE) %>% 
+          #mutate(new_group_id = row_number()) %>% 
+          unnest(cols = c(data))  %>%
+          select(-window) %>% 
+          as.data.frame()
+        
+        covmat <- covmat_from_pmat(
+          hap_boot,
+          rep_n$total_flowers*2,
+          correct_for_n = T,
+          input_asin_trans = F
+        )
+        
+        # covlong <- covmat %>% 
+        #   as.data.frame() %>% 
+        #   rownames_to_column(var = "A") %>% 
+        #   pivot_longer(cols = -A, names_to = "B", values_to = "cov")
+        # 
+        # covlong$site <- site
+        # covlong$rep <- exprep
+        # covlong$block <- w
+        # covlong$weight <- nrow(hap_wind)
+        # append_table(covlong, output_gt_class_blocks)
+        
+        gt_result <- gt_from_covmat(covmat)
+        gt_result$site = site
+        gt_result$rep = exprep
+        gt_result$boot = b
+        gt_result$class = paste(cls, collapse = "_")
+        gt_result$weight = nrow(hap_boot)
+        append_table(gt_result, output_gt_kmate_blocks)
+        
+        rm(gt_result, hap_boot); gc()
+      }
     }
   }
-}
-
+}  
 ```
 
 ## ONE-TIME: calculate block bootstraps
@@ -2834,19 +2960,33 @@ for (site in unique(sites)) {
 ## all together: gt curves with CI and null
 
 ```{r}
-gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
+# point estimates
+#gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_point_estimates_kmate.tsv")
 
-boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
+# bootstrap confidence intervals
+#boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
+gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_boots_kmate.tsv")
 
+boot_summary <- gt_boots %>%
+  group_by(site, rep, gen) %>%
+  summarize(q025 = quantile(gt_abs, 0.025),
+            q975 = quantile(gt_abs, 0.975)) %>%
+  left_join(gt_points %>% filter(class == "smallindel_sv_snp"), by = c("site", "rep", "gen")) %>%
+  mutate(lci = 2*gt_abs - q975,
+         uci = 2*gt_abs - q025,
+         lci = if_else(lci < 0, 0, lci),
+         uci = if_else(uci > 1, 1, uci))
+
+# sign-permuted null distribution
 gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_sign_permutations_kmate.tsv")
 
 gt_null <- gt_perms %>%
   group_by(site, rep, gen) %>%
   summarize(lpi = quantile(gt_abs, 0.025),
-            upi = quantile(gt_abs, 0.975),
-            G = NA)
+            upi = quantile(gt_abs, 0.975))
 
-ggplot(boot_summary, aes(x = factor(g), y = G, group = rep)) +
+ggplot(boot_summary, aes(x = factor(gen), y = gt_abs, group = rep)) +
   geom_point() +
   geom_line() +
   geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
