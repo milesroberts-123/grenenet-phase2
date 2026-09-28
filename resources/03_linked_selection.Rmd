@@ -350,6 +350,7 @@ closest_city <- world.cities[nearest_index, ]
 print(closest_city)
 
 locations_data$city_country <- paste(closest_city$name, ", ", closest_city$country.etc, sep = "")
+rm(closest_city, nearest_index, cities_sf, target_points); gc()
 ```
 
 ## LD matrix
@@ -2183,7 +2184,7 @@ panel (`resources/class_matrices/` on Savio). Rows are pools (`site` × `plot`,
 flower-weighted merge of collection timepoints), columns are records. Gen0 is
 the founding seed mix (8 reps). Here we compute gt curves per pool with
 `covmat_from_pmat()` + `gt_from_covmat()`, treating the 8 seed-mix reps'
-average as the gen0 column and gen1-3 as subsequent time points.
+average as the gen0 column and gen1-5 as subsequent time points.
 
 ## directory on savio
 
@@ -2355,11 +2356,11 @@ read_csv_chunked(
   callback = SideEffectChunkCallback$new(
     process_one_minus(
       idx,
-      5000,
+      1000,
       "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv"
     )
   ),
-  chunk_size = 5000
+  chunk_size = 1000
 )
 ```
 
@@ -2437,14 +2438,12 @@ sum(is.na(hapfire_nas))/prod(dim(hapfire_nas)) * 100
 
 # output filtered hapfire frequencies
 fwrite(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
-
 ```
 
 
 ## load data
 
 ```{r}
-
 # seedmix
 gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv")
 
@@ -2469,18 +2468,11 @@ flower_counts_2 <- flower_counts_2 %>%
 flower_counts <- bind_rows(flower_counts %>% select(pool, site, generation, plot, total_flowers), flower_counts_2)
 
 rm(flower_counts_2); gc()
-
 ```
 
 ## feder t-test
 
 ```{r}
-
-# parition af data
-# hapfire <- pmat_final %>% select(-chrom, -pos, -class, -X0_0_0)
-# gen0 <- pmat_final %>% select(chrom, pos, class, X0_0_0)
-# rm(pmat_final); gc()
-
 # make list of sites
 # for now, ignore some sites
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
@@ -2493,7 +2485,7 @@ output_feder_kmate <- paste(
 )
 
 # delete previous run
-check_file_exists(output_feder_kmate)
+#check_file_exists(output_feder_kmate)
 
 # check that directory exists
 folder_path <- dirname(output_feder_kmate)
@@ -2502,13 +2494,13 @@ if (!dir.exists(folder_path)) {
 }
 
 # loop over sites
-for (site in unique(sites)) {
+for(site in unique(sites)[24:31]) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for (exprep in 1:12) {
-    print(paste("Rep:", exprep))
+  for(exprep in 1:12) {
+    print(paste(Sys.time()," - Rep:", exprep))
     hap_rep <- hap_site %>%
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
       collect()
@@ -2526,24 +2518,76 @@ for (site in unique(sites)) {
     colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
     
     gens <- as.integer(gsub("_", "", str_extract(colnames(hap_rep), "_[0-9]_")))
-    dp <- t(apply((hap_rep), MARGIN = 1, FUN = diff))
+    # numerator
+    if(ncol(hap_rep) == 2){
+      dp <- matrix(unlist(apply((hap_rep), MARGIN = 1, FUN = diff)), ncol = 1)
+      dp <- as.data.frame(dp)
+      names(dp) <- colnames(hap_rep)[2]
+    } else {
+      dp <- t(apply((hap_rep), MARGIN = 1, FUN = diff))
+    }
+    # denominator
     v_i_minus_1 <- (hap_rep)[,-1*ncol(hap_rep)]
     g_i_minus_1 <- gens[-length(gens)]
-    y_i <- dp/(v_i_minus_1*(1 - v_i_minus_1)*diff(gens))
-    
+    # bring it all together
+    y_i <- dp/sqrt(2*v_i_minus_1*(1 - v_i_minus_1)*diff(gens))
+    # cbind extra info
     y_i$chrom <- (gen0$chrom)
     y_i$pos <- (gen0$pos)
     y_i$site <- site
     y_i$rep <- exprep
     
     y_i <- y_i %>% 
-      pivot_longer(cols = c(-chrom, -pos, -site, -rep), names_to = "pool", values_to = "yi")
+      pivot_longer(cols = c(-chrom, -pos, -site, -rep), 
+                   names_to = "pool", 
+                   values_to = "yi")
     
     append_table(y_i, output_feder_kmate)
+    rm(y_i, v_i_minus_1, g_i_minus_1, dp, hap_rep); gc()
   }
 }
 
+### Try to summarize feder test results into a big table
+# one time conversion
+if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet")){
+  open_dataset(output_feder_kmate, format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
+  write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet", format = "parquet", max_rows_per_file = 500000L)
+}
 
+feder_kmate_parquet <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet")
+
+#yvalues <- fread(output_feder_kmate, nrows = 10)
+
+#lazy_df <- lazy_dt(yvalues)
+
+# calculate averages and variances for a snp at a site
+feder_t_test_summary_file <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",today,"/feder_t_test_kmate_summary.csv")
+
+#check_file_exists(feder_t_test_summary_file)
+
+for(this_site in unique(sites)){
+  print(paste("Processing site", this_site, "..."))
+  feder_summary <- feder_kmate_parquet %>%
+    #slice_head(n = 1000) %>%
+    filter(!is.na(yi), site == as.integer(this_site)) %>%
+    collect() %>%
+    group_by(site, chrom, pos) %>% 
+    #distinct(chrom, pos, rep, pool, .keep_all = TRUE) %>%
+    summarize(ybar = mean(yi), 
+              s2 = var(yi),
+              n = n()) %>%
+    mutate(tvalue = ybar/sqrt(s2/n),
+           pvalue = 2*pt(abs(tvalue), df = n - 1, lower.tail = F)) %>%
+    left_join(gen0[,c("chrom", "pos", "class")], by = c("chrom", "pos")) %>%
+    mutate(highlight = ifelse(class == "sv", "yes", "no")) %>% 
+    rename(CHROM = chrom, POS = pos)
+
+  print(paste("Plotting site", this_site, "..."))
+  man_test <- plot_manhattan(feder_summary, title = paste0("Site ", this_site))
+  ggsave(paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",today,"/feder_t_test_kmate_site_", this_site, ".png"), man_test, width = 9, height = 5)
+  fwrite(feder_summary, feder_t_test_summary_file, col.names = !file.exists(feder_t_test_summary_file), row.names = F, sep = ",", quote = F, append = T)
+  rm(feder_summary, man_test); gc(verbose = FALSE)
+}
 ```
 
 ## gt curves - point estimates
@@ -2579,16 +2623,16 @@ if (!dir.exists(folder_path)) {
 var_classes <- unique(gen0$class)
 var_class_loop_list <- list(var_classes[2], var_classes[1], var_classes[3], var_classes)
 
-for (cls in var_class_loop_list[4]) {
+for (cls in var_class_loop_list) {
   
-  print(paste("Looping for variant class: ", paste(cls, sep = "_"), "..."))
+  print(paste("Looping for variant class: ", paste(cls, collapse = "_"), "..."))
   cls_idx <- gen0 %>% 
     mutate(row_idx = row_number()) %>% 
     filter(class %in% cls) %>%
     pull(row_idx)
   
   # loop over sites
-  for (site in unique(sites)[23:31]) {
+  for (site in unique(sites)) {
     print(paste("Site:", site))
     hap_site <- hapfire %>% 
       dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -2661,7 +2705,7 @@ ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"), width = 11, he
 
 ```
 
-## ONE-TIME: gt curves - bootstrap intervals
+## gt curves - bootstrap intervals
 
 ```{r}
 
@@ -2679,7 +2723,7 @@ output_gt_kmate_blocks <- paste(
 )
 
 # delete previous run
-check_file_exists(output_gt_kmate_blocks)
+#check_file_exists(output_gt_kmate_blocks)
 
 # check that directory exists
 folder_path <- dirname(output_gt_kmate_blocks)
@@ -2692,9 +2736,9 @@ if (!dir.exists(folder_path)) {
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # loop over sites
-for (cls in var_class_loop_list[4]) {
+for (cls in var_class_loop_list) {
   
-  print(paste(Sys.time(), "- Looping for variant class: ", paste(cls, sep = "_"), "..."))
+  print(paste(Sys.time(), "- Looping for variant class: ", paste(cls, collapse = "_"), "..."))
   
   cls_idx <- gen0 %>% 
     mutate(row_idx = row_number()) %>% 
@@ -2715,9 +2759,9 @@ for (cls in var_class_loop_list[4]) {
       hap_rep <- hap_site %>%
         dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
         collect() %>%
-        filter(row_number() %in% cls_idx) %>% # subset to variant class
-        mutate(window = blocks$window) # add block ids
-      
+        mutate(window = blocks$window) %>% # add block ids
+        filter(row_number() %in% cls_idx) # subset to variant class
+
       # sort names to be in order of generation
       hap_rep <- hap_rep %>%
         relocate(all_of(sort(colnames(hap_rep))))
@@ -2774,7 +2818,9 @@ for (cls in var_class_loop_list[4]) {
         
         rm(gt_result, hap_boot); gc()
       }
+      rm(hap_rep); gc()
     }
+    rm(hap_site); gc()
   }
 }  
 ```
@@ -2866,7 +2912,7 @@ write.csv(boot_results, "/global/scratch/users/milesroberts/moi_lab_projects/gre
 write.csv(boot_summary, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv", quote = F, row.names = F)
 ```
 
-## ONE-TIME: gt curves - sign permutation 
+## gt curves - sign permutation 
 
 ```{r}
 
@@ -2887,7 +2933,7 @@ output_gt_kmate_perms <- paste(
 )
 
 # delete previous run
-check_file_exists(output_gt_kmate_perms)
+#check_file_exists(output_gt_kmate_perms)
 
 # check that directory exists
 folder_path <- dirname(output_gt_kmate_perms)
@@ -2900,41 +2946,56 @@ if (!dir.exists(folder_path)) {
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # number of sign permutations
-num_perm = 1:500
+num_perm = 1:250
 
 # loop over sites
-for (site in unique(sites)) {
-  print(paste("Site:", site))
-  hap_site <- hapfire %>% 
-    dplyr::select(starts_with(paste(site, "_", sep = "")))
+for (cls in var_class_loop_list){
   
-  for (exprep in 1:12) {
-    print(paste("Rep:", exprep))
-    hap_rep <- hap_site %>%
-      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
-      collect()
+  print(paste(Sys.time(), "- Looping for variant class: ", paste(cls, collapse = "_"), "..."))
+  
+  cls_idx <- gen0 %>% 
+    mutate(row_idx = row_number()) %>% 
+    filter(class %in% cls) %>%
+    pull(row_idx)
+  
+  # subset to variant class
+  gen0_cls <- gen0 %>%
+    filter(row_number() %in% cls_idx)
+  
+  for (site in unique(sites)[10:31]) {
+    print(paste("Site:", site))
+    hap_site <- hapfire %>% 
+      dplyr::select(starts_with(paste(site, "_", sep = "")))
     
-    hap_rep$window <- blocks$window
-    
-    # sort names to be in order of generation
-    hap_rep <- hap_rep %>%
-      relocate(all_of(sort(colnames(hap_rep))))
-    
-    if (ncol(hap_rep) < 3) {
-      print("Need at least two increments. Skipping to next replicate...")
-      next
-    }
-    
-    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
-    
-    hap_rep <- cbind(gen0$X0_0_0, hap_rep)
-    colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
-    
+    for (exprep in 1:12) {
+      print(paste("Rep:", exprep))
+      hap_rep <- hap_site %>%
+        dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+        collect() %>%
+        mutate(window = blocks$window) %>% # add block ids
+        filter(row_number() %in% cls_idx) # subset to variant class
+      
+      #hap_rep$window <- blocks$window
+      
+      # sort names to be in order of generation
+      hap_rep <- hap_rep %>%
+        relocate(all_of(sort(colnames(hap_rep))))
+      
+      if (ncol(hap_rep) < 3) {
+        print("Need at least two increments. Skipping to next replicate...")
+        next
+      }
+      
+      rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
+      
+      hap_rep <- cbind(gen0_cls$X0_0_0, hap_rep)
+      colnames(hap_rep)[1] = paste(site, "_0_", exprep, sep = "")
+      
       for(p in num_perm){
         
         covmat <- covmat_from_pmat(
-          hap_rep %>% select(-window),
-          rep_n$total_flowers*2,
+          pmat = hap_rep %>% select(-window),
+          n = rep_n$total_flowers*2,
           correct_for_n = T,
           input_asin_trans = F,
           procedure = "window",
@@ -2950,10 +3011,13 @@ for (site in unique(sites)) {
         gt_result$perm = p
         
         append_table(gt_result, output_gt_kmate_perms)
+        rm(gt_result, covmat); gc()
       }
+      rm(hap_rep); gc()
     }
+    rm(hap_site); gc()
   }
-
+}
 ```
 
 
@@ -2962,31 +3026,42 @@ for (site in unique(sites)) {
 ```{r}
 # point estimates
 #gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
-gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_point_estimates_kmate.tsv")
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_point_estimates_kmate.tsv") %>%
+  filter(class == "sv") %>%
+  distinct(site, rep, gen, .keep_all = T)
 
 # bootstrap confidence intervals
 #boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
-gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_boots_kmate.tsv")
+#gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_boots_kmate.tsv")
+gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_boots_kmate.tsv") %>%
+  filter(class == "sv") %>%
+  distinct(site, rep, gen, boot, .keep_all = T)
 
 boot_summary <- gt_boots %>%
   group_by(site, rep, gen) %>%
   summarize(q025 = quantile(gt_abs, 0.025),
             q975 = quantile(gt_abs, 0.975)) %>%
-  left_join(gt_points %>% filter(class == "smallindel_sv_snp"), by = c("site", "rep", "gen")) %>%
+  left_join(gt_points, by = c("site", "rep", "gen")) %>%
   mutate(lci = 2*gt_abs - q975,
          uci = 2*gt_abs - q025,
          lci = if_else(lci < 0, 0, lci),
-         uci = if_else(uci > 1, 1, uci))
+         uci = if_else(uci > 1, 1, uci)) %>%
+  left_join(locations_data, by = "site")
 
 # sign-permuted null distribution
-gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_sign_permutations_kmate.tsv")
+#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_sign_permutations_kmate.tsv")
+gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_sign_permutations_kmate.tsv") %>%
+  distinct(site, rep, gen, perm, .keep_all = T)
 
 gt_null <- gt_perms %>%
   group_by(site, rep, gen) %>%
   summarize(lpi = quantile(gt_abs, 0.025),
-            upi = quantile(gt_abs, 0.975))
+            upi = quantile(gt_abs, 0.975),
+            gt_abs = median(gt_abs)) %>%
+  left_join(locations_data, by = "site")
 
-ggplot(boot_summary, aes(x = factor(gen), y = gt_abs, group = rep)) +
+# overview of all
+ggplot(boot_summary %>% filter(!is.na(gt_abs)), aes(x = factor(gen), y = gt_abs, group = rep)) +
   geom_point() +
   geom_line() +
   geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
@@ -2996,6 +3071,134 @@ ggplot(boot_summary, aes(x = factor(gen), y = gt_abs, group = rep)) +
   labs(x = "Generation", y = "Gabs(t)")
 
 ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"), width = 9, height = 9)
+
+# Focus on just two examples
+plot_gt <- function(data){
+  ggplot(data, aes(x = factor(gen), y = gt_abs, group = rep)) +
+  geom_point() +
+  geom_line() +
+  geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
+  geom_ribbon(data = gt_null %>% filter(city_country == unique(data$city_country)), mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
+  labs(x = "Generation", y = "Gabs(t)", title = unique(data$city_country))
+}
+
+plot_groups_pdf(boot_summary, "city_country", plot_fn = plot_gt, filepath = paste0("../results/by-date/", today, "/gt_abs_kmate_by_site.pdf"), width = 4, height = 4)
+
+
+# summarize
+# for those populations with selection outside null, what's the percentage?
+gt_abs_summary <- boot_summary %>%
+  left_join(gt_null, by = c("site", "rep", "gen")) %>%
+  group_by(site, rep) %>%
+  filter(gen == max(gen)) %>%
+  mutate(gt_abs_excess = lci - upi) %>%
+  select(site, rep, gt_abs_excess)
+
+sum(!is.na(gt_abs_summary$gt_abs_excess))
+sum(gt_abs_summary$gt_abs_excess > 0, na.rm = T)
+sum(gt_abs_summary$gt_abs_excess <= 0, na.rm = T)
+
+gt_abs_summary %>%
+  filter(gt_abs_excess > 0) %>%
+  ungroup() %>%
+  pull(gt_abs_excess) %>%
+  mean()*100
+
+gt_abs_summary %>%
+  filter(gt_abs_excess > 0) %>%
+  ungroup() %>%
+  pull(gt_abs_excess) %>%
+  range()*100
+
+gt_excess_vs_clim <- gt_abs_summary %>%
+  left_join(worldclim_sitesdata, by = "site")
+
+# Focus on just replicates that survived, and have selection
+# Is there a correlation with climate?
+# Seemingly yes, but it's marginal
+zoom_data <- gt_excess_vs_clim %>%
+  filter(gt_abs_excess >= 0, bio1 < 17, bio1 > 6)
+
+fit_zoom_mixed <- lmer(gt_abs_excess ~ bio1 + (1 | site), data = zoom_data)
+summary(fit_zoom_mixed)
+
+ggplot(gt_excess_vs_clim, aes(x = bio1, y = gt_abs_excess, fill = bio1)) +
+  geom_point() +
+  geom_abline(slope = summary(fit_zoom_mixed)$coefficients[1,2], intercept = summary(fit_zoom_mixed)$coefficients[1,1])+
+  scale_fill_scico(palette = "berlin") +
+  facet_zoom(gt_abs_excess >= 0 & bio1 < 17 & bio1 > 6, horizontal = F) +
+  theme(zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
+  labs(x = "Mean Annual Temperature (Bio1)", y = "Excess G(t)")
+
+### plot proportion of negative cov vs biovariable
+neg_cov_data <- gt_points %>%
+  group_by(site, rep) %>%
+  filter(gen == max(gen)) %>%
+  mutate(prop_neg_cov = sum_neg_cov/(sum_abs_cov)) %>%
+  select(site, rep, prop_neg_cov) %>%
+  left_join(locations_data[,c("site", "city_country")], by = "site") %>%
+  left_join(worldclim_sitesdata, by = "site") %>%
+  ungroup() %>%
+  filter(prop_neg_cov > 0, prop_neg_cov < 1)
+  #mutate(n = n(),
+  #       prop_neg_cov = (prop_neg_cov*(n-1)+0.5)/n)
+
+ggplot(neg_cov_data, aes(x = bio15, y = prop_neg_cov)) +
+  geom_point()
+
+library(glmmTMB)
+library(broom.mixed)
+
+# adjust to your actual bio variable names/count
+biovars <- paste0("bio", 1:19)
+
+# make sure all bio columns actually exist in neg_cov_data
+biovars <- intersect(biovars, names(neg_cov_data))
+
+fit_one <- function(biovar) {
+  form <- as.formula(paste("prop_neg_cov ~", biovar, "+ (1 | site)"))
+
+  model <- tryCatch(
+    glmmTMB(form, data = neg_cov_data, family = beta_family(link = "logit")),
+    error = function(e) NULL
+  )
+
+  if (is.null(model)) {
+    return(tibble(biovar = biovar, term = NA, estimate = NA,
+                  std.error = NA, statistic = NA, p.value = NA,
+                  converged = FALSE))
+  }
+
+  tidy(model, effects = "fixed") %>%
+    mutate(biovar = biovar,
+           converged = model$fit$convergence == 0) %>%
+    select(biovar, term, estimate, std.error, statistic, p.value, converged)
+}
+
+results <- map_dfr(biovars, fit_one)
+
+#
+model <- glmmTMB(
+  prop_neg_cov ~ bio15 + (1 | site),
+  data   = neg_cov_data,
+  family = beta_family(link = "logit")
+)
+
+pred <- ggpredict(model, terms = "bio15 [all]", bias_correct = T) 
+
+pred <- pred %>%
+  rename(prop_neg_cov = predicted)
+
+p_glmmtmb_bio15 <- format.pval(summary(model)$coefficients$cond[2,4], digits = 2, eps = 0.001)
+
+ggplot(neg_cov_data, aes(x = bio15, y = prop_neg_cov)) +
+  geom_point() +
+  geom_ribbon(data = pred, aes(x = x, ymin = conf.low, ymax = conf.high), alpha = 0.2) +
+  geom_line(data = pred, aes(x = x, y = prop_neg_cov), linewidth = 1) +
+  labs(x = "Precipitation Seasonality\n(Coefficient of Variation, BIO15)", y = "Proportion of\n\u03a3Cov(\u0394pi, \u0394pj) < 0", title = paste0("~BIO15+(1 | site), glmmTMB(Beta, logit)\np-value = ", p_glmmtmb_bio15))
+
+ggsave(paste0("../results/by-date/", today, "/neg_cov_vs_bio15_glmmtmb.pdf"), width = 6, height = 6, device = cairo_pdf)
+
 ```
 
 # Plot OST1 over cell-types
@@ -4157,7 +4360,7 @@ mod <- lmer(sum_var ~ scale(frac_cds) + scale(avg_exp_over_frac_cds) + scale(tau
 summary(mod)
 
 # --- Data subset ---
-df <- pi_windows_all %>%
+pi_windows_sub <- pi_windows_all %>%
   filter(num_indiv == 1135, site_class == "all_sites") %>%
   mutate(
     frac_cds_z = as.numeric(scale(frac_cds)),
@@ -4173,8 +4376,8 @@ df <- pi_windows_all %>%
 
 
 mod_sum_var <- lmer(
-  sum_var_z ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + (1 | site/rep),
-  data = df
+  sum_var_z ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + gen + (1 | site/rep),
+  data = pi_windows_sub
 )
  
 # --- Fit the original model ---
@@ -4187,7 +4390,7 @@ mod_sum_var <- lmer(
 summary(mod_sum_var)
 
 safe_fixef <- function(fit) {
-  term_names <- names(fixef(mod))
+  term_names <- names(fixef(fit))
   out <- rep(NA_real_, length(term_names))
   names(out) <- term_names
 
@@ -4217,8 +4420,8 @@ boot_ci
  
 # --- Combine point estimates with bootstrap CIs ---
 boot_summary <- tibble(
-  term = names(fixef(mod)),
-  estimate = fixef(mod)
+  term = names(fixef(mod_sum_var)),
+  estimate = fixef(mod_sum_var)
 ) %>%
   left_join(boot_ci, by = "term")
  
@@ -4226,27 +4429,25 @@ boot_summary <- boot_summary %>%
   mutate(term = recode(term, "frac_cds_z" = "CDS density",
                        "avg_exp_over_frac_cds_z" = "Avg. Expression/CDS density",
                        "rate_z" = "Recombination rate (cM/Mb)",
-                       "tau_z" = "Expression specificity"))
+                       "tau_z" = "Expression specificity",
+                       "gen" = "Generations"))
 
-ggplot(boot_summary %>% filter(term != "(Intercept)"), aes(x = term, y = estimate.x)) +
-  #geom_violin(quantiles = 0.5, quantile.linetype = 1) +
-  #geom_sina(shape = 16) +
-  #geom_pointrange(aes(ymin = lwr, ymax = upr), shape = 21, color = "red") +
+ggplot(boot_summary %>% filter(term != "(Intercept)", term != "Generations"), aes(x = term, y = estimate.x)) +
   geom_linerange(aes(ymin = lower, ymax = upper), color = "red", linewidth = 1) +
   geom_point(shape = 16, color = "black", size = 1.5) +
   # 2. Layer the points on top (e.g., colored by group)
   geom_hline(yintercept = 0, lty = 2) +
   coord_flip() +
   theme(title = element_text(size = 12)) +
-  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03a3Var(\u0394p) ~ Recombination + CDS density +\nAvg. Expression + Expression Specificity + (1 | Site/Rep)")
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03a3Var(\u0394p) ~ Recombination + CDS density +\nAvg. Expression + Expression Specificity + Generation + (1 | Site/Rep)")
 
 ggsave(paste0("../results/by-date/", today, "/vardp_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
 
 
 #### Cov(dp1, dp2) ####
 mod_sum_abs_cov <- lmer(
-  sum_abs_cov ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + (1 | site/rep),
-  data = df
+  sum_abs_cov ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + gen +(1 | site/rep),
+  data = pi_windows_sub
 )
 
 summary(mod_sum_abs_cov) 
@@ -4267,8 +4468,8 @@ boot_ci
  
 # --- Combine point estimates with bootstrap CIs ---
 boot_summary <- tibble(
-  term = names(fixef(mod)),
-  estimate = fixef(mod)
+  term = names(fixef(mod_sum_abs_cov)),
+  estimate = fixef(mod_sum_abs_cov)
 ) %>%
   left_join(boot_ci, by = "term")
  
@@ -5598,84 +5799,6 @@ for(site in as.numeric(unique(sites))){
 
 ```
 
-# Single-cell expression bins
-
-```{r}
-
-library(Seurat)
-
-seurat_obj <- readRDS("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seed_0d_230221.rds")
-
-#
-# head(seurat_obj@meta.data)
-
-# Raw counts
-# counts <- LayerData(seurat_obj, assay = "RNA", layer = "counts")
-
-# psuedo-bulk counts
-pseudo <- AggregateExpression(
-  seurat_obj,
-  group.by = c("CellType"),   # can be one or more metadata columns
-  assays = "RNA",
-  return.seurat = TRUE
-)
-
-# normalize counts to concentration
-counts <- LayerData(pseudo, assay = "RNA", layer = "counts")
-
-calculate_cpm <- function(counts) {
-  lib_sizes <- colSums(counts)          # total counts per pseudobulk sample
-  cpm <- sweep(counts, 2, lib_sizes, "/") * 1e6
-  return(cpm)
-}
-
-cpm <- calculate_cpm(counts)
-
-rownames(cpm)
-
-# sanity check: each column should sum to exactly 1,000,000
-all(colSums(cpm) == 1e6)
-
-cpm <- as.data.frame(cpm)
-cpm$gene <- rownames(cpm)
-
-# merge with gene coordiantes
-# sort by coordinate
-# drop unmeasured genes
-genes <- read_tsv("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/genes.bed", col_names = c("chrom", "start", "end", "gene"))
-
-genes <- genes %>%
-  left_join(cpm, by = "gene") %>%
-  drop_na() %>%
-  arrange(chrom, start)
-
-write.table(genes, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/single-cell-atlas/seed_0d.bed", quote = F, row.names = F, sep = "\t")
-
-### try visualizing binned expression
-exp_bins <- read.table("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/single-cell-atlas/seed_0d.bins", col.names = c("chrom", "start", "end", "Epidermal", "Guard", "Meristematic", "Seed coat", "Stele", "Unannotated"))
-
-exp_bins <- exp_bins %>%
-  filter(!(chrom %in% c("M", "C")))
-
-bins_long <- exp_bins %>%
-  pivot_longer(
-    cols = -c(chrom, start, end),
-    names_to = "cell_type",
-    values_to = "count"
-  ) %>%
-  mutate(bin_mid = (start + end) / 2,
-         count = as.numeric(count))
-
-ggplot(bins_long, aes(x = bin_mid, y = count, color = cell_type)) +
-  geom_col() +
-  facet_grid(cell_type~chrom, scales = "free") +
-  scale_color_scico_d(palette = "hawaii") +
-  theme(axis.text.x = element_blank(),
-        axis.text.y = element_blank(),
-        legend.position = "None") +
-  labs(x = "Window midpoint (bp)", y = "Expression (CPM)")
-```
-
 # Final figures
 
 ## Feder test
@@ -6312,8 +6435,8 @@ ggsave(paste(results_path, "convergence_correlation_wn_env_first_increment.pdf")
 ```{r}
 
 #### selection, drift, fluctuating selection ####
-gen = 100
-N = 100
+gen = 10
+N = 200
 h = 0.5
 s = 0.05
 q0 = 0.5
@@ -6325,10 +6448,10 @@ drift = WF_sel(N, q0, h, rep(0,times = gen), gen)
 fluct <- WF_sel(N, q0, h, c(rep(s, times = gen/2), rep(-3*s, times = gen/2)), gen)
 
 plotdata <- data.frame(
-  gen = 0:gen,
-  selection = c(q0*N, selection)/N,
-  drift = c(q0*N, drift)/N,
-  fluct = c(q0*N, fluct)/N
+  gen = 1:gen,
+  selection = selection,
+  drift = drift,
+  fluct = fluct
 )
 
 plotdata <- melt(plotdata, id = "gen")
