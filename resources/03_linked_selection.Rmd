@@ -2450,6 +2450,8 @@ gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phas
 # now can just read it
 hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")
 
+table(as.numeric(gsub("_", "", str_extract(colnames(hapfire), "_[0-9]_"))))
+
 # hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv")
 
 # sample sizes
@@ -4422,13 +4424,13 @@ ggsave(paste0("../results/by-date/", today, "/vardp_model_coeff.pdf"), device = 
 
 
 # --- Same as above, but for Cov(dp1, dp2) instead of Var(dp)
-
 mod_sum_abs_cov <- lmer(
   sum_abs_cov ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + gen +(1 | site/rep),
   data = pi_windows_sub
 )
 
 summary(mod_sum_abs_cov) 
+
 # --- Fit the original model ---
 case_boot <- lmeresampler::bootstrap(
   model = mod_sum_abs_cov,
@@ -4455,9 +4457,10 @@ boot_summary <- boot_summary %>%
   mutate(term = recode(term, "frac_cds_z" = "CDS density",
                        "avg_exp_over_frac_cds_z" = "Avg. Expression/CDS density",
                        "rate_z" = "Recombination rate (cM/Mb)",
-                       "tau_z" = "Expression specificity"))
+                       "tau_z" = "Expression specificity",
+                       "gen" = "Generations"))
 
-ggplot(boot_summary %>% filter(term != "(Intercept)"), aes(x = term, y = estimate.y)) +
+ggplot(boot_summary %>% filter(term != "(Intercept)", term != "Generations"), aes(x = term, y = estimate.y)) +
   geom_linerange(aes(ymin = lower, ymax = upper), color = "red", linewidth = 1) +
   geom_point(shape = 16, color = "black", size = 1.5) +
   # 2. Layer the points on top (e.g., colored by group)
@@ -6254,23 +6257,24 @@ ggsave(paste(results_path, "convergence_correlation_wn_env_first_increment.pdf")
 ```{r}
 
 #### selection, drift, fluctuating selection ####
-gen = 10
+gen = 5
 N = 200
 h = 0.5
-s = 0.05
+s = 0.1
 q0 = 0.5
 
-selection = WF_sel(N, q0, h, rep(s, times = gen), gen)
 
-drift = WF_sel(N, q0, h, rep(0,times = gen), gen)
+selection = WF_sel(N, q0, h, s, gen)
+
+drift <- WF_sel(N, q0, h, 0, gen)
 
 fluct <- WF_sel(N, q0, h, c(rep(s, times = gen/2), rep(-3*s, times = gen/2)), gen)
 
 plotdata <- data.frame(
   gen = 1:gen,
-  selection = selection,
-  drift = drift,
-  fluct = fluct
+  selection = c(0.5, 0.55, 0.57, 0.62, 0.63),
+  drift = c(0.5, 0.55, 0.49, 0.52, 0.49),
+  fluct = c(0.5, 0.55, 0.6, 0.52, 0.49)
 )
 
 plotdata <- melt(plotdata, id = "gen")
@@ -6287,12 +6291,25 @@ ggsave(paste("../results/by-date/", today, "/allele_frequency_changes.pdf", sep 
 #### Replicate covariances ####
 set.seed(123)
 
+selection_1 = WF_sel(N, q0, h, s, gen)
+selection_2 = WF_sel(N, q0, h, s, gen)
+drift_1 = WF_sel(N, q0, h, 0, gen)
+drift_2 = WF_sel(N, q0, h, 0, gen)
+  
 plotdata <- data.frame(
-  gen = 0:gen,
-  selection_1 = c(q0, WF_sel(N, q0, h, rep(s, times = gen), gen)/N),
-  selection_2 = c(q0, WF_sel(N, q0, h, rep(s, times = gen), gen)/N),
-  drift_1 = c(q0, WF_sel(N, q0, h, rep(0, times = gen), gen)/N),
-  drift_2 = c(q0, WF_sel(N, q0, h, rep(0, times = gen), gen)/N)
+  gen = 1:gen,
+  selection_1 = selection_1,
+  selection_2 = selection_2,
+  drift_1 = drift_1,
+  drift_2 = drift_2
+)
+
+plotdata <- data.frame(
+  gen = 1:gen,
+  selection_1 = c(0.5, 0.54, 0.56, 0.57, 0.6),
+  selection_2 = c(0.5, 0.53, 0.57, 0.59, 0.61),
+  drift_1 = c(0.5, 0.53, 0.49, 0.47, 0.51),
+  drift_2 = c(0.5, 0.51, 0.53, 0.54, 0.52)
 )
 
 plotdata <- reshape2::melt(plotdata, id = "gen")
@@ -6300,11 +6317,11 @@ plotdata <- reshape2::melt(plotdata, id = "gen")
 plotdata$mech <- gsub("_.*", "", plotdata$variable)
 plotdata$rep <- gsub(".*_", "", plotdata$variable)
 
-ggplot(plotdata, aes(x = gen, y = value, group = rep)) +
+ggplot(plotdata, aes(x = factor(gen), y = value, group = rep)) +
   geom_abline(slope = 0, intercept = q0, lty = 2) +
   geom_point() +
   geom_line(lwd = 1.1) +
-  facet_wrap(~mech, labeller = as_labeller(c("selection" = "Directional\nselection", "drift" = "Drift"))) +
+  facet_wrap(~mech, labeller = as_labeller(c("selection" = "Convergent\nselection", "drift" = "Drift"))) +
   labs(x = "Generation", y = "Allele frequency")
 
 ggsave(paste("../results/by-date/", today, "/replicate_covariances.pdf", sep = ""), height = 4, width = 8)
