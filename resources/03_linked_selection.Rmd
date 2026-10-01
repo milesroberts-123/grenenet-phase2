@@ -2612,8 +2612,16 @@ output_gt_class <- paste(
   sep = ""
 )
 
+output_var_cov <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/var_cov_kmate.tsv",
+  sep = ""
+)
+
 # delete previous run
 check_file_exists(output_gt_class)
+check_file_exists(output_var_cov)
 
 # check that directory exists
 folder_path <- dirname(output_gt_class)
@@ -2670,14 +2678,27 @@ for (cls in var_class_loop_list) {
         hap_cls,
         rep_n$total_flowers*2,
         correct_for_n = T,
-        input_asin_trans = F
+        input_asin_trans = F,
+        standard_by_het = T
       )
       
+      # save gt statistic
       gt_result <- gt_from_covmat(covmat)
       gt_result$site = site
       gt_result$rep = exprep
       gt_result$class = paste(cls, collapse = "_")
       append_table(gt_result, output_gt_class)
+      
+      # save raw var-cov matrix
+      covlong <- covmat %>%
+        as.data.frame() %>%
+        rownames_to_column(var = "A") %>%
+        pivot_longer(cols = -A, names_to = "B", values_to = "cov")
+      
+      covlong$site <- site
+      covlong$rep <- exprep
+      covlong$class = paste(cls, collapse = "_")
+      append_table(covlong, output_var_cov)
     }
   }
 }
@@ -2699,11 +2720,46 @@ ggplot(gt_class, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) +
 
 ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate.pdf"), width = 11, height = 12)
 
-# ggplot(gt_class %>% filter(gen == 5), aes(x = factor(gen), y = gt_abs, color = class)) +
-#   geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
-#   geom_point() +
-#   labs(x = "Generation", y = "Gabs(t)") +
-#   stat_compare_means()
+# check where negative covariance is coming from
+kmate_var_cov <- fread(output_var_cov) %>%
+  filter(class == "sv")
+
+kmate_var_cov <- kmate_var_cov %>% 
+  mutate(i = as.numeric(gsub("_", "", str_extract(A, "_[0-9]_"))),
+         j = as.numeric(gsub("_", "", str_extract(B, "_[0-9]_"))),
+         dt = abs(i - j))
+
+
+dt_by_cov_summary <- kmate_var_cov %>% 
+  group_by(dt) %>%
+  filter(!is.na(cov)) %>%
+  summarize(num_neg_cov = sum(cov < 0),
+            n = n(),
+            prop_neg_cov = num_neg_cov/n)
+
+ggplot(dt_by_cov_summary %>% filter(dt > 0), aes(x = dt, y = prop_neg_cov)) +
+  geom_col(color = "black", fill = "black") +
+  geom_text(aes(label = paste0(signif(prop_neg_cov, 3), ", n = ", n)), vjust = -0.5) +
+  labs(x = "\u0394t = |i - j|", y = "Proportion of Cov(\u0394pi, \u0394pj) < 0")
+  
+ggsave(paste0("../results/by-date/", today, "/neg_cov_by_dt.pdf"), device = cairo_pdf, height = 5, width = 6)
+
+## facet by site
+dt_by_cov_site <- kmate_var_cov %>% 
+  group_by(site, dt) %>%
+  filter(!is.na(cov)) %>%
+  summarize(num_neg_cov = sum(cov < 0),
+            n = n(),
+            prop_neg_cov = num_neg_cov/n)
+
+ggplot(dt_by_cov_site %>% filter(dt > 0), aes(x = dt, y = prop_neg_cov)) +
+  geom_col(color = "black", fill = "black") +
+  geom_text(aes(label = n), vjust = +1, color = "white") +
+  facet_wrap(~site) +
+  geom_hline(yintercept = 0.5, color = "red", lty = 2) +
+  labs(x = "\u0394t = |i - j|", y = "Proportion of Cov(\u0394pi, \u0394pj) < 0")
+  
+ggsave(paste0("../results/by-date/", today, "/neg_cov_by_dt_by_site.pdf"), device = cairo_pdf, height = 7, width = 7)
 
 ```
 
@@ -3062,7 +3118,22 @@ gt_null <- gt_perms %>%
             gt_abs = median(gt_abs)) %>%
   left_join(locations_data, by = "site")
 
-# overview of all
+# overview of all sites
+
+## non-faceted version
+ggplot(boot_summary %>% filter(!is.na(gt_abs)) %>% left_join(worldclim_sitesdata, by = "site"), aes(x = factor(gen), y = gt_abs, group = interaction(site, rep))) +
+  geom_point(alpha = 0.25) +
+  geom_line(alpha = 0.25) +
+  geom_line(data = boot_summary %>% group_by(site, gen) %>% summarize(gt_abs = mean(gt_abs, na.rm = T), rep = 1) %>% left_join(worldclim_sitesdata, by = "site"), mapping = aes(color = bio1), alpha = 1, lwd = 1.5) +
+  scale_color_scico(palette = "berlin") +
+  #geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
+  #geom_ribbon(data = gt_null, mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
+  theme(text = element_text(size=20)) +
+  labs(x = "Generation", y = "Gabs(t)", color = "Mean\nAnnual\nTemp\n(\u00b0C)")
+
+ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_no_facet.pdf"), width = 6, height = 5, device = cairo_pdf)
+
+## faceted version
 ggplot(boot_summary %>% filter(!is.na(gt_abs)), aes(x = factor(gen), y = gt_abs, group = rep)) +
   geom_point() +
   geom_line() +
@@ -4359,6 +4430,75 @@ pi_windows_sub <- pi_windows_all %>%
   filter(gen == max(gen))
 
 
+# --- Genetic diversity in contemporary populations ---
+mod_pi <- lm(
+  avg_pi_z ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z,
+  data = pi_windows_sub %>% filter(site == 1, gen == 4, rep == 1)
+)
+
+# 1. Define a function that returns the coefficients
+# 'indices' is required by the boot function to resample rows
+bs_model <- function(data, indices) {
+  df_boot <- data[indices, ]               # Resample the dataset
+  fit <- lm(avg_pi_z ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z, data = df_boot)   # Fit the lm model
+  return(coef(fit))                        # Return coefficients
+}
+
+# 2. Run the bootstrap (e.g., 2000 replications)
+set.seed(123) # For reproducibility
+boot_results <- boot(data = pi_windows_sub %>% filter(site == 1, gen == 4, rep == 1), statistic = bs_model, R = 1000)
+
+# 3. View the results and get Confidence Intervals
+print(boot_results)
+
+# Get 95% CI for the 'x1' slope (index = 2 if intercept is 1)
+boot.ci(boot_results, type = "basic", index = 2) 
+
+# 1. Determine how many coefficients you have
+num_coefs <- length(boot_results$t0)
+coef_names <- names(boot_results$t0)
+
+# 2. Loop through each coefficient index and extract the "basic" interval
+ci_list <- lapply(1:num_coefs, function(i) {
+  # Run boot.ci for the specific coefficient index
+  res <- boot.ci(boot_results, type = "basic", index = i)
+  
+  # Extract the lower and upper bounds (found in the last 2 positions of the basic vector)
+  # res$basic contains [conf_level, index1, index2, lower_bound, upper_bound]
+  data.frame(
+    Term = coef_names[i],
+    Estimate = boot_results$t0[i],
+    Lower_CI = res$basic[4],
+    Upper_CI = res$basic[5],
+    stringsAsFactors = FALSE
+  )
+})
+
+# 3. Combine into a single table
+ci_table <- do.call(rbind, ci_list)
+rownames(ci_table) <- NULL # Clean up row names
+
+ci_table <- ci_table %>%
+  mutate(Term = recode(Term, "frac_cds_z" = "CDS density",
+                       "avg_exp_over_frac_cds_z" = "Avg. Expression/CDS density",
+                       "rate_z" = "Recombination rate (cM/Mb)",
+                       "tau_z" = "Expression specificity"))
+
+# 4. View your clean table
+print(ci_table)
+
+ggplot(ci_table %>% filter(Term != "(Intercept)"), aes(x = Term, y = Estimate)) +
+  geom_linerange(aes(ymin = Lower_CI, ymax = Upper_CI), color = "red", linewidth = 1) +
+  geom_point(shape = 16, color = "black", size = 1.5) +
+  geom_hline(yintercept = 0, lty = 2) +
+  coord_flip() +
+  theme(title = element_text(size = 12)) +
+  labs(y = "Bootstrap estimate of\nscaled coefficient", x = "Model term", title = "\u03c0 ~ Recombination + CDS density +\nAvg. Expression + Expression Specificity")
+
+ggsave(paste0("../results/by-date/", today, "/pi_model_coeff.pdf"), device = cairo_pdf, height = 5, width = 9)
+
+
+# --- Variance in allele frequency change in GrENE-net---
 mod_sum_var <- lmer(
   sum_var_z ~ frac_cds_z + avg_exp_over_frac_cds_z + tau_z + rate_z + gen + (1 | site/rep),
   data = pi_windows_sub
