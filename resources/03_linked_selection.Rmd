@@ -59,6 +59,8 @@ theme_set(
 )
 
 # color palettes
+# temperature: berlin
+
 ```
 
 # Prepare allele frequencies
@@ -2767,7 +2769,7 @@ ggsave(paste0("../results/by-date/", today, "/neg_cov_by_dt_by_site.pdf"), devic
 
 ```{r}
 
-num_block_boots <- 100
+num_block_boots <- 250
 
 blocks <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
 
@@ -2780,9 +2782,16 @@ output_gt_kmate_blocks <- paste(
   sep = ""
 )
 
+output_var_cov_blocks <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/var_cov_kmate_boots.tsv",
+  sep = ""
+)
+
 # delete previous run
 #check_file_exists(output_gt_kmate_blocks)
-
+#check_file_exists(output_var_cov_blocks)
 # check that directory exists
 folder_path <- dirname(output_gt_kmate_blocks)
 if (!dir.exists(folder_path)) {
@@ -2807,7 +2816,7 @@ for (cls in var_class_loop_list) {
   gen0_cls <- gen0 %>%
     filter(row_number() %in% cls_idx)
   
-  for (site in unique(sites)) {
+  for (site in unique(sites)[27:31]) {
     print(paste(Sys.time(), "- Site:", site))
     hap_site <- hapfire %>% 
       dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -2852,19 +2861,22 @@ for (cls in var_class_loop_list) {
           hap_boot,
           rep_n$total_flowers*2,
           correct_for_n = T,
-          input_asin_trans = F
+          input_asin_trans = F,
+          standard_by_het = T
         )
         
-        # covlong <- covmat %>% 
-        #   as.data.frame() %>% 
-        #   rownames_to_column(var = "A") %>% 
-        #   pivot_longer(cols = -A, names_to = "B", values_to = "cov")
-        # 
-        # covlong$site <- site
-        # covlong$rep <- exprep
-        # covlong$block <- w
-        # covlong$weight <- nrow(hap_wind)
-        # append_table(covlong, output_gt_class_blocks)
+        # save raw var-cov matrix
+        covlong <- covmat %>%
+          as.data.frame() %>%
+          rownames_to_column(var = "A") %>%
+          pivot_longer(cols = -A, names_to = "B", values_to = "cov")
+        
+        covlong$site <- site
+        covlong$rep <- exprep
+        covlong$class = paste(cls, collapse = "_")
+        covlong$boot = b
+        covlong$weight = nrow(hap_boot)
+        append_table(covlong, output_var_cov_blocks)
         
         gt_result <- gt_from_covmat(covmat)
         gt_result$site = site
@@ -2883,7 +2895,7 @@ for (cls in var_class_loop_list) {
 }  
 ```
 
-## ONE-TIME: calculate block bootstraps
+## DEPRECATED: ONE-TIME: calculate block bootstraps
 
 ```{r}
 gt_kmate_blocks <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_kmate_long.tsv")
@@ -3057,7 +3069,8 @@ for (cls in var_class_loop_list){
           correct_for_n = T,
           input_asin_trans = F,
           procedure = "window",
-          windows = hap_rep %>% pull(window)
+          windows = hap_rep %>% pull(window),
+          standard_by_het = T
         )
         
         gt_result <- gt_from_covmat(covmat)
@@ -3156,7 +3169,6 @@ plot_gt <- function(data){
 }
 
 plot_groups_pdf(boot_summary, "city_country", plot_fn = plot_gt, filepath = paste0("../results/by-date/", today, "/gt_abs_kmate_by_site.pdf"), width = 4, height = 4)
-
 
 # summarize
 # for those populations with selection outside null, what's the percentage?
