@@ -2610,20 +2610,20 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 output_gt_class <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_point_estimates_kmate_all_reps.tsv",
+  "/gt_point_estimates_kmate.tsv",
   sep = ""
 )
 
 output_var_cov <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/var_cov_kmate.tsv",
+  "/var_cov_kmate_point_estimates.tsv",
   sep = ""
 )
 
 # delete previous run
-check_file_exists(output_gt_class)
-check_file_exists(output_var_cov)
+# check_file_exists(output_gt_class)
+# check_file_exists(output_var_cov)
 
 # check that directory exists
 folder_path <- dirname(output_gt_class)
@@ -2701,6 +2701,8 @@ for (cls in var_class_loop_list) {
       covlong$rep <- exprep
       covlong$class = paste(cls, collapse = "_")
       append_table(covlong, output_var_cov)
+      
+      rm(covlong, covmat, gt_result, hap_cls, gen0_cls, rep_n, hap_rep); gc()
     }
   }
 }
@@ -2711,7 +2713,6 @@ gt_class <- fread(output_gt_class) %>%
 gt_class$class <- gsub("smallindel_sv_snp", "all", gt_class$class)
 gt_class$class <- gsub("smallindel", "indel", gt_class$class)
 
-getwd()
 ggplot(gt_class, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) +
   geom_point() +
   geom_line() +
@@ -2730,7 +2731,6 @@ kmate_var_cov <- kmate_var_cov %>%
   mutate(i = as.numeric(gsub("_", "", str_extract(A, "_[0-9]_"))),
          j = as.numeric(gsub("_", "", str_extract(B, "_[0-9]_"))),
          dt = abs(i - j))
-
 
 dt_by_cov_summary <- kmate_var_cov %>% 
   group_by(dt) %>%
@@ -2998,7 +2998,14 @@ length(unique(blocks$window))
 output_gt_kmate_perms <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_sign_permutations_kmate.tsv",
+  "/gt_kmate_perms.tsv",
+  sep = ""
+)
+
+output_var_cov_kmate_perms <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/var_cov_kmate_perms.tsv",
   sep = ""
 )
 
@@ -3032,7 +3039,7 @@ for (cls in var_class_loop_list){
   gen0_cls <- gen0 %>%
     filter(row_number() %in% cls_idx)
   
-  for (site in unique(sites)[10:31]) {
+  for (site in unique(sites)[30:31]) {
     print(paste("Site:", site))
     hap_site <- hapfire %>% 
       dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -3044,8 +3051,6 @@ for (cls in var_class_loop_list){
         collect() %>%
         mutate(window = blocks$window) %>% # add block ids
         filter(row_number() %in% cls_idx) # subset to variant class
-      
-      #hap_rep$window <- blocks$window
       
       # sort names to be in order of generation
       hap_rep <- hap_rep %>%
@@ -3073,15 +3078,25 @@ for (cls in var_class_loop_list){
           standard_by_het = T
         )
         
-        gt_result <- gt_from_covmat(covmat)
+        # save raw var-cov matrix
+        covlong <- covmat %>%
+          as.data.frame() %>%
+          rownames_to_column(var = "A") %>%
+          pivot_longer(cols = -A, names_to = "B", values_to = "cov")
         
+        covlong$site <- site
+        covlong$rep <- exprep
+        covlong$class = paste(cls, collapse = "_")
+        covlong$perm = p
+        append_table(covlong, output_var_cov_kmate_perms)
+        
+        gt_result <- gt_from_covmat(covmat)
+    
         gt_result$site = site
         gt_result$rep = exprep
-        # gt_result$block = w
-        # gt_result$weight = nrow(hap_wind)
         gt_result$perm = p
-        
         append_table(gt_result, output_gt_kmate_perms)
+        
         rm(gt_result, covmat); gc()
       }
       rm(hap_rep); gc()
@@ -3097,14 +3112,20 @@ for (cls in var_class_loop_list){
 ```{r}
 # point estimates
 #gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
-gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_point_estimates_kmate.tsv") %>%
+#gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_point_estimates_kmate.tsv") %>%
+  # filter(class == "sv") %>%
+  # distinct(site, rep, gen, .keep_all = T)
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_point_estimates_kmate.tsv") %>%
   filter(class == "sv") %>%
   distinct(site, rep, gen, .keep_all = T)
 
 # bootstrap confidence intervals
 #boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
 #gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_boots_kmate.tsv")
-gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_boots_kmate.tsv") %>%
+# gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_boots_kmate.tsv") %>%
+#   filter(class == "sv") %>%
+#   distinct(site, rep, gen, boot, .keep_all = T)
+gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-01/gt_boots_kmate.tsv") %>%
   filter(class == "sv") %>%
   distinct(site, rep, gen, boot, .keep_all = T)
 
@@ -3121,7 +3142,9 @@ boot_summary <- gt_boots %>%
 
 # sign-permuted null distribution
 #gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_sign_permutations_kmate.tsv")
-gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_sign_permutations_kmate.tsv") %>%
+#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_sign_permutations_kmate.tsv") %>%
+#  distinct(site, rep, gen, perm, .keep_all = T)
+gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_kmate_perms.tsv") %>%
   distinct(site, rep, gen, perm, .keep_all = T)
 
 gt_null <- gt_perms %>%
@@ -3139,8 +3162,8 @@ ggplot(boot_summary %>% filter(!is.na(gt_abs)) %>% left_join(worldclim_sitesdata
   geom_line(alpha = 0.25) +
   geom_line(data = boot_summary %>% group_by(site, gen) %>% summarize(gt_abs = mean(gt_abs, na.rm = T), rep = 1) %>% left_join(worldclim_sitesdata, by = "site"), mapping = aes(color = bio1), alpha = 1, lwd = 1.5) +
   scale_color_scico(palette = "berlin") +
-  #geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
-  #geom_ribbon(data = gt_null, mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
+  geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
+  geom_ribbon(data = gt_null, mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
   theme(text = element_text(size=20)) +
   labs(x = "Generation", y = "Gabs(t)", color = "Mean\nAnnual\nTemp\n(\u00b0C)")
 
@@ -3327,6 +3350,35 @@ ggplot(data=bed_comb %>% filter(gene == "AT4G33950"), mapping=aes(x=cell_type,y=
   labs(x = "Cell type", y = "Expression (CPM)", title = "OST1 Expression")
 
 ggsave(paste0("../results/by-date/", today, "/OST1_single-cell-atlas.pdf"), width = 9.5)
+
+```
+
+# Entropy, gene expression specificity
+
+```{r}
+
+# load seurat data
+
+# normalize (log 1p)
+
+# remove genes expressed in fewer than 100 cells 
+counts <- GetAssayData(seurat_obj, assay = "RNA", slot = "counts")
+genes_to_keep <- rowSums(counts > 0) >= 100
+seurat_obj <- subset(seurat_obj, features = names(genes_to_keep[genes_to_keep]))
+
+# calculate probabilities
+express_prob <- function(x){x/sum(x)}
+
+# total entropy
+entropy <- function(x){-sum(x*log(x))}
+
+# loop over blocks/cell-types
+for(block in cell_types){
+  # calculate probabilities
+  # calcuate within-block entropy
+  # calculate psi
+}
+
 
 ```
 
