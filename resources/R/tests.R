@@ -298,3 +298,44 @@ describe("conv_cor_wn_env", {
     expect_error(gt$conv_cor_wn_env(c(1, 2, 3)))
   })
 })
+
+describe("ember entropy pipeline", {
+  # Synthetic 2-block case (4 genes x 6 cells). The reference quantities are
+  # computed directly from the ember definitions
+  # (E_T, E_C via -sum p log2 p; Psi = E_W/E_T; Zeta = 1 - H(psi)/log2(r)),
+  # mirroring workflow/scripts/ember_entropy.R.
+  # LogNormalize with scale 1 so x = log2(1 + counts).
+  # Block A = cells 1-3, block B = cells 4-6.
+  counts_mat <- matrix(c(
+    3,   5,  1,   0,  0,  0,   # gene1: only in block A
+    0,   0,  0,   2,  6,  4,   # gene2: only in block B
+    1,   1,  1,   1,  1,  1,   # gene3: ubiquitous, uniform
+    9,   0,  0,   1,  0,  0    # gene4: concentrated, some in both
+  ), nrow = 4, ncol = 6, byrow = TRUE)
+
+   it("computes Psi, psi_block, Zeta by direct reference implementation", {
+    x <- log2(counts_mat + 1)
+    S_g <- rowSums(x)
+    ent <- function(m) {
+      S <- rowSums(m)
+      p <- sweep(m, 1, S, "/")
+      -rowSums(ifelse(m > 0, p * log2(p), 0))
+    }
+    E_T <- ent(x)
+    EA <- ent(x[, 1:3, drop = FALSE]); EB <- ent(x[, 4:6, drop = FALSE])
+    pA <- rowSums(x[, 1:3]) / S_g; pB <- rowSums(x[, 4:6]) / S_g
+    EW <- pA * EA + pB * EB
+    Psi <- EW / E_T
+
+    # gene1 lives only in block A: its within-block distribution equals the
+    # global one, so E_A = E_T and Psi[1] = 1. gene4 spans both blocks and
+    # gene2'sPsi is exactly 1 as well (single-block genes)
+    expect_equal(unname(Psi[1]), 1, tolerance = 1e-12)
+    expect_equal(unname(Psi[2]), 1, tolerance = 1e-12)
+    expect_lt(unname(Psi[4]), 1)
+    # gene3 is uniform across all 6 cells: Psi ~ 0.6131 = E_W/E_T, where
+    # E_W = p_A*H(3 uniform cells) (per ember's definition). All Psi in [0, 1]
+    expect_equal(unname(Psi[3]), 0.6131472, tolerance = 1e-4)
+    expect_true(all(Psi >= 0 & Psi <= 1))
+  })
+})

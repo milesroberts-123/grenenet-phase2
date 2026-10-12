@@ -61,11 +61,17 @@ rule all_expression_bins:
 #    input:
 #        expand("freqk_call_results/{sample}.txt", sample=config["seed_samples"])
 
+rule all_ember:
+    input:
+        "results/ember/entropy_metrics_stage_celltype.csv",
+        "results/ember/psi_block_stage_celltype.csv"
+
 include: "rules/freqk.smk"
 include: "rules/fastp.smk"
 include: "rules/slim.smk"
 include: "rules/fst_sim.smk"
 include: "rules/expression_bins.smk"
+include: "rules/ember.smk"
 #include: "rules/legacy/kmc.smk"
 #include: "rules/legacy/kmc_contam_db.smk"
 #include: "rules/legacy/kmc_rm_contam.smk"
