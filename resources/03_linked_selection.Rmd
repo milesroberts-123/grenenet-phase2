@@ -3356,29 +3356,141 @@ ggsave(paste0("../results/by-date/", today, "/OST1_single-cell-atlas.pdf"), widt
 # Entropy, gene expression specificity
 
 ```{r}
+library(Seurat)
 
 # load seurat data
+seed0d <- readRDS("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seed_0d_230221.rds")
 
-# normalize (log 1p)
+# Subset the object to keep everything EXCEPT "Unannotated"
+seed0d <- subset(seed0d, subset = CellType != "Unannotated")
+
+#
+seurat_meta <- seed0d[[]]
+
+# normalize (log1p)
+seed0d <- CreateAssayObject(counts = slot(seed0d[["RNA"]], "counts"))
+seed0d <- NormalizeData(object = seed0d)
 
 # remove genes expressed in fewer than 100 cells 
-counts <- GetAssayData(seurat_obj, assay = "RNA", slot = "counts")
+counts <- GetAssayData(seed0d, assay = "RNA", slot = "counts")
 genes_to_keep <- rowSums(counts > 0) >= 100
-seurat_obj <- subset(seurat_obj, features = names(genes_to_keep[genes_to_keep]))
+sum(genes_to_keep)/length(genes_to_keep)*100
+seed0d <- subset(seed0d, features = names(genes_to_keep[genes_to_keep]))
 
-# calculate probabilities
+# calculate expression probabilities
 express_prob <- function(x){x/sum(x)}
 
-# total entropy
+counts <- GetAssayData(seed0d, assay = "RNA", slot = "counts")
+
+total_gene_counts <- Matrix::rowSums(counts)
+p <- (counts/total_gene_counts) 
+head(Matrix::rowSums(p))
+
+# total entropy per gene
 entropy <- function(x){-sum(x*log(x))}
 
+Y <- p
+nz <-Y@x > 0 # guard possible stored zeros (0*log(0) = NaN)
+Y@x[nz] <- Y@x[nz] * log(Y@x[nz])
+E_T <- -Matrix::rowSums(Y) # one value per row, still sparse internally, C-speed rowSums
+
+E_T <- data.frame(
+  gene = names(E_T),
+  E_T = E_T
+)
+
 # loop over blocks/cell-types
-for(block in cell_types){
-  # calculate probabilities
+E_C_all <- NULL
+for(block in unique(seurat_meta$CellType)){
+  print(block)
+  # subset to only cells in block
+  cells_in_block <- seurat_meta %>% 
+    filter(CellType == block) %>% 
+    rownames()
+  
+  counts_subset <- counts[, cells_in_block, drop = FALSE]
+  
+  # calculate probabilities witin-block
+  total_block_gene_counts <- Matrix::rowSums(counts_subset)
+  q_C <- counts_subset/total_block_gene_counts
+  
+  # calculate proportion of gene expression's is located within a block
+  p_C <- total_block_gene_counts/total_gene_counts
+
   # calcuate within-block entropy
-  # calculate psi
+  Y <- q_C
+  nz <-Y@x > 0 # guard possible stored zeros (0*log(0) = NaN)
+  nz[is.na(nz)] <- FALSE # guard against NA's
+  Y@x[nz] <- Y@x[nz] * log(Y@x[nz])
+  E_C <- -Matrix::rowSums(Y) # one value per row, still sparse internally, C-speed rowSums
+  
+  # save within-block entropies
+  E_C_result <- data.frame(
+    gene = names(E_C),
+    E_C = E_C,
+    p_C = p_C,
+    block = block
+  )
+  
+  E_C_all <- rbind(E_C_all, E_C_result)
 }
 
+E_W <- E_C_all %>%
+  group_by(gene) %>%
+  mutate(E_W = sum(E_C*p_C),
+         psi_block = (p_C*E_C)/E_W)
+
+# should sum to 1
+# E_W %>% group_by(gene) %>% summarize(sum(psi_block))
+
+psi <- E_T %>%
+  left_join(E_W, by = "gene") %>%
+  mutate(psi = E_W/E_T)
+
+# should be FALSE
+any(psi$psi > 1, na.rm = T)
+
+# calculate zeta
+zeta <- psi %>%
+  group_by(gene) %>%
+  mutate(zeta = 1 - entropy(psi_block[psi_block>0])/n_distinct(block))
+
+# plot cell-type markers
+ggplot(zeta, aes(x = psi, y = psi_block)) +
+  geom_point() +
+  facet_wrap(~block) +
+  theme(axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45)) +
+  labs(x = "\u03A8", y = "\u03C8block")
+
+ggsave(paste0("../results/by-date/", today, "/seed0d_psi_vs_psi_block.pdf"), device = cairo_pdf)
+
+# plot house-keeping genes
+zeta_distinct <- zeta %>% distinct(gene, psi, zeta)
+any(duplicated(zeta_distinct$gene)) # should be false
+
+points_to_label <- zeta_distinct %>%
+  filter(gene %in% c("AT3G26650","AT3G18780", "AT5G09810", "AT1G49240", "AT4G05320", "AT3G62250", "AT5G60390", "AT5G62690", "AT5G12250", "AT1G50010"))
+
+ggplot(zeta_distinct, aes(x = psi, y = zeta)) +
+  geom_point() +
+  labs(x = "\u03A8", y = "\u03B6") +
+  geom_point(data = points_to_label, color = "pink") +
+  # Label layer: uses ONLY the subsetted data
+  geom_text_repel(
+    data = points_to_label, 
+    aes(label = gene),
+    box.padding = 0.5,     # Distance from point to text
+    point.padding = 0.3,   # Minimum space between point and text
+    segment.color = "darkgrey", # Color of the connector line
+    size = 4,              # Text size
+    fontface = "bold",
+    max.overlaps = 24,
+    color = "darkgrey"
+  )
+
+ggsave(paste0("../results/by-date/", today, "/seed0d_psi_vs_zeta.pdf"), device = cairo_pdf, width = 6, height = 6)
+
+# map diversity onto genes
 
 ```
 
