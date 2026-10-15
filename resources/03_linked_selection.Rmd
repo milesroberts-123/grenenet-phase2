@@ -2617,7 +2617,7 @@ output_gt_class <- paste(
 output_var_cov <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/var_cov_kmate_point_estimates.tsv",
+  "/var_cov_point_estimates_kmate.tsv",
   sep = ""
 )
 
@@ -2681,7 +2681,7 @@ for (cls in var_class_loop_list) {
         rep_n$total_flowers*2,
         correct_for_n = T,
         input_asin_trans = F,
-        standard_by_het = T
+        standard_by_het = F
       )
       
       # save gt statistic
@@ -2785,7 +2785,7 @@ output_gt_kmate_blocks <- paste(
 output_var_cov_blocks <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/var_cov_kmate_boots.tsv",
+  "/var_cov_boots_kmate.tsv",
   sep = ""
 )
 
@@ -2816,7 +2816,7 @@ for (cls in var_class_loop_list) {
   gen0_cls <- gen0 %>%
     filter(row_number() %in% cls_idx)
   
-  for (site in unique(sites)[27:31]) {
+  for (site in unique(sites)) {
     print(paste(Sys.time(), "- Site:", site))
     hap_site <- hapfire %>% 
       dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -2862,7 +2862,7 @@ for (cls in var_class_loop_list) {
           rep_n$total_flowers*2,
           correct_for_n = T,
           input_asin_trans = F,
-          standard_by_het = T
+          standard_by_het = F
         )
         
         # save raw var-cov matrix
@@ -2998,14 +2998,14 @@ length(unique(blocks$window))
 output_gt_kmate_perms <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/gt_kmate_perms.tsv",
+  "/gt_perms_kmate.tsv",
   sep = ""
 )
 
 output_var_cov_kmate_perms <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
-  "/var_cov_kmate_perms.tsv",
+  "/var_cov_perms_kmate.tsv",
   sep = ""
 )
 
@@ -3039,7 +3039,7 @@ for (cls in var_class_loop_list){
   gen0_cls <- gen0 %>%
     filter(row_number() %in% cls_idx)
   
-  for (site in unique(sites)[30:31]) {
+  for (site in unique(sites)[16:31]) {
     print(paste("Site:", site))
     hap_site <- hapfire %>% 
       dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -3075,7 +3075,7 @@ for (cls in var_class_loop_list){
           input_asin_trans = F,
           procedure = "window",
           windows = hap_rep %>% pull(window),
-          standard_by_het = T
+          standard_by_het = F
         )
         
         # save raw var-cov matrix
@@ -3095,9 +3095,10 @@ for (cls in var_class_loop_list){
         gt_result$site = site
         gt_result$rep = exprep
         gt_result$perm = p
+        gt_result$class = paste(cls, collapse = "_")
         append_table(gt_result, output_gt_kmate_perms)
         
-        rm(gt_result, covmat); gc()
+        rm(gt_result, covmat, covlong); gc()
       }
       rm(hap_rep); gc()
     }
@@ -3115,9 +3116,15 @@ for (cls in var_class_loop_list){
 #gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_point_estimates_kmate.tsv") %>%
   # filter(class == "sv") %>%
   # distinct(site, rep, gen, .keep_all = T)
-gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_point_estimates_kmate.tsv") %>%
+# standardization by heterozygosity
+# gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_point_estimates_kmate.tsv") %>%
+#   filter(class == "sv") %>%
+#   distinct(site, rep, gen, .keep_all = T)
+# no standardization by heterozygosity
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_point_estimates_kmate.tsv") %>%
   filter(class == "sv") %>%
   distinct(site, rep, gen, .keep_all = T)
+
 
 # bootstrap confidence intervals
 #boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
@@ -3125,7 +3132,12 @@ gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet
 # gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_boots_kmate.tsv") %>%
 #   filter(class == "sv") %>%
 #   distinct(site, rep, gen, boot, .keep_all = T)
-gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-01/gt_boots_kmate.tsv") %>%
+# standardized by heterozygosity
+# gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-01/gt_boots_kmate.tsv") %>%
+#   filter(class == "sv") %>%
+#   distinct(site, rep, gen, boot, .keep_all = T)
+# not standardized by heterozygosity
+gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_boots_kmate.tsv") %>%
   filter(class == "sv") %>%
   distinct(site, rep, gen, boot, .keep_all = T)
 
@@ -3144,7 +3156,11 @@ boot_summary <- gt_boots %>%
 #gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_sign_permutations_kmate.tsv")
 #gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_sign_permutations_kmate.tsv") %>%
 #  distinct(site, rep, gen, perm, .keep_all = T)
-gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_kmate_perms.tsv") %>%
+# standardized by heterozygosity
+#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_kmate_perms.tsv") %>%
+#  distinct(site, rep, gen, perm, .keep_all = T)
+# not standardized by heterozygosity
+gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_perms_kmate.tsv") %>%
   distinct(site, rep, gen, perm, .keep_all = T)
 
 gt_null <- gt_perms %>%
@@ -3170,11 +3186,11 @@ ggplot(boot_summary %>% filter(!is.na(gt_abs)) %>% left_join(worldclim_sitesdata
 ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_no_facet.pdf"), width = 6, height = 5, device = cairo_pdf)
 
 ## faceted version
-ggplot(boot_summary %>% filter(!is.na(gt_abs)), aes(x = factor(gen), y = gt_abs, group = rep)) +
+ggplot(boot_summary %>% filter(!is.na(gt_abs), site == 46, rep == 1), aes(x = factor(gen), y = gt_abs, group = rep)) +
   geom_point() +
   geom_line() +
   geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
-  geom_ribbon(data = gt_null, mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
+  geom_ribbon(data = gt_null %>% filter(site == 46, rep == 1), mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
   facet_wrap(~site, scales = "free_y") +
   theme_minimal() +
   labs(x = "Generation", y = "Gabs(t)")
@@ -3355,140 +3371,239 @@ ggsave(paste0("../results/by-date/", today, "/OST1_single-cell-atlas.pdf"), widt
 
 # Entropy, gene expression specificity
 
+## Gene diversity
+
 ```{r}
+
+gene_bed <- read_tsv("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/genes.bed", col_names = c("chromosome", "window_pos_1", "window_pos_2", "gene"), col_types = c("n", "n", "n", "c")) %>%
+  mutate(window_pos_1 = window_pos_1 + 1)
+
+gene_pi <- list.files(path = "/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/genes", pattern = "*pi.txt", full.names = T)
+
+gene_pi <- read_tsv(gene_pi, col_names = T, id = "source_file") %>%
+  mutate(sites = gsub("1135_|_pi.txt", "", str_extract(source_file, "1135_.*_pi.txt")))
+
+gene_pi <- gene_pi %>%
+    distinct()
+
+gene_pi <- gene_pi %>% pivot_wider(
+    id_cols = c(chromosome, window_pos_1, window_pos_2),
+    names_from = sites, 
+    values_from = avg_pi
+  ) %>%
+  left_join(gene_bed, by = c("chromosome", "window_pos_1", "window_pos_2")) %>%
+  mutate(pinpis = zero/four)
+
+```
+
+## Entropy metrics from Swarna et al. 2026
+
+```{r}
+
 library(Seurat)
-
-# load seurat data
-seed0d <- readRDS("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas/GSE226097_seed_0d_230221.rds")
-
-# Subset the object to keep everything EXCEPT "Unannotated"
-seed0d <- subset(seed0d, subset = CellType != "Unannotated")
-
-#
-seurat_meta <- seed0d[[]]
-
-# normalize (log1p)
-seed0d <- CreateAssayObject(counts = slot(seed0d[["RNA"]], "counts"))
-seed0d <- NormalizeData(object = seed0d)
-
-# remove genes expressed in fewer than 100 cells 
-counts <- GetAssayData(seed0d, assay = "RNA", slot = "counts")
-genes_to_keep <- rowSums(counts > 0) >= 100
-sum(genes_to_keep)/length(genes_to_keep)*100
-seed0d <- subset(seed0d, features = names(genes_to_keep[genes_to_keep]))
-
-# calculate expression probabilities
-express_prob <- function(x){x/sum(x)}
-
-counts <- GetAssayData(seed0d, assay = "RNA", slot = "counts")
-
-total_gene_counts <- Matrix::rowSums(counts)
-p <- (counts/total_gene_counts) 
-head(Matrix::rowSums(p))
+library(ggrepel)
 
 # total entropy per gene
 entropy <- function(x){-sum(x*log(x))}
+express_prob <- function(x){x/sum(x)}
 
-Y <- p
-nz <-Y@x > 0 # guard possible stored zeros (0*log(0) = NaN)
-Y@x[nz] <- Y@x[nz] * log(Y@x[nz])
-E_T <- -Matrix::rowSums(Y) # one value per row, still sparse internally, C-speed rowSums
+seurat_files <- list.files(path = "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/single-cell-atlas", pattern = ".rds", full.names = T)
 
-E_T <- data.frame(
-  gene = names(E_T),
-  E_T = E_T
+file_info <- file.info(seurat_files)
+seurat_files <- rownames(file_info[order(file_info$size, decreasing = FALSE), ])
+
+output_zeta <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/swarna_zeta_psi_pinpis.tsv",
+  sep = ""
 )
 
-# loop over blocks/cell-types
-E_C_all <- NULL
-for(block in unique(seurat_meta$CellType)){
-  print(block)
-  # subset to only cells in block
-  cells_in_block <- seurat_meta %>% 
-    filter(CellType == block) %>% 
-    rownames()
-  
-  counts_subset <- counts[, cells_in_block, drop = FALSE]
-  
-  # calculate probabilities witin-block
-  total_block_gene_counts <- Matrix::rowSums(counts_subset)
-  q_C <- counts_subset/total_block_gene_counts
-  
-  # calculate proportion of gene expression's is located within a block
-  p_C <- total_block_gene_counts/total_gene_counts
+#check_file_exists(output_zeta)
 
-  # calcuate within-block entropy
-  Y <- q_C
-  nz <-Y@x > 0 # guard possible stored zeros (0*log(0) = NaN)
-  nz[is.na(nz)] <- FALSE # guard against NA's
-  Y@x[nz] <- Y@x[nz] * log(Y@x[nz])
-  E_C <- -Matrix::rowSums(Y) # one value per row, still sparse internally, C-speed rowSums
+for(seurat_file in seurat_files){
   
-  # save within-block entropies
-  E_C_result <- data.frame(
-    gene = names(E_C),
-    E_C = E_C,
-    p_C = p_C,
-    block = block
+  tissue <- gsub(".rds|.*/", "", seurat_file)
+  print(tissue)
+  
+  # load seurat data
+  seurat_obj <- readRDS(seurat_file)
+  
+  # Subset the object to keep everything EXCEPT "Unannotated"
+  seurat_obj <- subset(seurat_obj, subset = (CellType != "Unannotated" & CellType != "Unknown"))
+  
+  # metadata of cell-type labels
+  seurat_meta <- seurat_obj[[]]
+  
+  # normalize (log1p)
+  seurat_obj <- CreateAssayObject(counts = slot(seurat_obj[["RNA"]], "counts"))
+  seurat_obj <- NormalizeData(object = seurat_obj)
+  
+  # remove genes expressed in fewer than 100 cells 
+  counts <- GetAssayData(seurat_obj, assay = "RNA", slot = "counts")
+  genes_to_keep <- rowSums(counts > 0) >= 100
+  sum(genes_to_keep)/length(genes_to_keep)*100
+  seurat_obj <- subset(seurat_obj, features = names(genes_to_keep[genes_to_keep]))
+  
+  # calculate expression probabilities
+  counts <- GetAssayData(seurat_obj, assay = "RNA", slot = "counts")
+  
+  total_gene_counts <- Matrix::rowSums(counts)
+  p <- (counts/total_gene_counts) 
+  head(Matrix::rowSums(p))
+  
+  Y <- p
+  nz <-Y@x > 0 # guard possible stored zeros (0*log(0) = NaN)
+  Y@x[nz] <- Y@x[nz] * log(Y@x[nz])
+  E_T <- -Matrix::rowSums(Y) # one value per row, still sparse internally, C-speed rowSums
+  
+  E_T <- data.frame(
+    gene = names(E_T),
+    E_T = E_T
   )
   
-  E_C_all <- rbind(E_C_all, E_C_result)
-}
-
-E_W <- E_C_all %>%
-  group_by(gene) %>%
-  mutate(E_W = sum(E_C*p_C),
-         psi_block = (p_C*E_C)/E_W)
-
-# should sum to 1
-# E_W %>% group_by(gene) %>% summarize(sum(psi_block))
-
-psi <- E_T %>%
-  left_join(E_W, by = "gene") %>%
-  mutate(psi = E_W/E_T)
-
-# should be FALSE
-any(psi$psi > 1, na.rm = T)
-
-# calculate zeta
-zeta <- psi %>%
-  group_by(gene) %>%
-  mutate(zeta = 1 - entropy(psi_block[psi_block>0])/n_distinct(block))
-
-# plot cell-type markers
-ggplot(zeta, aes(x = psi, y = psi_block)) +
-  geom_point() +
+  # loop over blocks/cell-types
+  E_C_all <- NULL
+  for(block in unique(seurat_meta$CellType)){
+    print(block)
+    # subset to only cells in block
+    cells_in_block <- seurat_meta %>% 
+      filter(CellType == block) %>% 
+      rownames()
+    
+    counts_subset <- counts[, cells_in_block, drop = FALSE]
+    
+    # calculate probabilities witin-block
+    total_block_gene_counts <- Matrix::rowSums(counts_subset)
+    q_C <- counts_subset/total_block_gene_counts
+    
+    # calculate proportion of gene expression's is located within a block
+    p_C <- total_block_gene_counts/total_gene_counts
+    
+    # calcuate within-block entropy
+    Y <- q_C
+    nz <-Y@x > 0 # guard possible stored zeros (0*log(0) = NaN)
+    nz[is.na(nz)] <- FALSE # guard against NA's
+    Y@x[nz] <- Y@x[nz] * log(Y@x[nz])
+    E_C <- -Matrix::rowSums(Y) # one value per row, still sparse internally, C-speed rowSums
+    
+    # save within-block entropies
+    E_C_result <- data.frame(
+      gene = names(E_C),
+      E_C = E_C,
+      p_C = p_C,
+      block = block
+    )
+    
+    E_C_all <- rbind(E_C_all, E_C_result)
+  }
+  
+  E_W <- E_C_all %>%
+    group_by(gene) %>%
+    mutate(E_W = sum(E_C*p_C),
+           psi_block = (p_C*E_C)/E_W)
+  
+  # should sum to 1
+  # E_W %>% group_by(gene) %>% summarize(sum(psi_block))
+  
+  psi <- E_T %>%
+    left_join(E_W, by = "gene") %>%
+    mutate(psi = E_W/E_T)
+  
+  # should be FALSE
+  any(psi$psi > 1, na.rm = T)
+  
+  # calculate zeta
+  zeta <- psi %>%
+    group_by(gene) %>%
+    mutate(zeta = 1 - entropy(psi_block[psi_block>0])/n_distinct(block))
+  
+  # add gene constraint, genetic diversity
+  zeta <- zeta %>%
+    left_join(gene_pi, by = "gene")
+  
+  # add in simple tau 
+  pseudobulk <- read_tsv(paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/expression_bins/", tissue, ".bed"))
+  
+  pseudobulk$tau <- apply(pseudobulk[,5:ncol(pseudobulk)], MARGIN = 1, FUN = tau)
+  
+  zeta <- zeta %>%
+    left_join(pseudobulk[,c("gene", "tau")], by = "gene")
+  
+  # plot cell-type markers
+  ggplot(zeta %>% slice_sample(prop = 1), aes(x = psi, y = psi_block, color = log2(pinpis))) +
+    geom_point(shape = 16) +
+    facet_wrap(~block) +
+    scale_color_scico(palette = "bilbao", direction = -1, end = 0.95) +
+    theme(axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45)) +
+    labs(x = "\u03A8", y = "\u03C8block", color = "log2(\u03c0N/\u03c0S)")
+  
+  ggsave(paste0("../results/by-date/", today, "/", tissue, "_psi_vs_psi_block_scatter.pdf"), device = cairo_pdf)
+  
+  ggplot(zeta,  aes(x = psi, y = psi_block, z = log2(pinpis))) +
+  stat_summary_hex(fun = "mean") +
   facet_wrap(~block) +
+  scale_fill_scico(name = "Mean\nlog2(\u03c0N/\u03c0S)", palette = "bilbao", direction = -1, end = 0.95) +
   theme(axis.text.x = element_text(hjust = 1, vjust = 1, angle = 45)) +
   labs(x = "\u03A8", y = "\u03C8block")
-
-ggsave(paste0("../results/by-date/", today, "/seed0d_psi_vs_psi_block.pdf"), device = cairo_pdf)
-
-# plot house-keeping genes
-zeta_distinct <- zeta %>% distinct(gene, psi, zeta)
-any(duplicated(zeta_distinct$gene)) # should be false
-
-points_to_label <- zeta_distinct %>%
-  filter(gene %in% c("AT3G26650","AT3G18780", "AT5G09810", "AT1G49240", "AT4G05320", "AT3G62250", "AT5G60390", "AT5G62690", "AT5G12250", "AT1G50010"))
-
-ggplot(zeta_distinct, aes(x = psi, y = zeta)) +
-  geom_point() +
-  labs(x = "\u03A8", y = "\u03B6") +
-  geom_point(data = points_to_label, color = "pink") +
-  # Label layer: uses ONLY the subsetted data
-  geom_text_repel(
-    data = points_to_label, 
-    aes(label = gene),
-    box.padding = 0.5,     # Distance from point to text
-    point.padding = 0.3,   # Minimum space between point and text
-    segment.color = "darkgrey", # Color of the connector line
-    size = 4,              # Text size
-    fontface = "bold",
-    max.overlaps = 24,
-    color = "darkgrey"
-  )
-
-ggsave(paste0("../results/by-date/", today, "/seed0d_psi_vs_zeta.pdf"), device = cairo_pdf, width = 6, height = 6)
+  
+  ggsave(paste0("../results/by-date/", today, "/", tissue, "_psi_vs_psi_block_hexbin.pdf"), device = cairo_pdf)
+  
+  # plot house-keeping genes
+  zeta_distinct <- zeta %>% distinct(gene, psi, zeta, tau, pinpis)
+  any(duplicated(zeta_distinct$gene)) # should be false
+  
+  points_to_label <- zeta_distinct %>%
+    filter(gene %in% c("AT3G26650","AT3G18780", "AT5G09810", "AT1G49240", "AT4G05320", "AT3G62250", "AT5G60390", "AT5G62690", "AT5G12250", "AT1G50010"))
+  
+  ggplot(zeta_distinct, aes(x = psi, y = zeta, color = log2(pinpis))) +
+    geom_point(shape = 16) +
+    labs(x = "\u03A8", y = "\u03B6", color = "log2(\u03c0N/\u03c0S)") +
+    geom_point(data = points_to_label, color = "pink", shape = 16) +
+    scale_color_scico(palette = "bilbao", direction = -1, end = 0.95) +
+    # Label layer: uses ONLY the subsetted data
+    geom_text_repel(
+      data = points_to_label, 
+      aes(label = gene),
+      box.padding = 0.5,     # Distance from point to text
+      point.padding = 0.3,   # Minimum space between point and text
+      segment.color = "grey", # Color of the connector line
+      size = 4,              # Text size
+      fontface = "bold",
+      max.overlaps = 24,
+      color = "darkgrey"
+    )
+  
+  ggsave(paste0("../results/by-date/", today, "/", tissue, "_psi_vs_zeta.pdf"), device = cairo_pdf, width = 6, height = 6)
+  
+  # zeta vs tau
+  ggplot(zeta_distinct, aes(x = psi, y = zeta, color = tau)) +
+    geom_point(shape = 16) +
+    labs(x = "\u03A8", y = "\u03B6", color = "\u03C4") +
+    geom_point(data = points_to_label, color = "black", shape = 16) +
+    scale_color_scico(palette = "bilbao", direction = -1, end = 0.95) +
+    # Label layer: uses ONLY the subsetted data
+    geom_text_repel(
+      data = points_to_label, 
+      aes(label = gene),
+      box.padding = 0.5,     # Distance from point to text
+      point.padding = 0.3,   # Minimum space between point and text
+      segment.color = "darkgrey", # Color of the connector line
+      size = 4,              # Text size
+      fontface = "bold",
+      max.overlaps = 24,
+      color = "darkgrey"
+    )
+  
+  ggsave(paste0("../results/by-date/", today, "/", tissue, "_tau_vs_zeta.pdf"), device = cairo_pdf, width = 6, height = 6)
+  
+  # save zeta calculations
+  zeta$tissue <- tissue
+  
+  append_table(zeta, output_zeta)
+  
+  rm(E_W, E_C_all, psi, seurat_obj, seurat_meta, Y, p, E_T, nz, q_C, p_C, counts, total_gene_counts, total_block_gene_counts); gc()
+}
 
 # map diversity onto genes
 
