@@ -2681,11 +2681,12 @@ for (cls in var_class_loop_list) {
         rep_n$total_flowers*2,
         correct_for_n = T,
         input_asin_trans = F,
-        standard_by_het = F
+        standard_by_het = T
       )
       
-      # save gt statistic
-      gt_result <- gt_from_covmat(covmat)
+      # save gt statistic (per-interval standardized + B&C time-zero
+      # standardized denominators: gt/gt_abs and gt_bnc/gt_bnc_abs)
+      gt_result <- gt_from_pmat(hap_cls, n = rep_n$total_flowers*2, correct_for_n = T)
       gt_result$site = site
       gt_result$rep = exprep
       gt_result$class = paste(cls, collapse = "_")
@@ -2862,7 +2863,7 @@ for (cls in var_class_loop_list) {
           rep_n$total_flowers*2,
           correct_for_n = T,
           input_asin_trans = F,
-          standard_by_het = F
+          standard_by_het = T
         )
         
         # save raw var-cov matrix
@@ -2878,7 +2879,7 @@ for (cls in var_class_loop_list) {
         covlong$weight = nrow(hap_boot)
         append_table(covlong, output_var_cov_blocks)
         
-        gt_result <- gt_from_covmat(covmat)
+        gt_result <- gt_from_pmat(hap_boot, n = rep_n$total_flowers*2, correct_for_n = T)
         gt_result$site = site
         gt_result$rep = exprep
         gt_result$boot = b
@@ -3075,7 +3076,7 @@ for (cls in var_class_loop_list){
           input_asin_trans = F,
           procedure = "window",
           windows = hap_rep %>% pull(window),
-          standard_by_het = F
+          standard_by_het = T
         )
         
         # save raw var-cov matrix
@@ -3090,7 +3091,13 @@ for (cls in var_class_loop_list){
         covlong$perm = p
         append_table(covlong, output_var_cov_kmate_perms)
         
-        gt_result <- gt_from_covmat(covmat)
+        gt_result <- gt_from_pmat(
+          hap_rep %>% select(-window),
+          n = rep_n$total_flowers*2,
+          correct_for_n = T,
+          procedure = "window",
+          windows = hap_rep %>% pull(window)
+        )
     
         gt_result$site = site
         gt_result$rep = exprep
@@ -3121,7 +3128,11 @@ for (cls in var_class_loop_list){
 #   filter(class == "sv") %>%
 #   distinct(site, rep, gen, .keep_all = T)
 # no standardization by heterozygosity
-gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_point_estimates_kmate.tsv") %>%
+# gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_point_estimates_kmate.tsv") %>%
+#   filter(class == "sv") %>%
+#   distinct(site, rep, gen, .keep_all = T)
+# standardized by heterozygosity, with B&C-canonical gt_bnc columns
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-15/gt_point_estimates_kmate.tsv") %>%
   filter(class == "sv") %>%
   distinct(site, rep, gen, .keep_all = T)
 
@@ -3137,7 +3148,11 @@ gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet
 #   filter(class == "sv") %>%
 #   distinct(site, rep, gen, boot, .keep_all = T)
 # not standardized by heterozygosity
-gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_boots_kmate.tsv") %>%
+# gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_boots_kmate.tsv") %>%
+#   filter(class == "sv") %>%
+#   distinct(site, rep, gen, boot, .keep_all = T)
+# standardized by heterozygosity, with B&C-canonical gt_bnc columns
+gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-15/gt_boots_kmate.tsv") %>%
   filter(class == "sv") %>%
   distinct(site, rep, gen, boot, .keep_all = T)
 
@@ -3160,7 +3175,13 @@ boot_summary <- gt_boots %>%
 #gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_kmate_perms.tsv") %>%
 #  distinct(site, rep, gen, perm, .keep_all = T)
 # not standardized by heterozygosity
-gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_perms_kmate.tsv") %>%
+# gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_perms_kmate.tsv") %>%
+#   distinct(site, rep, gen, perm, .keep_all = T)
+# standardized by heterozygosity, with B&C-canonical gt_bnc columns;
+# filter class before distinct: the table holds one row per (gen, perm) per
+# variant class, and distinct() would otherwise keep an arbitrary class
+gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-15/gt_perms_kmate.tsv") %>%
+  filter(class == "sv") %>%
   distinct(site, rep, gen, perm, .keep_all = T)
 
 gt_null <- gt_perms %>%
