@@ -6260,6 +6260,69 @@ ggplot(afex_plot, aes(x = gen, y = freq, color = bio1, group = varid)) +
 ggsave(paste0("../results/by-date/", today, "/allele_freq_traj_examples.pdf"), height = 4, width = 16)
 ```
 
+### Single mutation trajectory lookup
+
+```{r}
+# trajectory of one mutation (by genomic position) at one site
+# sel_rep = NULL plots all reps within the site
+sel_chrom <- 1
+sel_pos   <- 1185512   # CRY2 region, Chr1
+sel_site  <- 10
+sel_rep   <- NULL      # or e.g. 3
+
+# sanity: gen0 rows must align positionally with hapfire rows
+stopifnot(nrow(gen0) == (hapfire |> count() |> collect())$n)
+
+# locate the mutation in gen0 (row index = hapfire row index)
+var_row <- which(gen0$chrom == sel_chrom & gen0$pos == sel_pos)
+stopifnot(length(var_row) >= 1)
+
+# arrow datasets do not support slice() or row-number filters,
+# so grab each target row with a head+tail limit executed in the scan
+grab_rows <- function(dataset, cols, rows) {
+  bind_rows(lapply(rows, function(r) {
+    dataset |>
+      select(all_of(cols)) |>
+      slice_head(n = r) |>
+      slice_tail(n = 1) |>
+      collect()
+  }))
+}
+
+# restrict the scan to the requested rep's columns when one is given
+site_cols <- grep(paste0("^", sel_site, "_"), names(hapfire), value = TRUE)
+if (is.null(sel_rep)) {
+  lookup_cols <- site_cols
+} else {
+  lookup_cols <- grep(paste0("_(", paste(sel_rep, collapse = "|"), ")$"), site_cols, value = TRUE)
+}
+
+traj <- grab_rows(hapfire, lookup_cols, var_row) |>
+  mutate(varid = row_number()) |>
+  pivot_longer(cols = -varid, values_to = "freq", names_to = "site_gen_plot") |>
+  separate(site_gen_plot, into = c("site", "gen", "plot"), sep = "_", convert = TRUE) |>
+  filter(is.null(sel_rep) | plot %in% sel_rep)
+
+# seedmix frequency as the shared gen-0 starting point for every rep
+f0 <- traj |>
+  distinct(site, plot, varid) |>
+  mutate(gen = 0, freq = gen0$X0_0_0[varid])
+
+traj_plot <- bind_rows(traj, f0)
+
+ggplot(traj_plot, aes(x = gen, y = freq, group = plot, color = factor(plot))) +
+  geom_line(na.rm = TRUE) +
+  geom_point(na.rm = TRUE, size = 2) +
+  facet_wrap(~varid) +
+  labs(x = "Generation", y = "Allele frequency",
+       title = paste0("Chr", sel_chrom, ":", format(sel_pos, big.mark = ",")),
+       subtitle = paste0("Site ", sel_site,
+                         if (!is.null(sel_rep)) paste0(", rep ", sel_rep),
+                         ", class ", gen0$class[var_row[1]]),
+       color = "Rep") +
+  scale_x_continuous(breaks = sort(unique(traj_plot$gen)))
+```
+
 ## Feder test
 
 ```{r}
