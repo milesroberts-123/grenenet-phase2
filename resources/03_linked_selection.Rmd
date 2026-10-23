@@ -6265,13 +6265,13 @@ ggsave(paste0("../results/by-date/", today, "/allele_freq_traj_examples.pdf"), h
 ```{r}
 # trajectory of one mutation (by genomic position) at one site
 # sel_rep = NULL plots all reps within the site
-sel_chrom <- 1
-sel_pos   <- 1185512   # CRY2 region, Chr1
-sel_site  <- 10
+sel_chrom <- "Chr4"
+sel_pos   <- 7529635
+sel_site  <- 5
 sel_rep   <- NULL      # or e.g. 3
 
 # sanity: gen0 rows must align positionally with hapfire rows
-stopifnot(nrow(gen0) == (hapfire |> count() |> collect())$n)
+#stopifnot(nrow(gen0) == (hapfire |> count() |> collect())$n)
 
 # locate the mutation in gen0 (row index = hapfire row index)
 var_row <- which(gen0$chrom == sel_chrom & gen0$pos == sel_pos)
@@ -6315,12 +6315,14 @@ ggplot(traj_plot, aes(x = gen, y = freq, group = plot, color = factor(plot))) +
   geom_point(na.rm = TRUE, size = 2) +
   facet_wrap(~varid) +
   labs(x = "Generation", y = "Allele frequency",
-       title = paste0("Chr", sel_chrom, ":", format(sel_pos, big.mark = ",")),
+       title = paste0(sel_chrom, ":", format(sel_pos, big.mark = ",")),
        subtitle = paste0("Site ", sel_site,
                          if (!is.null(sel_rep)) paste0(", rep ", sel_rep),
                          ", class ", gen0$class[var_row[1]]),
        color = "Rep") +
   scale_x_continuous(breaks = sort(unique(traj_plot$gen)))
+
+ggsave(paste0("../results/by-date/", today, "/af_trajectory_", sel_site, "_", sel_chrom, "_", sel_pos, ".pdf"))
 ```
 
 ## Feder test
