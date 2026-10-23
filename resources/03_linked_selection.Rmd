@@ -2840,8 +2840,9 @@ for (site in unique(sites)) {
       gt_result$class = paste(cls, collapse = "_")
       append_table(gt_result, output_gt_class)
       
-      rm(covlong, covmat, gt_result, hap_cls, gen0_cls, rep_n, hap_rep); gc()
+      rm(covlong, covmat, gt_result, hap_cls, gen0_cls, rep_n); gc()
     }
+    rm(hap_rep); gc()
   }
 }
 
