@@ -2455,7 +2455,7 @@ fwrite(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenene
 ```
 
 
-## load data
+## load allele frequencies
 
 ```{r}
 # seedmix
@@ -2486,7 +2486,7 @@ flower_counts <- bind_rows(flower_counts %>% select(pool, site, generation, plot
 rm(flower_counts_2); gc()
 ```
 
-## selection coefficients
+## GLM
 
 ```{r}
 # watterson_1982_s_mle <- function(p){
@@ -2502,7 +2502,7 @@ rm(flower_counts_2); gc()
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # number of snps per window
-window_size <- 1000
+window_size <- 4000
 
 # create windows, should not bleed between chromosomes
 blocks <- gen0 %>%
@@ -2516,63 +2516,94 @@ length(unique(blocks$block))
 
 output_glm <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/glm_quasibinomial_coef.txt")
 
+#check_file_exists(output_glm)
+
 unique_blocks <- unique(blocks$block)
+
+# check that directory exists
+folder_path <- dirname(output_glm)
+if (!dir.exists(folder_path)) {
+  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
+}
 
 # need to wrap function to handle cases when the data for a snp is all NA
 safe_glm <- possibly(.f = function(df) {
-  glm(value ~ t, data = df, weights = n, family = quasibinomial(link = "logit"))
+  glm(value ~ t, data = df, weights = total_flowers, family = quasibinomial(link = "logit"))
 }, otherwise = NULL)
 
-for(b in unique_blocks){
-  print(paste("Window:", b))
-  for(site in unique(sites)){
-    print(paste("Site:", site))
-    hap_site <- hapfire %>% 
-      dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
-      collect()
+for(site in unique(sites)[3:31]){
+  print(paste("Collecting site:", site))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
+    collect()
+  
+  # get sample sizes
+  rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_site), 10000, total_flowers)
+  
+  rep_n$pool[rep_n$pool == 0] = "X0_0_0"
+  
+  # sort names to be in order of generation
+  hap_site <- hap_site %>% relocate(all_of(sort(colnames(hap_site))))
+  
+  hap_site <- cbind(blocks, hap_site)
+  
+  for(b in unique_blocks){
+    print(paste(Sys.time(), " - Window:", b))
     
-    # get sample sizes
-    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_site), 10000, total_flowers)
+    hap_block <- hap_site %>% filter(block == b)
     
-    # sort names to be in order of generation
-    hap_site <- hap_site %>% relocate(all_of(sort(colnames(hap_site))))
+    print("Melting site data...")
+    hap_block <- hap_block %>% pivot_longer(cols = contains("_"), values_to = "value", names_to = "pool")
     
-    hap_site <- cbind(gen0, hap_site)
+    print("Merging site and sample size data...")
+    hap_block <- merge(hap_block, rep_n, by = "pool", all.x = T)
     
-    hap_site <- reshape2::melt(hap_site, id = c("X1", "X2"))
+    hap_block$t <- gsub("_", "", str_extract(hap_block$pool, "_.*_"))
     
-    names(hap_site)[3] <- "site_gen_plot"
+    hap_block$t[hap_block$site_gen_plot == "X0_0_0"] <- 0
     
-    hap_site <- merge(hap_site, rep_n, by = "site_gen_plot", all.x = T)
-    
-    hap_site$t <- gsub("_", "", str_extract(hap_site$site_gen_plot, "_.*_"))
-    
-    hap_site$t[hap_site$site_gen_plot == "X3"] <- 0
-    
-    hap_site$t <- as.numeric(hap_site$t)
+    hap_block$t <- as.numeric(hap_block$t)
     
     print("Building GLMs...")
-    mod_res <- hap_site %>% group_by(X1, X2) %>%  
+    mod_res <- hap_block %>% group_by(chrom, pos, class) %>%  
       filter( (value <= 1) & (value >= 0) ) %>%
       nest() %>%
       mutate(
-        model = map(data, ~safe_glm(.x)),
+        model = purrr::map(data, ~safe_glm(.x)),
         # Extract coefficients in a tidy format
-        tidied = map(model, tidy)
+        tidied = purrr::map(model, broom::tidy)
       ) %>%
       # Flatten the results back into a regular data frame
       unnest(tidied) %>% 
       filter(term == "t") %>%
-      dplyr::select(c("X1", "X2", "estimate", "std.error", "statistic", "p.value"))
+      dplyr::select(c("chrom", "pos", "class", "estimate", "std.error", "statistic", "p.value"))
     
     print("Saving output...")
     mod_res$site = site # add site label
     mod_res$block = b # add site label
-    write.table(mod_res, output_glm, col.names=!file.exists(output_glm), append = T, row.names = F, sep = "\t", quote = F)
-    print(Sys.time())
+    append_table(mod_res, output_glm)
+    
+    rm(hap_block, mod_res); gc()
   }
-  gc()
+  rm(hap_site, rep_n); gc()
 }
+
+#glm_results <- fread(output_glm)
+
+glm_results <- open_dataset(output_glm, format = "csv") %>%
+  filter(site == 5) %>%
+  collect()
+
+glm_results <- glm_results %>%
+  rename(CHROM = chrom,
+         POS = pos) %>%
+  mutate(pvalue = p.adjust(p.value, method = "BH"))
+
+glm_manhattan <- plot_manhattan(glm_results)
+
+save_plot(glm_manhattan, "glm_manhattan_5", today, "../results", width = 7, height = 4)
+
+
 ```
 
 ## feder t-test
@@ -3137,13 +3168,66 @@ for (cls in var_class_loop_list){
 #   distinct(site, rep, gen, .keep_all = T)
 # no standardization by heterozygosity
 gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_point_estimates_kmate.tsv") %>%
-   filter(class == "sv") %>%
-   distinct(site, rep, gen, class, .keep_all = T)
+  distinct(site, rep, gen, class, .keep_all = T)
+
+#### G(t) curves by variant class ####
+gt_points$class <- gsub("smallindel_sv_snp", "all", gt_points$class)
+gt_points$class <- gsub("smallindel", "indel", gt_points$class)
+
+ggplot(gt_points, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) +
+  geom_point() +
+  geom_line() +
+  facet_wrap(~site+class) +
+  scale_color_scico_d(palette = "batlow") +
+  labs(x = "Generation", y = "Gabs(t)") +
+  scale_y_continuous(n.breaks = 3) 
+
+ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_by_class.pdf"), width = 11, height = 12)
+
+# no difference in curves based on variant type, so I'll just use the SV frequencies because those are easier to bootstrap
+gt_points <- gt_points %>%
+   filter(class == "sv")
 # standardized by heterozygosity, with B&C-canonical gt_bnc columns
 # gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-15/gt_point_estimates_kmate.tsv") %>%
 #   filter(class == "sv") %>%
 #   distinct(site, rep, gen, .keep_all = T)
 
+#### Mean G(t) curves (SV only) by site ####
+site_order <- worldclim_sitesdata %>%
+  distinct(site, bio1) %>%
+  mutate(bio1 = as.numeric(bio1)) %>%
+  arrange(bio1) %>%          # warmest first; remove desc() for coldest first
+  pull(site) %>%
+  as.character()
+
+gt_points <- gt_points %>%
+  mutate(site = factor(as.character(site), levels = site_order))
+
+ggplot(gt_points %>% 
+         group_by(site, gen) %>% 
+         summarize(gt_abs = mean(gt_abs)) %>% 
+         left_join(worldclim_sitesdata %>% mutate(site = factor(site)), by = "site"), 
+       aes(x = gen, y = gt_abs, color = bio1)) +
+  geom_point(size=2) +
+  geom_line(size=2) +
+  scale_color_scico(palette = "berlin") +
+  facet_grid(.~site) +
+  theme(
+  text = element_text(size = 24),
+  panel.grid.major.x = element_blank(),
+  panel.grid.minor.x = element_blank(),
+  axis.text.x = element_blank(),
+    # 1. Move the legend below the plot
+    legend.position = "bottom",
+    # 2. Increase the physical size/length of the legend container
+    legend.key.width = unit(1, "in"),   # Makes it wider horizontally
+    legend.key.height = unit(0.25, "in")  # Makes it thicker vertically
+  ) +
+  # 3. Force the colorbar orientation to be horizontal
+  guides(color = guide_colorbar(title.position = "top", barwidth = 75)) +
+  labs(x = "Generation", y = "Gabs(t)", color = "Bio1")
+
+ggsave(paste0("../results/by-date/", today, "/gt_abs_mean_by_site.pdf"), width = 16, height = 4)
 
 # bootstrap confidence intervals
 #boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
@@ -6097,6 +6181,84 @@ for(site in as.numeric(unique(sites))){
 ```
 
 # Final figures
+
+## Allele frequency examples
+
+```{r}
+
+#glm_results <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-20/glm_quasibinomial_coef.txt")
+eps <- 0.01
+max_jump <- 0.2   # largest allowed change between consecutive time points
+idx <- sort(sample(nrow(gen0), 500))
+
+afex <- hapfire |>
+  collect() %>%
+  slice(idx) |>
+  mutate(varid = row_number()) |>
+  pivot_longer(cols = -varid, values_to = "freq", names_to = "site_gen_plot") |>
+  mutate(site = as.numeric(gsub("_.*", "", site_gen_plot)),
+         gen = as.numeric(gsub("_", "", str_extract(site_gen_plot, "_[0-9]_"))),
+         plot = as.numeric(gsub(".*_", "", site_gen_plot))) |>
+  left_join(worldclim_sitesdata %>% select(site, bio1), by = "site") |>
+  mutate(site = fct_reorder(factor(site), bio1))
+
+# shared t=0 frequency for the same variants
+f0 <- gen0 |>
+  slice(idx) |>
+  transmute(varid = row_number(), freq = X0_0_0, gen = 0)
+
+# copy it into every site x plot combination
+gen0_all <- afex |>
+  distinct(site, plot, bio1) |>
+  cross_join(f0)
+
+afex_plot <- bind_rows(afex |> filter(gen != 0), gen0_all) |>
+  mutate(site = fct_reorder(factor(site), bio1))
+
+# 5 sites evenly spaced across the ordered list (first, last, and 3 in between)
+site_order <- afex_plot |>
+  distinct(site, bio1) |>
+  arrange(bio1) |>
+  pull(site)
+
+keep_sites <- site_order[round(seq(2, length(site_order), length.out = 10))]
+
+afex_plot <- afex_plot |> filter(site %in% keep_sites)
+
+afex_plot <- afex_plot |>
+  group_by(site, plot, varid) |>
+  filter(!any(is.na(freq) | freq <= eps | freq >= 1 - eps), all(abs(diff(freq)) <= max_jump, na.rm = TRUE)) |>
+  ungroup()
+
+# one random replicate per site
+keep_plots <- afex_plot |>
+  distinct(site, plot) |>
+  group_by(site) |>
+  slice_sample(n = 1) |>
+  ungroup()
+
+afex_plot <- afex_plot |> semi_join(keep_plots, by = c("site", "plot"))
+
+# afex_plot <- afex_plot |> 
+#   group_by(site, gen, bio1, varid) %>%
+#   summarize(freq = mean(freq))
+
+ggplot(afex_plot, aes(x = gen, y = freq, color = bio1, group = varid)) +
+  geom_line(alpha = 0.2, size = 1.5) +
+  scale_color_scico(palette = "berlin") +
+  facet_grid(.~site, scales = "free_x") +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        panel.grid.major = element_blank(),
+        panel.grid.minor = element_blank(), 
+    legend.position = "bottom",
+  ) +
+  # 3. Force the colorbar orientation to be horizontal
+  guides(color = guide_colorbar(title.position = "top", barwidth = 75)) +
+  labs(x = "Generation", y = "Allele Frequency", color = "Bio1")
+
+ggsave(paste0("../results/by-date/", today, "/allele_freq_traj_examples.pdf"), height = 4, width = 16)
+```
 
 ## Feder test
 
