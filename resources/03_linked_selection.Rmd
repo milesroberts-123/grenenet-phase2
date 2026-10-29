@@ -2952,7 +2952,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 #   gen0_cls <- gen0 %>%
 #     filter(row_number() %in% cls_idx)
   
-for (site in unique(sites)[23:31]) {
+for (site in unique(sites)[30:31]) {
   print(paste(Sys.time(), "- Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
