@@ -22,11 +22,6 @@ reads = pd.read_table(
 
 reads = reads[reads['sample'].str.contains('^S')]
 
-# fst simulations
-fst_params = pd.read_table(
-    "../config/fst_params.tsv", sep="\t", dtype={"ID": str}
-).set_index(["ID"], drop=False)
-
 sampling_times = pd.read_table(
     "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
 ).set_index(["ID"], drop=False)
@@ -39,13 +34,6 @@ seurat_samples = [
 rule all_gt_sims:
     input:
         expand("slim_results/{ID}_neutfreqs.tsv", ID=gt_params["ID"])
-
-rule all_fst_sims:
-    input:
-        #"fst_results.txt",
-        expand("msprime_results/{ID}.txt", ID=fst_params["ID"]),
-        expand("gcta_results/{ID}.fst", ID=fst_params["ID"])
-        #expand("msprime_results/{ID}.txt", ID=fst_params["ID"])
 
 rule all_poolseq:
     input:
@@ -69,7 +57,6 @@ rule all_ember:
 include: "rules/freqk.smk"
 include: "rules/fastp.smk"
 include: "rules/slim.smk"
-include: "rules/fst_sim.smk"
 include: "rules/expression_bins.smk"
 include: "rules/ember.smk"
 #include: "rules/legacy/kmc.smk"

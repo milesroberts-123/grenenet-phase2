@@ -6,10 +6,11 @@ Research repo for population-genetics simulations and pool-seq analyses. Primary
 
 - **Snakemake pipeline**: `workflow/Snakefile` is the main entry point.
   - `all_gt_sims` — SLiM genetic-drift simulations (`slim_results/{ID}_neutfreqs.tsv`).
-  - `all_fst_sims` — msprime/GCTA Fst workflow (`msprime_results/{ID}.txt`, `gcta_results/{ID}.fst`).
   - `all_poolseq` — fastp + freqk empirical allele-frequency calls (`freqk_call_results/{sample}.txt`).
 - **R analysis**: `resources/03_linked_selection.Rmd` is the current primary notebook.
-- **Parameter generation**: `resources/06_sim_parameters.R` regenerates `config/gt_params.tsv` and `config/fst_params.tsv`.
+- **Parameter generation**: `resources/06_sim_parameters.R` regenerates `config/gt_params.tsv`.
+  (The historical-vs-modern Fst simulations and their parameter generation moved to the
+  `fst-time-series-simulations` repository.)
 
 ## Running the pipeline
 
