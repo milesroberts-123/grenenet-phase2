@@ -33,6 +33,8 @@ archive/
 *.log
 *.bed
 *.bimbam
+.cortexkit/
+docs/
 *.ann
 *.pdf
 *.fa.amb
@@ -54,3 +56,4 @@ data/
 /workflow/scripts/qmers/target/
 **.vcz/
 **.icf/
+.cortexkit/magic-context/
