@@ -2952,7 +2952,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 #   gen0_cls <- gen0 %>%
 #     filter(row_number() %in% cls_idx)
   
-for (site in unique(sites)[30:31]) {
+for (site in unique(sites)[31]) {
   print(paste(Sys.time(), "- Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -3075,20 +3075,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 num_perm = 1:250
 
 # loop over sites
-# for (cls in var_class_loop_list){
-#   
-#   print(paste(Sys.time(), "- Looping for variant class: ", paste(cls, collapse = "_"), "..."))
-#   
-#   cls_idx <- gen0 %>% 
-#     mutate(row_idx = row_number()) %>% 
-#     filter(class %in% cls) %>%
-#     pull(row_idx)
-#   
-#   # subset to variant class
-#   gen0_cls <- gen0 %>%
-#     filter(row_number() %in% cls_idx)
-  
-for (site in unique(sites)) {
+for (site in unique(sites)[19:31]) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -3190,6 +3177,7 @@ ggplot(gt_points, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) 
 ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_by_class.pdf"), width = 11, height = 12)
 
 # no difference in curves based on variant type, so I'll just use the SV frequencies because those are easier to bootstrap
+gt_points$class <- gsub("all", "smallindel_sv_snp", gt_points$class)
 gt_points <- gt_points %>%
    filter(class == "smallindel_sv_snp")
 
@@ -3250,14 +3238,15 @@ ggsave(paste0("../results/by-date/", today, "/gt_abs_mean_by_site.pdf"), width =
 #  distinct(site, rep, gen, boot, .keep_all = T)
 gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_boots_kmate.tsv") %>%
  filter(class == "smallindel_sv_snp") %>%
- distinct(site, rep, gen, boot, .keep_all = T)
+ distinct(site, rep, gen, boot, .keep_all = T) |>
+  mutate(gt_abs = as.numeric(gt_abs))
 
 boot_summary <- gt_boots %>%
   group_by(site, rep, gen) %>%
   summarize(q025 = quantile(gt_abs, 0.025, na.rm = T),
             q975 = quantile(gt_abs, 0.975, na.rm = T)) %>%
   mutate(site = factor(site)) |>
-  left_join(gt_points |> mutate(site = factor(site)), by = c("site", "rep", "gen")) %>%
+  left_join(gt_points |> mutate(site = factor(site), rep = factor(rep), gen=factor(gen)), by = c("site", "rep", "gen")) %>%
   mutate(lci = 2*gt_abs - q975,
          uci = 2*gt_abs - q025,
          lci = if_else(lci < 0, 0, lci),
@@ -3281,14 +3270,16 @@ boot_summary <- gt_boots %>%
 #gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_perms_kmate_n_correction.tsv") %>%
 #  distinct(site, rep, gen, perm, .keep_all = T)
 gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_perms_kmate.tsv") %>%
-  distinct(site, rep, gen, perm, .keep_all = T)
+  distinct(site, rep, gen, perm, .keep_all = T) |>
+  filter(gen != "gen", !is.na(gt_abs)) |>
+  mutate(gt_abs = as.numeric(gt_abs))
 
 gt_null <- gt_perms %>%
   group_by(site, rep, gen) %>%
   summarize(lpi = quantile(gt_abs, 0.025),
             upi = quantile(gt_abs, 0.975),
             gt_abs = median(gt_abs)) %>%
-  left_join(locations_data, by = "site") |>
+  left_join(locations_data |> mutate(site=factor(site)), by = "site") |>
   mutate(site = factor(site))
 
 # overview of all sites
@@ -3332,7 +3323,7 @@ plot_groups_pdf(boot_summary, "city_country", plot_fn = plot_gt, filepath = past
 # summarize
 # for those populations with selection outside null, what's the percentage?
 gt_abs_summary <- boot_summary %>%
-  left_join(gt_null, by = c("site", "rep", "gen")) %>%
+  left_join(gt_null |> mutate(rep = factor(rep), gen = factor(gen)), by = c("site", "rep", "gen")) %>%
   group_by(site, rep) %>%
   filter(gen == max(gen)) %>%
   mutate(gt_abs_excess = lci - upi) %>%
