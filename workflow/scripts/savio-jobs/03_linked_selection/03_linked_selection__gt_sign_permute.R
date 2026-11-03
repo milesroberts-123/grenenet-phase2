@@ -138,9 +138,9 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 num_perm = 1:250
 
 # loop over sites
-# NOTE: suspected narrow site subset — "unique(sites)[19:31]" runs only sites
-# 19-31 (13 of ~31), verbatim from the notebook's current state.
-for (site in unique(sites)[19:31]) {
+# NOTE: suspected narrow site subset — "unique(sites)[23:31]" runs only sites
+# 23-31 (9 of ~31), verbatim from the notebook's current state.
+for (site in unique(sites)[23:31]) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
