@@ -6,10 +6,11 @@ Research repo for population-genetics simulations and pool-seq analyses. Primary
 
 - **Snakemake pipeline**: `workflow/Snakefile` is the main entry point.
   - `all_gt_sims` — SLiM genetic-drift simulations (`slim_results/{ID}_neutfreqs.tsv`).
-  - `all_fst_sims` — msprime/GCTA Fst workflow (`msprime_results/{ID}.txt`, `gcta_results/{ID}.fst`).
   - `all_poolseq` — fastp + freqk empirical allele-frequency calls (`freqk_call_results/{sample}.txt`).
 - **R analysis**: `resources/03_linked_selection.Rmd` is the current primary notebook.
-- **Parameter generation**: `resources/06_sim_parameters.R` regenerates `config/gt_params.tsv` and `config/fst_params.tsv`.
+- **Parameter generation**: `resources/06_sim_parameters.R` regenerates `config/gt_params.tsv`.
+  (The historical-vs-modern Fst simulations and their parameter generation moved to the
+  `fst-time-series-simulations` repository.)
 
 ## Running the pipeline
 
@@ -54,3 +55,25 @@ The Snakefile pins `min_version("9.5.1")` and loads `config/config.yaml` from `.
 - **Do not set memory resources in `profiles/default`**: Savio (UC Berkeley) restricts memory requests on `savio3_htc`/`savio_lowprio`. Memory resources belong in `profiles/msu` (e.g. `mem_mb_per_cpu`) or `profiles/local` only.
 - **Legacy rules** are commented out in the Snakefile under `rules/legacy/`; they are not part of the current pipeline.
 - **Three simulation types** in `slim.smk`: `unstruct`, `struct`, and `bank`. Each uses a different `.slim` script (`gt_expectations.slim`, `gt_expectations_structured.slim`, `gt_expectations_seed_bank.slim`).
+
+## Notebook validation without cluster data
+
+- Validate `03_linked_selection.Rmd` edits locally: extract the target chunk
+  by fence markers and `knitr::purl()` + `parse()` the whole document;
+  run the chunk verbatim in R on small synthetic stubs (`gen0` with
+  `chrom`/`pos`/`class`/`X0_0_0`, `hapfire` as a small single-CSV Arrow
+  dataset of `site_gen_plot` columns written with `fwrite` on integer `pos`,
+  since `write.csv` renders large integers in scientific notation).
+- Mirror the notebook cwd layout when a chunk `ggsave`s to
+  `../results/by-date/`: run inside `<tmp>/<repo>/` with
+  `<tmp>/results/by-date/<today>/` as its sibling.
+- Never trust in-scan `slice_head` + `slice_tail` or row-number filters on
+  Arrow datasets — `collect()` the needed columns once, then `slice()`
+  locally in R (see the Arrow ordering hazards in project memory).
+
+## OpenCode session transcript archive
+
+- Before every push: export the full OpenCode transcript as raw JSON
+  (`opencode export <session-id>`), compress it with `xz -9` to
+  `session-<short-id>.json.xz` at the repo root, commit, then push
+  (the archive commit can share the push command line).
