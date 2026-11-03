@@ -3075,7 +3075,7 @@ sites <- unique(gsub("_.*", "", colnames(hapfire)))
 num_perm = 1:250
 
 # loop over sites
-for (site in unique(sites)[19:31]) {
+for (site in unique(sites)[23:31]) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -3139,6 +3139,7 @@ for (site in unique(sites)[19:31]) {
   }
   rm(hap_site); gc()
 }
+
 ```
 
 
