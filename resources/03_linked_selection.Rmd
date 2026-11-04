@@ -3455,10 +3455,9 @@ for (a in sites) {
       pdiffs <- site_mat[, cols_t, drop = FALSE] - site_mat[, 1]
     } else {
       reps_t <- gsub("^.*_", "", colnames(site_mat)[cols_t])
-      cols_t1 <- unlist(sapply(reps_t, function(r) {
-        which(paste(a, t - 1, r, sep = "_") == colnames(site_mat))
-      }))
-      pdiffs <- site_mat[, cols_t, drop = FALSE] - site_mat[, cols_t1, drop = FALSE]
+      cols_t1 <- match(paste(a, t - 1, reps_t, sep = "_"), colnames(site_mat))
+      keep <- !is.na(cols_t1)
+      pdiffs <- site_mat[, cols_t[keep], drop = FALSE] - site_mat[, cols_t1[keep], drop = FALSE]
     }
 
     conv_cor <- conv_cor_wn_pop(pdiffs)
