@@ -22,8 +22,11 @@ library(ggpubr)
 library(MareyMap)
 library(ggforce)
 library(arrow)
-library(sf)
-library(maps)
+# NOTE: sf and maps are unused by this job's chunks (verified: no sf::/maps::
+# calls in the included chunks) but absent from Savio's default module R
+# (4.4.0); guarded so the unused load cannot kill the job.
+if (requireNamespace("sf", quietly = TRUE)) library(sf)
+if (requireNamespace("maps", quietly = TRUE)) library(maps)
 library(lme4)
 library(scales)
 library(rsq)
