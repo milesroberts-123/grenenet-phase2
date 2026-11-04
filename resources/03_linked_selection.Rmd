@@ -3550,7 +3550,7 @@ for (a in sites) {
       is.finite(v) && v > 0
     })
     pdiffs_list[[t]] <- pdiffs_list[[t]][, keep_col, drop = FALSE]
-    if (ncol(pdiffs_list[[t]]) < 2) pdiffs_list[[t]] <- NULL
+    if (ncol(pdiffs_list[[t]]) < 2) pdiffs_list[t] <- list(NULL)
   }
 
   site_boot <- vector("list", B * max(gens))
