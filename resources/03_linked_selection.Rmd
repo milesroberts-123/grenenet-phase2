@@ -3608,6 +3608,28 @@ fwrite(boot_summary, paste0(
 ), sep = "\t")
 ```
 
+## load convergence correlation results
+
+```{r}
+conv_cor_point <- fread(paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/convergence_correlation_wn_env_kmate.tsv"
+))
+
+conv_cor_boot_samples <- fread(paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/conv_cor_wn_env_kmate_boot_samples.tsv"
+))
+
+conv_cor_boot_summary <- fread(paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/conv_cor_wn_env_kmate_boot_summary.tsv"
+))
+```
+
 
 # Plot OST1 over cell-types
 
