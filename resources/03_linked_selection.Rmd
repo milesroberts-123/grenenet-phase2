@@ -3446,6 +3446,81 @@ ggsave(paste0("../results/by-date/", today, "/OST1_single-cell-atlas.pdf"), widt
 
 ```
 
+# kmate convergence correlations (within environment)
+
+Genome-wide, mirroring the Phase 1 within-environment convergence
+correlation but computed over all variants together (no windowing) and for
+every sampled interval: the mean between-replicate covariance of allele
+frequency changes scaled by the geometric mean of replicate variances
+(ratio of averages), via rventures::conv_cor_wn_pop.
+
+```{r}
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+
+output_conv_cor_kmate <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/convergence_correlation_wn_env_kmate.tsv",
+  sep = ""
+)
+
+folder_path <- dirname(output_conv_cor_kmate)
+if (!dir.exists(folder_path)) {
+  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
+}
+
+for (a in sites) {
+  print(paste("Site:", a))
+  hap_site <- hapfire %>%
+    dplyr::select(starts_with(paste(a, "_", sep = ""))) %>%
+    collect()
+
+  if (ncol(hap_site) < 2) {
+    print("Too few columns. Skipping to next site...")
+    next
+  }
+
+  # sort columns into generation order, then prepend the shared seedmix as t=0
+  hap_site <- hap_site %>%
+    relocate(all_of(sort(colnames(hap_site))))
+
+  gens <- as.integer(gsub("_", "", str_extract(colnames(hap_site), "_[0-9]_")))
+
+  hap_site <- cbind(gen0$X0_0_0, hap_site)
+  colnames(hap_site)[1] <- paste(a, "_0_0", sep = "")
+
+  site_mat <- as.matrix(hap_site)
+  rm(hap_site); gc()
+
+  for (t in 1:max(gens)) {
+    # interval t: change from gen t-1 to gen t, aligned by replicate
+    cols_t <- which(gens == t)
+    if (t == 1) {
+      pdiffs <- site_mat[, cols_t, drop = FALSE] - site_mat[, 1]
+    } else {
+      reps_t <- gsub("^.*_", "", colnames(site_mat)[cols_t])
+      cols_t1 <- sapply(reps_t, function(r) {
+        which(paste(a, t - 1, r, sep = "_") == colnames(site_mat))
+      })
+      pdiffs <- site_mat[, cols_t, drop = FALSE] - site_mat[, cols_t1, drop = FALSE]
+    }
+
+    conv_cor <- conv_cor_wn_pop(pdiffs)
+
+    conv_cor_row <- data.frame(
+      site = a,
+      gen = t,
+      S = nrow(pdiffs),
+      conv_cor_numer = conv_cor[1],
+      conv_cor_denom = conv_cor[2]
+    )
+
+    append_table(conv_cor_row, output_conv_cor_kmate)
+  }
+  rm(site_mat, pdiffs); gc()
+}
+```
+
 # Entropy, gene expression specificity
 
 ## Gene diversity
