@@ -3402,51 +3402,7 @@ ggplot(gt_excess_vs_clim %>% filter(!is.na(gt_abs_excess)), aes(x = bio1, y = gt
 ggsave(paste0("../results/by-date/", today, "/gt_abs_excess_over_bio1.pdf"), width = 6, height = 5, device = cairo_pdf)
 ```
 
-# Plot OST1 over cell-types
-
-```{r}
-# load all expression bins
-
-# melt expression rows
-bed_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/expression_bins", pattern = "\\.bed$", full.names = TRUE)
-
-id_cols <- c("chrom", "start", "end", "gene")
-
-bed_comb <- files %>%
-  map_df(function(f) {
-    read.delim(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE,
-               check.names = FALSE) %>%           # keeps spaces in col names as-is
-      pivot_longer(
-        cols = -all_of(id_cols),
-        names_to = "cell_type",
-        values_to = "count"
-      ) %>%
-      mutate(source_file = basename(f))
-  })
-
-# extract tissue labels
-bed_comb$tissue <- gsub("_", "", str_extract(bed_comb$source_file, "_.*_"))
-
-# normalize counts
-bed_comb <- bed_comb %>% 
-  group_by(tissue) %>%
-  mutate(cpm = count/sum(count)*1e6)
-
-# plot average expression in each cell-type and context
-ggplot(data=bed_comb %>% filter(gene == "AT4G33950"), mapping=aes(x=cell_type,y=cpm)) +
-  geom_col() +
-  facet_grid(cols=vars(tissue), scales="free_x", space="free_x", switch="x") +
-  theme(axis.title=element_text(size=12,face="bold"),
-        axis.title.x=element_blank(),
-        axis.text=element_text(size=10, color="black", angle = 90, hjust = 1, vjust = 1),
-        strip.text.x = element_text(size = 9)) +
-  labs(x = "Cell type", y = "Expression (CPM)", title = "OST1 Expression")
-
-ggsave(paste0("../results/by-date/", today, "/OST1_single-cell-atlas.pdf"), width = 9.5)
-
-```
-
-# kmate convergence correlations (within environment)
+## kmate convergence correlations (within environment)
 
 Genome-wide, mirroring the Phase 1 within-environment convergence
 correlation but computed over all variants together (no windowing) and for
@@ -3454,7 +3410,7 @@ every sampled interval: the mean between-replicate covariance of allele
 frequency changes scaled by the geometric mean of replicate variances
 (ratio of averages), via rventures::conv_cor_wn_pop.
 
-```{r}
+```{r conv_cor_wn_pop}
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 output_conv_cor_kmate <- paste(
@@ -3499,9 +3455,9 @@ for (a in sites) {
       pdiffs <- site_mat[, cols_t, drop = FALSE] - site_mat[, 1]
     } else {
       reps_t <- gsub("^.*_", "", colnames(site_mat)[cols_t])
-      cols_t1 <- sapply(reps_t, function(r) {
+      cols_t1 <- unlist(sapply(reps_t, function(r) {
         which(paste(a, t - 1, r, sep = "_") == colnames(site_mat))
-      })
+      }))
       pdiffs <- site_mat[, cols_t, drop = FALSE] - site_mat[, cols_t1, drop = FALSE]
     }
 
@@ -3519,6 +3475,50 @@ for (a in sites) {
   }
   rm(site_mat, pdiffs); gc()
 }
+```
+
+# Plot OST1 over cell-types
+
+```{r}
+# load all expression bins
+
+# melt expression rows
+bed_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/expression_bins", pattern = "\\.bed$", full.names = TRUE)
+
+id_cols <- c("chrom", "start", "end", "gene")
+
+bed_comb <- files %>%
+  map_df(function(f) {
+    read.delim(f, header = TRUE, sep = "\t", stringsAsFactors = FALSE,
+               check.names = FALSE) %>%           # keeps spaces in col names as-is
+      pivot_longer(
+        cols = -all_of(id_cols),
+        names_to = "cell_type",
+        values_to = "count"
+      ) %>%
+      mutate(source_file = basename(f))
+  })
+
+# extract tissue labels
+bed_comb$tissue <- gsub("_", "", str_extract(bed_comb$source_file, "_.*_"))
+
+# normalize counts
+bed_comb <- bed_comb %>% 
+  group_by(tissue) %>%
+  mutate(cpm = count/sum(count)*1e6)
+
+# plot average expression in each cell-type and context
+ggplot(data=bed_comb %>% filter(gene == "AT4G33950"), mapping=aes(x=cell_type,y=cpm)) +
+  geom_col() +
+  facet_grid(cols=vars(tissue), scales="free_x", space="free_x", switch="x") +
+  theme(axis.title=element_text(size=12,face="bold"),
+        axis.title.x=element_blank(),
+        axis.text=element_text(size=10, color="black", angle = 90, hjust = 1, vjust = 1),
+        strip.text.x = element_text(size = 9)) +
+  labs(x = "Cell type", y = "Expression (CPM)", title = "OST1 Expression")
+
+ggsave(paste0("../results/by-date/", today, "/OST1_single-cell-atlas.pdf"), width = 9.5)
+
 ```
 
 # Entropy, gene expression specificity
