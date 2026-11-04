@@ -3442,6 +3442,13 @@ for (a in sites) {
 
   gens <- as.integer(gsub("_", "", str_extract(colnames(hap_site), "_[0-9]_")))
 
+  # the trays file already carries the site's seedmix columns ({site}_0_0);
+  # drop them (and any unnamed trailing header) so the cbind'd gen0 is the
+  # only t=0 column and column names stay unique
+  keep_gen <- !is.na(gens) & gens >= 1
+  hap_site <- hap_site[, keep_gen, drop = FALSE]
+  gens <- gens[keep_gen]
+
   hap_site <- cbind(gen0$X0_0_0, hap_site)
   colnames(hap_site)[1] <- paste(a, "_0_0", sep = "")
 
@@ -3459,6 +3466,14 @@ for (a in sites) {
       keep <- !is.na(cols_t1)
       pdiffs <- site_mat[, cols_t[keep], drop = FALSE] - site_mat[, cols_t1[keep], drop = FALSE]
     }
+
+    # drop zero-variance replicate columns; skip degenerate intervals
+    keep_col <- apply(pdiffs, 2, function(x) {
+      v <- var(x, na.rm = TRUE)
+      is.finite(v) && v > 0
+    })
+    pdiffs <- pdiffs[, keep_col, drop = FALSE]
+    if (ncol(pdiffs) < 2) next
 
     conv_cor <- conv_cor_wn_pop(pdiffs)
 
@@ -3511,6 +3526,13 @@ for (a in sites) {
 
   gens <- as.integer(gsub("_", "", str_extract(colnames(hap_site), "_[0-9]_")))
 
+  # the trays file already carries the site's seedmix columns ({site}_0_0);
+  # drop them (and any unnamed trailing header) so the cbind'd gen0 is the
+  # only t=0 column and column names stay unique
+  keep_gen <- !is.na(gens) & gens >= 1
+  hap_site <- hap_site[, keep_gen, drop = FALSE]
+  gens <- gens[keep_gen]
+
   hap_site <- cbind(gen0$X0_0_0, hap_site)
   colnames(hap_site)[1] <- paste(a, "_0_0", sep = "")
 
@@ -3529,6 +3551,14 @@ for (a in sites) {
       keep <- !is.na(cols_t1)
       pdiffs_list[[t]] <- site_mat[, cols_t[keep], drop = FALSE] - site_mat[, cols_t1[keep], drop = FALSE]
     }
+
+    # drop zero-variance replicate columns; skip degenerate intervals
+    keep_col <- apply(pdiffs_list[[t]], 2, function(x) {
+      v <- var(x, na.rm = TRUE)
+      is.finite(v) && v > 0
+    })
+    pdiffs_list[[t]] <- pdiffs_list[[t]][, keep_col, drop = FALSE]
+    if (ncol(pdiffs_list[[t]]) < 2) pdiffs_list[[t]] <- NULL
   }
 
   site_boot <- vector("list", B * max(gens))
@@ -3537,7 +3567,17 @@ for (a in sites) {
     rows_index <- unlist(idx_lists[sample(win_ids, W, replace = TRUE)], use.names = FALSE)
 
     for (t in sort(unique(gens))) {
+      if (is.null(pdiffs_list[[t]])) next
       pdiffs_boot <- pdiffs_list[[t]][rows_index, , drop = FALSE]
+
+      # resampling cannot rescue a zero-variance column; re-apply the guard
+      keep_col <- apply(pdiffs_boot, 2, function(x) {
+        v <- var(x, na.rm = TRUE)
+        is.finite(v) && v > 0
+      })
+      pdiffs_boot <- pdiffs_boot[, keep_col, drop = FALSE]
+      if (ncol(pdiffs_boot) < 2) next
+
       conv_cor <- conv_cor_wn_pop(pdiffs_boot)
       k <- k + 1
       site_boot[[k]] <- data.frame(
