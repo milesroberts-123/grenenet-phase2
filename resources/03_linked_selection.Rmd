@@ -3500,7 +3500,7 @@ idx_lists <- split(seq_len(nrow(conv_cor_blocks_kmate)), conv_cor_blocks_kmate$w
 
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
-B <- 1000
+B <- 250
 alpha <- 0.05
 
 boot_samples <- NULL
