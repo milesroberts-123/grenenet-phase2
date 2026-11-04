@@ -3489,7 +3489,7 @@ for (a in sites) {
 
 ## block bootstrap intervals
 
-```{r}
+```{r conv_cor_wn_pop_boot}
 # resample genome blocks with replacement and recompute the convergence
 # correlation directly on each resampled dataset (no pre-computed statistics)
 
