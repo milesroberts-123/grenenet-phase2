@@ -32,10 +32,11 @@ for (d in list(g, p)) d[, gt_absval := abs(gt)]
 clim <- fread("data/climate_sites_experiment.csv")[, .(site, bio1 = site_bio1)]
 
 g[, year := gen]; p[, year := gen]                    # gen 1 = t0 -> "year 1" tick as in the reference
-reps <- g[, .(y = get(metric)), by = .(site, rep, year)]
-obs  <- g[, .(y = mean(get(metric))), by = .(site, year)]
-nul  <- p[, .(y = mean(get(metric))), by = .(site, year, perm)][
-         , .(lo = quantile(y, .025), med = median(y), hi = quantile(y, .975)), by = .(site, year)]
+reps <- g[, .(y = mean(get(metric), na.rm = TRUE)), by = .(site, rep, year)]
+obs  <- g[, .(y = mean(get(metric), na.rm = TRUE)), by = .(site, year)]
+nul  <- p[, .(y = mean(get(metric), na.rm = TRUE)), by = .(site, year, perm)][
+  is.finite(y)][
+  , .(lo = quantile(y, .025), med = median(y), hi = quantile(y, .975)), by = .(site, year)]
 ord <- clim[site %in% obs$site][order(bio1)]
 ord[, ord := .I]
 for (d in list(reps, obs, nul)) { d[clim, bio1 := i.bio1, on = "site"]; d[ord, ord := i.ord, on = "site"] }
