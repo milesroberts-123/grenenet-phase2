@@ -3448,7 +3448,7 @@ for (a in sites) {
   site_mat <- as.matrix(hap_site)
   rm(hap_site); gc()
 
-  for (t in 1:max(gens)) {
+  for (t in sort(unique(gens))) {
     # interval t: change from gen t-1 to gen t, aligned by replicate
     cols_t <- which(gens == t)
     if (t == 1) {
@@ -3519,7 +3519,7 @@ for (a in sites) {
 
   # per-interval pdiffs for this site (rows align with the block index lists)
   pdiffs_list <- vector("list", max(gens))
-  for (t in 1:max(gens)) {
+  for (t in sort(unique(gens))) {
     cols_t <- which(gens == t)
     if (t == 1) {
       pdiffs_list[[t]] <- site_mat[, cols_t, drop = FALSE] - site_mat[, 1]
@@ -3536,7 +3536,7 @@ for (a in sites) {
   for (b in 1:B) {
     rows_index <- unlist(idx_lists[sample(win_ids, W, replace = TRUE)], use.names = FALSE)
 
-    for (t in 1:max(gens)) {
+    for (t in sort(unique(gens))) {
       pdiffs_boot <- pdiffs_list[[t]][rows_index, , drop = FALSE]
       conv_cor <- conv_cor_wn_pop(pdiffs_boot)
       k <- k + 1
