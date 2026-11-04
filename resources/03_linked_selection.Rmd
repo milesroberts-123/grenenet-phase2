@@ -3413,10 +3413,20 @@ frequency changes scaled by the geometric mean of replicate variances
 ```{r conv_cor_wn_pop}
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
+# windows as the resampling units for the block bootstrap below
+conv_cor_blocks_kmate <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
+
 output_conv_cor_kmate <- paste(
   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
   today,
   "/convergence_correlation_wn_env_kmate.tsv",
+  sep = ""
+)
+
+output_conv_cor_blocks_kmate <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/convergence_correlation_by_block_wn_env_kmate.tsv",
   sep = ""
 )
 
@@ -3460,20 +3470,87 @@ for (a in sites) {
       pdiffs <- site_mat[, cols_t[keep], drop = FALSE] - site_mat[, cols_t1[keep], drop = FALSE]
     }
 
-    conv_cor <- conv_cor_wn_pop(pdiffs)
+    # per-window components for the block bootstrap
+    site_block_rows <- NULL
+    for (w in unique(conv_cor_blocks_kmate$window)) {
+      idx <- conv_cor_blocks_kmate$window == w
+      if (sum(idx) <= 1) next
+      w_cor <- conv_cor_wn_pop(pdiffs[idx, , drop = FALSE])
+      block_row <- data.frame(
+        window = w,
+        site = a,
+        gen = t,
+        S = sum(idx),
+        conv_cor_numer = w_cor[1],
+        conv_cor_denom = w_cor[2]
+      )
+      append_table(block_row, output_conv_cor_blocks_kmate)
+      site_block_rows <- rbind(site_block_rows, block_row)
+    }
 
+    # genome-wide row as the S-weighted ratio-of-sums across blocks
     conv_cor_row <- data.frame(
       site = a,
       gen = t,
-      S = nrow(pdiffs),
-      conv_cor_numer = conv_cor[1],
-      conv_cor_denom = conv_cor[2]
+      S = sum(site_block_rows$S),
+      conv_cor_numer = sum(site_block_rows$S * site_block_rows$conv_cor_numer) / sum(site_block_rows$S),
+      conv_cor_denom = sum(site_block_rows$S * site_block_rows$conv_cor_denom) / sum(site_block_rows$S)
     )
 
     append_table(conv_cor_row, output_conv_cor_kmate)
   }
   rm(site_mat, pdiffs); gc()
 }
+```
+
+## block bootstrap intervals
+
+```{r}
+conv_cor_blocks <- fread(paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/convergence_correlation_by_block_wn_env_kmate.tsv"
+))
+
+win_ids <- unique(conv_cor_blocks$window)
+W <- length(win_ids)
+B <- 1000
+alpha <- 0.05
+
+boot_samples <- NULL
+
+for (b in 1:B) {
+  # resample windows with replacement: one multinomial draw shared by all
+  # site x gen combinations, weighted by each window's variant count
+  draws <- sample(win_ids, W, replace = TRUE)
+  wcounts <- as.data.table(table(factor(draws, levels = win_ids)))
+  names(wcounts) <- c("window", "N")
+
+  boot <- conv_cor_blocks[wcounts, on = .(window), nomatch = NULL][
+    , .(numer = sum(N * S * conv_cor_numer), denom = sum(N * S * conv_cor_denom)),
+    by = .(site, gen)][
+    , .(site, gen, b = b, conv_cor_boot = numer / denom)]
+
+  boot_samples <- rbind(boot_samples, boot)
+}
+
+fwrite(boot_samples, paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/conv_cor_wn_env_kmate_boot_samples.tsv"
+), sep = "\t")
+
+boot_summary <- boot_samples %>%
+  group_by(site, gen) %>%
+  summarize(lci = quantile(conv_cor_boot, alpha / 2),
+            uci = quantile(conv_cor_boot, 1 - alpha / 2),
+            conv_cor_mean = mean(conv_cor_boot))
+
+fwrite(boot_summary, paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/conv_cor_wn_env_kmate_boot_summary.tsv"
+), sep = "\t")
 ```
 
 # Plot OST1 over cell-types
