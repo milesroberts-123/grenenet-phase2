@@ -9,6 +9,13 @@
 ts_message <- function(...) message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(...)))
 t0 <- proc.time()
 options(warn = 1)
+# NOTE: added by /knitr-block — arrow's threaded CSV scanner reassembles scan
+# tasks out of order, so each collect() of the 38 GB kmate trays file returns a
+# different row permutation (verified 2026-11-04, arrow 24.0.0: consecutive
+# collects disagreed on 452-3290 of 2.5M rows, always a pure permutation of the
+# same values). The notebook sets this in its first chunk, which job scripts
+# skip, so set it here before any open_dataset()/collect().
+options(arrow.use_threads = FALSE)
 
 ts_message("chunk #2 `<load packages + results_path>` start")
 library(ggplot2)
