@@ -149,9 +149,7 @@ safe_glm <- possibly(.f = function(df) {
   glm(value ~ t, data = df, weights = total_flowers, family = quasibinomial(link = "logit"))
 }, otherwise = NULL)
 
-# NOTE: suspected narrow subset — this loop runs sites 3-31 only (29 of ~31);
-# verbatim notebook state, confirm it is intended for the job.
-for(site in unique(sites)[3:31]){
+for(site in unique(sites)){
   print(paste("Collecting site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
@@ -189,7 +187,7 @@ for(site in unique(sites)[3:31]){
     # NOTE: suspected — no `site_gen_plot` column exists after the pivot/merge
     # (the melted column is `pool`), so this assignment target is logical(0) and
     # the line silently does nothing. Generation 0 still gets t = 0 from the
-    # regex below, but its weights are NA (see the note above).
+    # regex above, but its weights are NA (see the note above).
     hap_block$t[hap_block$site_gen_plot == "X0_0_0"] <- 0
     
     hap_block$t <- as.numeric(hap_block$t)

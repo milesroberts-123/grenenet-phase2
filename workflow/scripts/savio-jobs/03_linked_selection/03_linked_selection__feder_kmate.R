@@ -128,9 +128,7 @@ if (!dir.exists(folder_path)) {
 }
 
 # loop over sites
-# NOTE: suspected narrow subset — this loop runs sites 24-31 only (8 of ~31);
-# verbatim notebook state, confirm it is intended for the job.
-for(site in unique(sites)[24:31]) {
+for(site in unique(sites)) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))

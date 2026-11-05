@@ -2536,7 +2536,7 @@ safe_glm <- possibly(.f = function(df) {
   glm(value ~ t, data = df, weights = total_flowers, family = quasibinomial(link = "logit"))
 }, otherwise = NULL)
 
-for(site in unique(sites)[3:31]){
+for(site in unique(sites)){
   print(paste("Collecting site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
@@ -2635,7 +2635,7 @@ if (!dir.exists(folder_path)) {
 }
 
 # loop over sites
-for(site in unique(sites)[24:31]) {
+for(site in unique(sites)) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
