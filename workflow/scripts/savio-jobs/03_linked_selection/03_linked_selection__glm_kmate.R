@@ -158,12 +158,11 @@ for(site in unique(sites)){
   # get sample sizes
   rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_site), 10000, total_flowers)
   
-  # NOTE: suspected — grab_sample_sizes() names the seedmix row "0" while the
-  # cbind-ed gen-0 column is named "<site>_0_<rep>", so the merge by "pool" below
-  # leaves total_flowers = NA for every generation-0 row; glm(weights = ...) then
-  # drops those rows, so each model is fitted on generations 1..5 and is NOT
-  # anchored at generation 0 (the slope is kept, but the intercept and its SE
-  # describe gen 1, not the seedmix).
+  # NOTE: suspected — the GLM never includes the seedmix generation. No gen-0
+  # column is added to hap_site (only `blocks` is cbind-ed), and grab_sample_sizes()
+  # prepends a sample-size row named "0" (renamed to "X0_0_0" below) that has no
+  # melted counterpart, so the model is fitted on sampled generations only
+  # (t = 1..5): the intercept describes gen 1, not the seedmix.
   rep_n$pool[rep_n$pool == 0] = "X0_0_0"
   
   # sort names to be in order of generation
@@ -186,8 +185,8 @@ for(site in unique(sites)){
     
     # NOTE: suspected — no `site_gen_plot` column exists after the pivot/merge
     # (the melted column is `pool`), so this assignment target is logical(0) and
-    # the line silently does nothing. Generation 0 still gets t = 0 from the
-    # regex above, but its weights are NA (see the note above).
+    # the line silently does nothing. There are no generation-0 rows in the
+    # melted data (see the note above), so t takes values 1..5 only.
     hap_block$t[hap_block$site_gen_plot == "X0_0_0"] <- 0
     
     hap_block$t <- as.numeric(hap_block$t)
