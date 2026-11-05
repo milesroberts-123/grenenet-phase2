@@ -2493,7 +2493,7 @@ rm(flower_counts_2); gc()
 
 ## GLM
 
-```{r}
+```{r glm_kmate}
 # watterson_1982_s_mle <- function(p){
 #   stopifnot(length(p) >= 2)
 #   stopifnot(all(p <= 1), all(p >= 0))
@@ -2613,7 +2613,7 @@ save_plot(glm_manhattan, "glm_manhattan_5", today, "../results", width = 7, heig
 
 ## feder t-test
 
-```{r}
+```{r feder_kmate}
 # make list of sites
 # for now, ignore some sites
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
@@ -3608,12 +3608,12 @@ conv_cor_point <- fread(paste0(
 )) |> mutate(conv_cor = conv_cor_numer/conv_cor_denom)
 
 conv_cor_boot_samples <- fread(paste0(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-03/conv_cor_wn_env_kmate_boot_samples.tsv"
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-04/conv_cor_wn_env_kmate_boot_samples.tsv"
 ))
 
 # percentile intervals
 conv_cor_boot_summary <- fread(paste0(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-03/conv_cor_wn_env_kmate_boot_summary.tsv"
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-04/conv_cor_wn_env_kmate_boot_summary.tsv"
 ))
 
 alpha <- 0.05
@@ -3656,11 +3656,11 @@ conv_cor_point <- conv_cor_point |>
   left_join(conv_cor_boot_summary |> select(site, gen, lci, uci), by = c("site", "gen")) |> 
   left_join(worldclim_sitesdata, by = "site")
 
-ggplot(conv_cor_point, aes(x = gen, y = conv_cor, group = site, color = bio1)) +
+ggplot(conv_cor_point, aes(x = gen, y = conv_cor, group = site)) +
   geom_point() +
   geom_line() +
   scale_color_scico(palette = "berlin") +
-  geom_pointrange(mapping = aes(ymin = lci, ymax = uci), middle.color = "black") +
+  #geom_pointrange(mapping = aes(ymin = lci, ymax = uci), middle.color = "black") +
   labs(x = "Generation", y = "Convergence correlation\nwithin location", color = "Bio1 (\u00b0C)")
 
 ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_bio1.pdf"), width = 5, height = 4)
