@@ -2521,7 +2521,7 @@ length(unique(blocks$block))
 
 output_glm <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/glm_quasibinomial_coef.txt")
 
-#check_file_exists(output_glm)
+check_file_exists(output_glm)
 
 unique_blocks <- unique(blocks$block)
 
@@ -2545,12 +2545,18 @@ for(site in unique(sites)){
   # get sample sizes
   rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_site), 10000, total_flowers)
   
-  rep_n$pool[rep_n$pool == 0] = "X0_0_0"
+  # rename the sample-size seedmix row so it matches the gen-0 column added below
+  rep_n$pool[rep_n$pool == 0] = paste(site, "_0_0", sep = "")
   
   # sort names to be in order of generation
   hap_site <- hap_site %>% relocate(all_of(sort(colnames(hap_site))))
   
   hap_site <- cbind(blocks, hap_site)
+  
+  # anchor the GLM at generation 0: append the seedmix frequency as the
+  # "<site>_0_0" column (weights 10000 from the rep_n row renamed above)
+  hap_site <- cbind(gen0$X0_0_0, hap_site)
+  colnames(hap_site)[1] = paste(site, "_0_0", sep = "")
   
   for(b in unique_blocks){
     print(paste(Sys.time(), " - Window:", b))
