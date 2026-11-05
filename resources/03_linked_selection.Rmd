@@ -2754,8 +2754,8 @@ output_var_cov_kmate <- paste(
 )
 
 # delete previous run
-# check_file_exists(output_gt_kmate)
-# check_file_exists(output_var_cov_kmate)
+check_file_exists(output_gt_kmate)
+check_file_exists(output_var_cov_kmate)
 
 # check that directory exists
 folder_path <- dirname(output_gt_kmate)
@@ -2768,7 +2768,7 @@ var_classes <- unique(gen0$class)
 var_class_loop_list <- list(var_classes[2], var_classes[1], var_classes[3], var_classes)
   
 # loop over sites
-for (site in unique(sites)[29:31]) {
+for (site in unique(sites)) {
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -2929,8 +2929,9 @@ output_var_cov_blocks <- paste(
 )
 
 # delete previous run
-#check_file_exists(output_gt_kmate_blocks)
-#check_file_exists(output_var_cov_blocks)
+check_file_exists(output_gt_kmate_blocks)
+check_file_exists(output_var_cov_blocks)
+
 # check that directory exists
 folder_path <- dirname(output_gt_kmate_blocks)
 if (!dir.exists(folder_path)) {
@@ -2940,22 +2941,8 @@ if (!dir.exists(folder_path)) {
 # make list of sites
 # for now, ignore some sites
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
-
-# loop over sites
-# for (cls in var_class_loop_list) {
-#   
-#   print(paste(Sys.time(), "- Looping for variant class: ", paste(cls, collapse = "_"), "..."))
-#   
-#   cls_idx <- gen0 %>% 
-#     mutate(row_idx = row_number()) %>% 
-#     filter(class %in% cls) %>%
-#     pull(row_idx)
-#   
-#   # subset to variant class
-#   gen0_cls <- gen0 %>%
-#     filter(row_number() %in% cls_idx)
   
-for (site in unique(sites)[31]) {
+for (site in unique(sites)) {
   print(paste(Sys.time(), "- Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -3061,8 +3048,8 @@ output_var_cov_kmate_perms <- paste(
 )
 
 # delete previous run
-#check_file_exists(output_gt_kmate_perms)
-#check_file_exists(output_var_cov_kmate_perms)
+check_file_exists(output_gt_kmate_perms)
+check_file_exists(output_var_cov_kmate_perms)
 
 # check that directory exists
 folder_path <- dirname(output_gt_kmate_perms)
@@ -3427,6 +3414,8 @@ folder_path <- dirname(output_conv_cor_kmate)
 if (!dir.exists(folder_path)) {
   dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
 }
+
+check_file_exists(output_conv_cor_kmate)
 
 for (a in sites) {
   print(paste("Site:", a))
