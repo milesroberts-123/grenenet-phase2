@@ -2737,6 +2737,70 @@ for(this_site in unique(sites)){
 }
 ```
 
+## Waples 1989 Ne estimator (kmate)
+
+```{r waples_1989_ne_kmate}
+# loop over each replicate
+# get two furthest time points, separated by at least 2 generations
+
+# make list of sites
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+
+output_ne_kmate <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/waples_1989_ne_kmate_esitmates.txt", sep = "")
+
+check_file_exists(output_ne_kmate)
+
+for(site in as.numeric(unique(sites))){
+  print(paste("Site:", site))
+  hap_site <- hapfire %>% 
+    dplyr::select(starts_with(paste(site, "_", sep = "")))
+  
+  for(exprep in 1:12){
+    print(paste("Rep:", exprep))
+    hap_rep <- hap_site %>% 
+      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
+      collect()
+    
+    # sort names to be in order of generation
+    hap_rep <- hap_rep %>% relocate(all_of(sort(colnames(hap_rep))))
+    
+    if(ncol(hap_rep) == 0){
+      print("No observations. Skipping replicate...")
+      next
+    }
+    
+    # get last column == last generation
+    pt <- hap_rep %>% pull(ncol(hap_rep))
+    
+    # sample sizes: total_flowers are diploid individuals (seedmix anchored at 10000)
+    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_rep), 10000, total_flowers)
+    
+    # check for minimum separation to avoid negative Ne estimates
+    rep_time <- as.numeric(gsub("_", "", str_extract(colnames(hap_rep), "_._")))
+    rep_time <- rep_time[length(rep_time)]
+    
+    # if(rep_time < 2){
+    #   print("Too close to t too close to 0. Skipping replicate...")
+    #   next
+    # }
+    
+    # calculate Ne; S0 and St are diploid individuals
+    ne_estimate <- waples_ne(1.8, 20, gen0$X0_0_0, pt, 10000, rep_n$total_flowers[nrow(rep_n)], rep_time)
+    
+    ne_result <- data.frame(
+      site = site,
+      rep = exprep,
+      fc = fc(gen0$X0_0_0, pt),
+      ne_low = ne_estimate[1],
+      ne_high = ne_estimate[2],
+      t = rep_time
+    )
+    
+    append_table(ne_result, output_ne_kmate)
+  }
+}
+```
+
 ## gt curves - point estimates
 
 ```{r}
