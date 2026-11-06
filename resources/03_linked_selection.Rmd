@@ -6246,7 +6246,7 @@ ggplot(sims, aes(x = value, color = term)) +
 
 # Waples 1989 Ne estimator
 
-```{r}
+```{r waples_1989_ne}
 # loop over each replicate
 # get two furthest time points, separated by at least 2 generations
 
