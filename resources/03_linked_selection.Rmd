@@ -4885,6 +4885,122 @@ for(site in unique(sites)[28:30]){
 
 ```
 
+## cumulative variance of d(p) in pi windows (kmate)
+
+The phase-1 version of this analysis (above) is written against the hapFIRE
+columns (`X1`, `X2`, `X3`) and the hapFIRE sample-size table, so it cannot run
+against the kmate data. This is the same analysis on the kmate allele
+frequencies: for every fixed genomic window and every replicate, the cumulative
+variance of allele frequency change over generations, together with the G(t)
+statistics that share the same covariance matrix. `sum_var` is
+`cumsum(diag(covmat))`.
+
+Windows holding fewer than two kmate variants cannot produce a covariance
+matrix; they are written with `NA` statistics so that every window appears for
+every (site, replicate, generation).
+
+```{r pi_windows_vardp_kmate}
+pi_windows <- fread("/global/scratch/users/milesroberts/genomes/arabidopsis_thaliana/pi_windows.bed", col.names = c("chrom", "window_pos_1", "window_pos_2"))
+
+print(paste("Windows:", nrow(pi_windows)))
+
+sites <- unique(gsub("_.*", "", colnames(hapfire)))
+
+output_pi_vardp_kmate <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/pi_windows_vardp_kmate.tsv",
+  sep = ""
+)
+
+check_file_exists(output_pi_vardp_kmate)
+
+# numeric chromosome id, to match the integer chromosome column of the BED
+gen0_chrom_num <- as.integer(gsub("[^0-9]", "", gen0$chrom))
+
+for (site in sites) {
+  print(paste("Site:", site))
+
+  hap_site <- hapfire %>%
+    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
+    collect()
+
+  if (ncol(hap_site) < 2) {
+    print("Too few columns. Skipping to next site...")
+    next
+  }
+
+  hap_site <- hap_site %>% relocate(all_of(sort(colnames(hap_site))))
+
+  hap_site <- cbind(gen0$X0_0_0, hap_site)
+  colnames(hap_site)[1] <- paste(site, "_0_0", sep = "")
+
+  site_mat <- as.matrix(hap_site)
+  rm(hap_site); gc()
+
+  gens <- as.integer(gsub("_", "", str_extract(colnames(site_mat), "_[0-9]_")))
+  reps <- gsub("^.*_", "", colnames(site_mat))
+
+  # variant indices for every window, computed once per site
+  win_idx <- lapply(seq_len(nrow(pi_windows)), function(i) {
+    which(gen0_chrom_num == pi_windows$chrom[i] &
+            gen0$pos > pi_windows$window_pos_1[i] &
+            gen0$pos < pi_windows$window_pos_2[i])
+  })
+
+  for (exprep in unique(reps[gens >= 1])) {
+    print(paste("Rep:", exprep))
+
+    # this replicate's columns in generation order, seedmix column first
+    cols <- which(reps == exprep & gens >= 1)
+    if (length(cols) < 1) next
+    hm <- site_mat[, c(1, cols), drop = FALSE]
+    rep_gens <- gens[cols]
+
+    rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hm)[-1], 10000, total_flowers)
+    # sample sizes as gene copies, matching the other kmate chunks
+
+    rep_rows <- vector("list", nrow(pi_windows))
+
+    for (i in seq_len(nrow(pi_windows))) {
+      idx <- win_idx[[i]]
+
+      if (length(idx) < 2) {
+        # a window needs two variants to have a covariance matrix; keep it in the
+        # table with NA statistics. gen is positional, exactly as gt_from_covmat()
+        # labels its rows (which is inaccurate when a replicate skips a generation).
+        rep_rows[[i]] <- data.frame(
+          gen = seq_along(rep_gens),
+          gt = NA_real_, gt_abs = NA_real_, gt_abs_2 = NA_real_, gt_pos = NA_real_,
+          sum_cov = NA_real_, sum_abs_cov = NA_real_, sum_pos_cov = NA_real_,
+          sum_neg_cov = NA_real_, sum_var = NA_real_, ratio = NA_real_,
+          site = site,
+          rep = exprep,
+          chrom = pi_windows$chrom[i],
+          window_pos_1 = pi_windows$window_pos_1[i],
+          window_pos_2 = pi_windows$window_pos_2[i]
+        )
+        next
+      }
+
+      covmat <- covmat_from_pmat(hm[idx, , drop = FALSE], rep_n$total_flowers * 2, correct_for_n = T, input_asin_trans = F, procedure = "none")
+      gt_result <- gt_from_covmat(covmat)
+
+      gt_result$site <- site
+      gt_result$rep <- exprep
+      gt_result$chrom <- pi_windows$chrom[i]
+      gt_result$window_pos_1 <- pi_windows$window_pos_1[i]
+      gt_result$window_pos_2 <- pi_windows$window_pos_2[i]
+      rep_rows[[i]] <- gt_result
+    }
+
+    append_table(do.call(rbind, rep_rows), output_pi_vardp_kmate)
+    rm(rep_rows, hm, rep_n); gc()
+  }
+  rm(site_mat, win_idx); gc()
+}
+```
+
 ## adaptest recombination map
 
 ```{r}
