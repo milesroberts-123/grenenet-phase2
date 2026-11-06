@@ -3746,6 +3746,107 @@ ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_
 
 ```
 
+## between environments, all generations
+
+Convergence correlations between every pair of sites, computed separately for
+each generation from the per-generation allele frequency increments
+Δp_g = p_g − p_{g−1} (the first increment uses the shared seedmix). Replicate
+labels are arbitrary across sites, so `rventures::conv_cor_btwn_envs()`
+(rventures >= 3.0.0) pools all n_a × n_b cross-site replicate pairs rather than
+pairing replicate numbers.
+
+Increment matrices are cached once per site and generation, so each site is
+collected from the trays table a single time instead of once per site pair.
+Every site descends from the same `gen0` seedmix column, so that shared founding
+term is part of every between-site covariance — intended for a convergence
+analysis, but it means these correlations are not measures of independent drift.
+
+```{r conv_cor_btwn_envs_kmate}
+sites <- sort(as.numeric(unique(gsub("_.*", "", colnames(hapfire)))))
+
+# the cache is a build artefact: delete data/kmate_pdiff_cache if the increment
+# definition ever changes, otherwise stale matrices are quietly reused
+cache_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_pdiff_cache"
+dir.create(cache_dir, recursive = TRUE, showWarnings = FALSE)
+
+# build the per-site increment cache (one collect per site)
+for (a in sites) {
+  print(paste("Caching site:", a))
+  hap_site <- hapfire %>%
+    dplyr::select(starts_with(paste(a, "_", sep = ""))) %>%
+    collect()
+
+  if (ncol(hap_site) < 1) next
+
+  hap_site <- hap_site[, sort(colnames(hap_site)), drop = FALSE]
+  hm <- as.matrix(hap_site)
+  cols <- strsplit(colnames(hm), "_")
+  gens <- as.integer(vapply(cols, `[`, "", 2))
+  reps <- vapply(cols, `[`, "", 3)
+
+  for (g in sort(unique(gens))) {
+    cols_g <- which(gens == g)
+    if (g == 1) {
+      # first increment is measured from the shared seedmix
+      d <- hm[, cols_g, drop = FALSE] - gen0$X0_0_0
+      keep <- rep(TRUE, length(cols_g))
+    } else {
+      cols_prev <- match(paste(a, g - 1, reps[cols_g], sep = "_"), colnames(hm))
+      keep <- !is.na(cols_prev)
+      if (!any(keep)) next
+      d <- hm[, cols_g[keep], drop = FALSE] - hm[, cols_prev[keep], drop = FALSE]
+    }
+    if (ncol(d) < 1) next
+    colnames(d) <- reps[cols_g][keep]
+    saveRDS(d, file.path(cache_dir, paste(a, "_g", g, ".rds", sep = "")))
+  }
+  rm(hap_site, hm); gc()
+}
+
+output_conv_cor_btwn <- paste(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today,
+  "/conv_cor_between_sites_kmate.tsv",
+  sep = ""
+)
+
+check_file_exists(output_conv_cor_btwn)
+
+read_cache <- function(a) {
+  files <- list.files(cache_dir, pattern = paste("^", a, "_g[0-9]+\\.rds$", sep = ""), full.names = TRUE)
+  mats <- lapply(files, readRDS)
+  names(mats) <- sub(".*_g([0-9]+)\\.rds$", "\\1", files)
+  mats
+}
+
+# all pairs of sites, each generation compared with the same generation only
+for (i in seq_along(sites)) {
+  a <- sites[i]
+  print(paste("Site A:", a))
+  mats_a <- read_cache(a)
+  for (j in seq_len(length(sites))[-seq_len(i)]) {
+    b <- sites[j]
+    mats_b <- read_cache(b)
+    for (g in intersect(names(mats_a), names(mats_b))) {
+      da <- mats_a[[g]]
+      db <- mats_b[[g]]
+      cc <- conv_cor_btwn_envs(da, db)
+      conv_cor_row <- data.frame(
+        site_a = a,
+        site_b = b,
+        gen = as.integer(g),
+        n_rep_a = ncol(da),
+        n_rep_b = ncol(db),
+        S = nrow(da),
+        numer = cc[["numer"]],
+        denom = cc[["denom"]]
+      )
+      append_table(conv_cor_row, output_conv_cor_btwn)
+    }
+  }
+  rm(mats_a); gc()
+}
+```
 
 # Plot OST1 over cell-types
 
