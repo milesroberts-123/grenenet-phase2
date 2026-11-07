@@ -2712,17 +2712,25 @@ feder_t_test_summary_file <- paste0("/global/scratch/users/milesroberts/moi_lab_
 
 #check_file_exists(feder_t_test_summary_file)
 
-for(this_site in unique(sites)){
+# resume: sites already present in the summary file are skipped, so the summary
+# can be re-run without recomputing the raw test table
+sites_done <- if (file.exists(feder_t_test_summary_file)) {
+  unique(fread(feder_t_test_summary_file, select = "site")$site)
+} else {
+  integer(0)
+}
+
+for(this_site in setdiff(as.integer(unique(sites)), sites_done)){
   print(paste("Processing site", this_site, "..."))
+  # aggregate inside arrow: collecting a site's raw rows first needs ~6 GB for the
+  # larger sites and is what OOM-killed the 2026-11-06 run (site 5, 120M rows)
   feder_summary <- feder_kmate_parquet %>%
-    #slice_head(n = 1000) %>%
-    filter(!is.na(yi), site == as.integer(this_site)) %>%
-    collect() %>%
+    filter(!is.na(yi), site == this_site) %>%
     group_by(site, chrom, pos) %>% 
-    #distinct(chrom, pos, rep, pool, .keep_all = TRUE) %>%
     summarize(ybar = mean(yi), 
               s2 = var(yi),
               n = n()) %>%
+    collect() %>%
     mutate(tvalue = ybar/sqrt(s2/n),
            pvalue = 2*pt(abs(tvalue), df = n - 1, lower.tail = F)) %>%
     left_join(gen0[,c("chrom", "pos", "class")], by = c("chrom", "pos")) %>%
