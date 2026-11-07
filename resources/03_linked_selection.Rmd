@@ -2986,7 +2986,7 @@ ggsave(paste0("../results/by-date/", today, "/neg_cov_by_dt_by_site.pdf"), devic
 
 ```{r}
 
-num_block_boots <- 250
+num_block_boots <- 500
 
 blocks <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
 
@@ -3140,7 +3140,7 @@ if (!dir.exists(folder_path)) {
 sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
 # number of sign permutations
-num_perm = 1:250
+num_perm = 1:500
 
 # loop over sites
 for (site in unique(sites)) {
