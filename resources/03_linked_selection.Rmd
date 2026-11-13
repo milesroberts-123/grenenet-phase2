@@ -3941,6 +3941,76 @@ ggsave(paste0("../results/by-date/", today, "/convergence_correlation_btwn_env_b
        width = 11, height = 3, device = cairo_pdf)
 ```
 
+## plot: raw allele frequency scatter p0 vs p1..p5
+
+Straight scatter of seedmix frequency against each later generation, computed
+from the merged tables (`gen0$X0_0_0` against `hapfire`). Six random sample
+columns per generation are pooled for the plotting cloud, but the annotated
+correlation is computed on every row of the collected columns.
+
+Row order matters here: `gen0` and `hapfire` are aligned positionally, which is
+only valid because chunk 1 sets `options(arrow.use_threads = FALSE)`.
+
+```{r af_scatter_by_gen}
+af_cols <- data.frame(col = colnames(hapfire)) %>%
+  mutate(site = sub("_.*", "", col),
+         gen  = as.integer(sub("^[^_]*_([0-9]+)_.*$", "\\1", col)),
+         rep  = sub("^.*_", "", col))
+
+set.seed(1)
+af_sel <- af_cols %>%
+  filter(gen >= 1) %>%
+  group_by(gen) %>%
+  slice_sample(n = 6) %>%
+  ungroup()
+
+af_cors <- NULL
+af_scatter <- NULL
+
+for (g in sort(unique(af_sel$gen))) {
+  cols <- af_sel$col[af_sel$gen == g]
+
+  af_g <- hapfire %>%
+    select(all_of(cols)) %>%
+    collect() %>%
+    as.matrix()
+
+  ok <- is.finite(gen0$X0_0_0)
+  af_cors <- rbind(af_cors, data.frame(
+    gen = g,
+    n_obs = sum(is.finite(af_g)),
+    r = cor(rep(gen0$X0_0_0, times = length(cols)), as.vector(af_g),
+            use = "complete.obs")
+  ))
+
+  # subsample rows for the plotting cloud
+  set.seed(100 + g)
+  idx <- sort(sample(which(ok), min(30000, sum(ok))))
+  af_scatter <- rbind(af_scatter, data.frame(
+    p0 = rep(gen0$X0_0_0[idx], times = length(cols)),
+    pg = as.vector(af_g[idx, , drop = FALSE]),
+    gen = g
+  ))
+
+  rm(af_g); gc()
+}
+
+print(af_cors)
+
+ggplot(af_scatter, aes(x = p0, y = pg)) +
+  geom_point(alpha = 0.04, size = 0.25) +
+  geom_abline(slope = 1, intercept = 0, colour = "red", linetype = 2) +
+  geom_text(data = af_cors,
+            aes(x = 0.02, y = 0.98, label = sprintf("r = %.3f", r)),
+            hjust = 0, vjust = 1, size = 3.5, inherit.aes = FALSE) +
+  facet_wrap(~ gen, nrow = 1) +
+  coord_equal() +
+  labs(x = expression(p[0]~"(seedmix)"), y = expression(p[t]))
+
+ggsave(paste0("../results/by-date/", today, "/af_scatter_p0_by_gen.pdf"),
+       width = 12, height = 3, device = cairo_pdf)
+```
+
 # Plot OST1 over cell-types
 
 ```{r}
