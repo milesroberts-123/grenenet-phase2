@@ -3874,6 +3874,73 @@ for (i in seq_along(sites)) {
 }
 ```
 
+## between environments, convergence correlations over time
+
+Convergence correlation between every pair of sites, per generation, from
+`results/2026-11-05/conv_cor_between_sites_kmate.tsv` (945 rows, 435 site
+pairs). Points are individual site pairs, coloured by how different their
+climates are; the overlay is the median with the interquartile range.
+
+Note that the number of pairs falls sharply with generation, because a pair
+enters a generation only when both sites have an increment there, and that
+pairs are not independent: each site appears in up to 30 of them, so the IQR
+is a spread, not a confidence interval on the median.
+
+```{r conv_cor_btwn_plot}
+conv_cor_btwn <- fread(paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-05/conv_cor_between_sites_kmate.tsv"
+)) %>%
+  mutate(cc = numer / denom,
+         gen = as.integer(gen))
+
+# climate distance for each pair
+bio <- worldclim_sitesdata %>%
+  transmute(site = as.integer(site), bio1 = as.numeric(bio1))
+
+conv_cor_btwn <- conv_cor_btwn %>%
+  left_join(bio, by = c("site_a" = "site")) %>% rename(bio1_a = bio1) %>%
+  left_join(bio, by = c("site_b" = "site")) %>% rename(bio1_b = bio1) %>%
+  mutate(dbio1 = abs(bio1_a - bio1_b))
+
+btwn_summary <- conv_cor_btwn %>%
+  group_by(gen) %>%
+  summarize(n = sum(is.finite(cc)),
+            med = median(cc, na.rm = TRUE),
+            q25 = quantile(cc, 0.25, na.rm = TRUE),
+            q75 = quantile(cc, 0.75, na.rm = TRUE),
+            .groups = "drop")
+
+# all pairs over time, shaded by how different the two climates are
+ggplot(conv_cor_btwn, aes(x = factor(gen), y = cc)) +
+  geom_hline(yintercept = 0, linetype = 2, colour = "grey50") +
+  geom_jitter(aes(colour = dbio1), width = 0.15, height = 0, alpha = 0.3, size = 1) +
+  geom_errorbar(data = btwn_summary,
+                aes(x = factor(gen), ymin = q25, ymax = q75),
+                width = 0.25, inherit.aes = FALSE) +
+  geom_point(data = btwn_summary, aes(x = factor(gen), y = med),
+             size = 2.5, inherit.aes = FALSE) +
+  geom_text(data = btwn_summary, aes(x = factor(gen), y = Inf, label = paste0("n = ", n)),
+            vjust = 1.5, size = 3, inherit.aes = FALSE) +
+  scale_color_scico(palette = "berlin") +
+  labs(x = "Generation", y = "Convergence correlation\nbetween environments",
+       colour = "|ΔBio1| (°C)") +
+  theme(legend.position = "top")
+
+ggsave(paste0("../results/by-date/", today, "/convergence_correlation_btwn_env_by_gen.pdf"),
+       width = 7, height = 4)
+
+# does environmental similarity matter?
+ggplot(conv_cor_btwn, aes(x = dbio1, y = cc)) +
+  geom_hline(yintercept = 0, linetype = 2, colour = "grey50") +
+  geom_point(alpha = 0.25, size = 1) +
+  geom_smooth(method = "lm", linewidth = 0.6) +
+  facet_wrap(~ gen, nrow = 1) +
+  labs(x = "|ΔBio1| between sites (°C)", y = "Convergence correlation")
+
+ggsave(paste0("../results/by-date/", today, "/convergence_correlation_btwn_env_by_climate.pdf"),
+       width = 11, height = 3)
+```
+
 # Plot OST1 over cell-types
 
 ```{r}
