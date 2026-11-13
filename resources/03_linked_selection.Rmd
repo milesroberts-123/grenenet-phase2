@@ -3289,7 +3289,7 @@ boot_summary <- gt_boots %>%
   summarize(q025 = quantile(gt_abs, 0.025, na.rm = T),
             q975 = quantile(gt_abs, 0.975, na.rm = T)) %>%
   mutate(site = factor(site)) |>
-  left_join(gt_points |> mutate(site = factor(site), rep = factor(rep), gen=factor(gen)), by = c("site", "rep", "gen")) %>%
+  left_join(gt_points |> mutate(site = factor(site)), by = c("site", "rep", "gen")) %>%
   mutate(lci = 2*gt_abs - q975,
          uci = 2*gt_abs - q025,
          lci = if_else(lci < 0, 0, lci),
@@ -3424,7 +3424,7 @@ ggsave(paste0("../results/by-date/", today, "/gt_abs_site4_rep1.pdf"), width = 5
 # summarize
 # for those populations with selection outside null, what's the percentage?
 gt_abs_summary <- boot_summary %>%
-  left_join(gt_null |> mutate(rep = factor(rep), gen = factor(gen)), by = c("site", "rep", "gen")) %>%
+  left_join(gt_null |> mutate( en = factor(gen)), by = c("site", "rep", "gen")) %>%
   group_by(site, rep) %>%
   filter(gen == max(gen)) %>%
   mutate(gt_abs_excess = lci - upi) %>%
@@ -3748,19 +3748,27 @@ ggplot(conv_cor_point, aes(x = gen, y = conv_cor, group = site)) +
   geom_point() +
   geom_line() +
   scale_color_scico(palette = "berlin") +
-  #geom_pointrange(mapping = aes(ymin = lci, ymax = uci), middle.color = "black") +
+  geom_pointrange(mapping = aes(ymin = lci, ymax = uci)) +
   labs(x = "Generation", y = "Convergence correlation\nwithin location", color = "Bio1 (\u00b0C)")
 
-ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_bio1.pdf"), width = 5, height = 4)
+ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_gen.pdf"), width = 5, height = 4)
 
-ggplot(conv_cor_point, aes(x = bio1, y = (lci+uci)/2, color = bio1)) +
+ggplot(conv_cor_point, aes(x = bio1, y = conv_cor, color = bio1, label = site)) +
   geom_point() +
   scale_color_scico(palette = "berlin") +
-  geom_pointrange(mapping = aes(ymin = lci, ymax = uci), middle.color = "black") +
+  geom_pointrange(mapping = aes(ymin = lci, ymax = uci)) +
   facet_grid(~gen, scales = "free_x") +
-  labs(x = "Generation", y = "Convergence correlation\nwithin location (p1 - p0)", color = "Bio1 (\u00b0C)")
+  labs(x = "Bio1", y = "Convergence correlation\nwithin location", color = "Bio1 (\u00b0C)") +
+  geom_smooth(method = "lm", data = ~ filter(.x, bio1 <= 18)) +
+  geom_text(vjust = -0.8, size = 3.5) +
+  geom_errorbar(aes(ymin = lci, ymax = uci), width = 0.5, color = "yellow")+
+  theme(legend.position = "top")
 
-ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_bio1.pdf"), width = 5, height = 4)
+ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_bio1.pdf"), width = 8, height = 4)
+
+mod_conv_cor_bio1 <- lmerTest::lmer(conv_cor ~ bio1 + (1|gen), data = conv_cor_point |> filter(bio1 <= 18))
+
+summary(mod_conv_cor_bio1)
 
 ```
 
