@@ -3874,7 +3874,7 @@ for (i in seq_along(sites)) {
 }
 ```
 
-## between environments, convergence correlations over time
+## plot: between environments, convergence correlations over time
 
 Convergence correlation between every pair of sites, per generation, from
 `results/2026-11-05/conv_cor_between_sites_kmate.tsv` (945 rows, 435 site
@@ -3927,7 +3927,7 @@ ggplot(conv_cor_btwn, aes(x = factor(gen), y = cc)) +
   theme(legend.position = "top")
 
 ggsave(paste0("../results/by-date/", today, "/convergence_correlation_btwn_env_by_gen.pdf"),
-       width = 7, height = 4)
+       width = 7, height = 4, device = cairo_pdf)
 
 # does environmental similarity matter?
 ggplot(conv_cor_btwn, aes(x = dbio1, y = cc)) +
@@ -3938,7 +3938,7 @@ ggplot(conv_cor_btwn, aes(x = dbio1, y = cc)) +
   labs(x = "|ΔBio1| between sites (°C)", y = "Convergence correlation")
 
 ggsave(paste0("../results/by-date/", today, "/convergence_correlation_btwn_env_by_climate.pdf"),
-       width = 11, height = 3)
+       width = 11, height = 3, device = cairo_pdf)
 ```
 
 # Plot OST1 over cell-types
