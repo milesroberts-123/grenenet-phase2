@@ -3228,7 +3228,10 @@ for (site in unique(sites)) {
 # parquet error: collecting from parquet file does not leave rows in their original order
 #gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_point_estimates_kmate.tsv") %>%
 #  distinct(site, rep, gen, class, .keep_all = T)
-gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_point_estimates_kmate.tsv") %>%
+# point estimates rerun 2026-11-04 with arrow threads off
+#gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_point_estimates_kmate.tsv") %>%
+#  distinct(site, rep, gen, class, .keep_all = T)
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-04/gt_point_estimates_kmate.tsv") %>%
   distinct(site, rep, gen, class, .keep_all = T)
 
 # because of the variance correction rule (set to zero if sample size correction results in negative variance) some of the gt_abs ratios return NA. We will fix these to zero
@@ -3271,7 +3274,11 @@ gt_points <- gt_points %>%
 #gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_boots_kmate.tsv") %>%
 #  filter(class == "sv") %>%
 #  distinct(site, rep, gen, boot, .keep_all = T)
-gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_boots_kmate.tsv") %>%
+# 500 bootstrap draws, arrow threads off
+#gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_boots_kmate.tsv") %>%
+# filter(class == "smallindel_sv_snp") %>%
+# distinct(site, rep, gen, boot, .keep_all = T)
+gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-07/gt_boots_kmate.tsv") %>%
  filter(class == "smallindel_sv_snp") %>%
  distinct(site, rep, gen, boot, .keep_all = T) |>
   mutate(gt_abs = as.numeric(gt_abs)) |> 
@@ -3305,7 +3312,10 @@ boot_summary <- gt_boots %>%
 # PARQUET BUG: gen0 rows did not match hapfire rows, not standardized by heterozygosity
 #gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_perms_kmate_n_correction.tsv") %>%
 #  distinct(site, rep, gen, perm, .keep_all = T)
-gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_perms_kmate.tsv") %>%
+# 500 sign permutations, arrow threads off
+#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_perms_kmate.tsv") %>%
+#  distinct(site, rep, gen, perm, .keep_all = T)
+gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-07/gt_perms_kmate.tsv") %>%
   distinct(site, rep, gen, perm, .keep_all = T) |>
   mutate(gt_abs = as.numeric(gt_abs)) |> 
   mutate(gt_abs = if_else(is.na(gt_abs), 0, gt_abs))
