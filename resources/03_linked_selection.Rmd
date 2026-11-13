@@ -3944,9 +3944,12 @@ ggsave(paste0("../results/by-date/", today, "/convergence_correlation_btwn_env_b
 ## plot: raw allele frequency scatter p0 vs p1..p5
 
 Straight scatter of seedmix frequency against each later generation, computed
-from the merged tables (`gen0$X0_0_0` against `hapfire`). Six random sample
-columns per generation are pooled for the plotting cloud, but the annotated
-correlation is computed on every row of the collected columns.
+from the merged tables (`gen0$X0_0_0` against `hapfire`).
+
+The same six populations are used in every panel: a `(site, replicate)` pair is
+kept only if it has a sample in all of generations 1-5, so the panels are a
+genuine time series and not six unrelated samples per generation. That limits
+the sites to those sampled at year 5 (27, 42, 46, 55, 57).
 
 Row order matters here: `gen0` and `hapfire` are aligned positionally, which is
 only valid because chunk 1 sets `options(arrow.use_threads = FALSE)`.
@@ -3957,12 +3960,21 @@ af_cols <- data.frame(col = colnames(hapfire)) %>%
          gen  = as.integer(sub("^[^_]*_([0-9]+)_.*$", "\\1", col)),
          rep  = sub("^.*_", "", col))
 
-set.seed(1)
-af_sel <- af_cols %>%
+# keep only populations sampled in every generation 1-5
+af_pairs <- af_cols %>%
   filter(gen >= 1) %>%
-  group_by(gen) %>%
+  group_by(site, rep) %>%
+  filter(all(1:5 %in% gen)) %>%
+  ungroup() %>%
+  distinct(site, rep)
+
+set.seed(1)
+af_sel <- af_pairs %>%
   slice_sample(n = 6) %>%
-  ungroup()
+  inner_join(af_cols %>% filter(gen >= 1), by = c("site", "rep")) %>%
+  arrange(gen, site, rep)
+
+print(af_sel %>% select(gen, site, rep, col))
 
 af_cors <- NULL
 af_scatter <- NULL
