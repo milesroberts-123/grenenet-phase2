@@ -2249,10 +2249,19 @@ for (cls in c("sv", "smallindel", "snp")) {
     }
     
     # variant info: carry ref/alt lengths so that variants are matched across
-    # years by allele identity, not by coordinate alone. Coordinate-only joining
-    # pairs different alleles at the same position whenever the two pipelines
-    # represent an indel or SV differently (audited 2026-11-13: snps agree at
-    # 100% of matched positions, smallindels at 56%, svs at 32%).
+    # years by allele identity, not by coordinate alone.
+    #
+    # Audited 2026-11-13: the coordinate-only join this replaces never actually
+    # paired different alleles. Of the positions holding exactly one variant on
+    # each side, none had mismatched ref/alt lengths (snp 0 of 1,917,475,
+    # smallindel 0 of 471,550, sv 0 of 13,667), and every phase-1 gen-3 allele
+    # is present in the phase-2 column index (0 absent out of 2,026,052 snp /
+    # 669,553 smallindel / 25,470 sv).
+    #
+    # The real cost of the old join was loss, not corruption: filter(n() == 1)
+    # on (chrom, pos) discarded every position carrying more than one variant,
+    # which is 63% of phase-2 sv rows. Keying on allele lengths keeps alleles
+    # that differ in length instead, so more variants survive the merge.
     print("Reading variant info...")
     if(g >= 0 & g <= 3){
       prec <- fread(paste0(class_dir, cls, "_gen", g, ".records.csv"),
