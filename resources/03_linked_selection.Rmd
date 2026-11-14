@@ -2248,26 +2248,31 @@ for (cls in c("sv", "smallindel", "snp")) {
       colnames(pmat) <- pool_names$pool
     }
     
-    # variant info
+    # variant info: carry ref/alt lengths so that variants are matched across
+    # years by allele identity, not by coordinate alone. Coordinate-only joining
+    # pairs different alleles at the same position whenever the two pipelines
+    # represent an indel or SV differently (audited 2026-11-13: snps agree at
+    # 100% of matched positions, smallindels at 56%, svs at 32%).
     print("Reading variant info...")
     if(g >= 0 & g <= 3){
-      prec <- fread(paste0(class_dir, cls, "_gen", g, ".records.csv"))
+      prec <- fread(paste0(class_dir, cls, "_gen", g, ".records.csv"),
+                    select = c("chrom", "pos", "ref_len", "alt_len"))
     } else {
-      prec <- fread(paste0(class_dir, "phase2_matrices/", cls, "_column_index.csv"))
-      prec <- prec %>% select(chrom, pos)
+      prec <- fread(paste0(class_dir, "phase2_matrices/", cls, "_column_index.csv"),
+                    select = c("chrom", "pos", "ref_len", "alt_len"))
     }
 
     
-    # add chromosome and position info so that we can merge by this
+    # add chromosome, position and allele lengths so that we can merge by allele
     print("cbinding variant info...")
-    pmat <- cbind(prec[,1:2], pmat)
+    pmat <- cbind(prec, pmat)
     
     # For phase 2 data, we must calculate
     # weighted average by flower count
     if(g > 3){
       # Separate your identification columns from your data columns
-      id_cols <- pmat[, .(chrom, pos)]
-      data_cols <- pmat[, 3:ncol(pmat)]
+      id_cols <- pmat[, .(chrom, pos, ref_len, alt_len)]
+      data_cols <- pmat[, 5:ncol(pmat)]
       
       # Multiply every column by its corresponding weight
       weighted_data <- as.matrix(data_cols) %*% diag(pool_names$flowerscollected)
@@ -2286,23 +2291,25 @@ for (cls in c("sv", "smallindel", "snp")) {
       
       # Bind everything back into your final data.table
       pmat <- cbind(id_cols, as.data.table(result_list))
-      setnames(pmat, c("chrom", "pos", unique_names))
+      setnames(pmat, c("chrom", "pos", "ref_len", "alt_len", unique_names))
     }
     
-    # drop multi-alleleic sites
+    # drop multi-alleleic sites: a position is ambiguous only if more than one
+    # variant there has the same ref/alt length pair, since alleles are now
+    # identified by their lengths as well as their coordinate
     print("drop multi-alleleic sites within a class...")
     pmat <- pmat %>%
-      group_by(chrom, pos) %>% 
+      group_by(chrom, pos, ref_len, alt_len) %>% 
       filter(n() == 1) %>%
       ungroup()
     
-    # merge with growing af matrix
+    # merge with growing af matrix, matching alleles rather than coordinates
     print("Merging with variant matrix...")
     if(is.null(pmat_cls)){
       pmat_cls <- pmat
     } else {
       pmat_cls <- pmat_cls %>%
-        left_join(pmat, by = c("chrom", "pos"))
+        left_join(pmat, by = c("chrom", "pos", "ref_len", "alt_len"))
     }
     
     rm(pmat, prec, pool_names);gc()
@@ -2334,8 +2341,12 @@ pmat_final <- pmat_final %>%
 # write seed mix
 write.csv(pmat_final %>% select(chrom, pos, class, X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix.csv", row.names = F, quote = F)
 
-# write all other generations
-fwrite(pmat_final %>% select(-chrom, -pos, -class, -X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays.csv", row.names = F, quote = F)
+# write allele identity alongside, so the ref/alt lengths that the merge matched
+# on travel with the frequencies instead of being discarded
+write.csv(pmat_final %>% select(chrom, pos, class, ref_len, alt_len), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_variant_info.csv", row.names = F, quote = F)
+
+# write all other generations (frequencies only: schema unchanged)
+fwrite(pmat_final %>% select(-chrom, -pos, -ref_len, -alt_len, -class, -X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays.csv", row.names = F, quote = F)
     
 ```
 
