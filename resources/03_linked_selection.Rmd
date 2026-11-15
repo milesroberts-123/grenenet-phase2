@@ -2649,13 +2649,13 @@ ts_message("done: ", n_out, " records kept; elapsed ",
 # stream. Rows are selected by absolute row counter, so no ordering assumption
 # about the reader is involved.
 #
-# Reading is done with arrow (threads off) rather than readr: a 2026-11-14 run
-# with read_csv_chunked reported EOF after ~6.9M of 7.56M rows and silently
-# produced a short table. Arrow's RecordBatchReader lets the job assert both the
-# rows read and the rows kept, so a short read fails loudly instead of writing a
-# truncated file. Column types are pinned to double from the header: arrow's
-# inference types an all-NA column as null, which would drop real values if the
-# inference sample happened to be empty.
+# The row selection is a pure line filter: every kept line is copied verbatim,
+# so nothing parses 893 numeric columns per row. Two earlier attempts failed
+# here. read_csv_chunked (2026-11-14) reported EOF after ~6.9M of 7.56M rows and
+# silently wrote a short table. An arrow RecordBatchReader then OOM-killed at
+# 16 GB, because decoding and re-encoding every column grows memory without
+# bound. Line filtering has neither failure mode, and the assertions below still
+# fail loudly if the input and the seedmix disagree in length.
 #
 # Reads : ..._seedmix_randswitch_fixrm.csv, ..._trays_randswitch_fixrm.csv
 # Writes: ..._seedmix_randswitch_fixrm_biallelic.csv
@@ -2663,10 +2663,7 @@ ts_message("done: ", n_out, " records kept; elapsed ",
 
 suppressMessages({
   library(data.table)
-  library(arrow)
 })
-
-options(arrow.use_threads = FALSE)
 
 ts_message <- function(...) message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(...)))
 t0 <- proc.time()
@@ -2695,36 +2692,39 @@ fwrite(gen0[keep == TRUE, .(chrom, pos, class, X0_0_0)],
        paste0(af_prefix, "_seedmix_randswitch_fixrm_biallelic.csv"), quote = FALSE)
 
 ## ---- stream the pool matrix --------------------------------------------
-hdr <- strsplit(readLines(trays_in, n = 1L), ",", fixed = TRUE)[[1]]
-sch <- do.call(schema, setNames(rep(list(float64()), length(hdr)), hdr))
+# A pure line filter: every output row is an input row, byte for byte, so there
+# is no reason to parse 893 numeric columns per row. Reading lines and writing
+# the kept ones keeps memory flat (one chunk of text) and does not touch the
+# values at all.
+con_in  <- file(trays_in, "r")
+con_out <- file(trays_out, "w")
+on.exit(try(close(con_in), silent = TRUE), add = TRUE)
+on.exit(try(close(con_out), silent = TRUE), add = TRUE)
 
-ds <- open_dataset(trays_in, format = "csv",
-                   convert_options = csv_convert_options(col_types = sch),
-                   read_options = csv_read_options(block_size = 64L * 1024L * 1024L))
-ts_message("  input reports ", format(ds$num_rows, big.mark = ","), " rows (metadata)")
+writeLines(readLines(con_in, n = 1L), con_out)   # header
 
-if (file.exists(trays_out)) file.remove(trays_out)
-
-n_in <- 0L; n_out <- 0L; n_batch <- 0L
-reader <- ds$NewScan()$UseThreads(FALSE)$BatchSize(50000L)$Finish()$ToRecordBatchReader()
+chunk_lines <- 50000L
+n_in <- 0L; n_out <- 0L; n_chunk <- 0L
 repeat {
-  rb <- reader$read_next_batch()
-  if (is.null(rb)) break
-  n_batch <- n_batch + 1L
-  rows <- (n_in + 1L):(n_in + rb$num_rows)
-  m <- as.matrix(as.data.frame(rb))[keep[rows], , drop = FALSE]
-  fwrite(as.data.table(m), trays_out, append = n_batch > 1L, col.names = n_batch == 1L,
-         quote = FALSE)
-  n_in  <- n_in + rb$num_rows
-  n_out <- n_out + nrow(m)
-  if (n_in %% 500000L < rb$num_rows) {
+  lines <- readLines(con_in, n = chunk_lines, warn = FALSE)
+  if (!length(lines)) break
+  n_chunk <- n_chunk + 1L
+  rows <- (n_in + 1L):(n_in + length(lines))
+  if (max(rows) > length(keep))
+    stop("input has more rows than the seedmix: ", max(rows), " > ", length(keep))
+  keep_rows <- lines[keep[rows]]
+  writeLines(keep_rows, con_out)
+  n_in  <- n_in + length(lines)
+  n_out <- n_out + length(keep_rows)
+  if (n_in %% 500000L < length(lines)) {
     ts_message(sprintf("  %s in -> %s kept (%.0f%%)", format(n_in, big.mark = ","),
                        format(n_out, big.mark = ","), 100 * n_out / n_in))
   }
-  rm(m, rb); gc(FALSE)
+  rm(lines, keep_rows)
 }
+close(con_in); close(con_out)
 
-ts_message("  batches: ", n_batch, " | rows read: ", format(n_in, big.mark = ","))
+ts_message("  chunks: ", n_chunk, " | rows read: ", format(n_in, big.mark = ","))
 stopifnot(
   n_in  == length(keep),      # every row of the input was seen
   n_out == sum(keep)          # every kept row was written
