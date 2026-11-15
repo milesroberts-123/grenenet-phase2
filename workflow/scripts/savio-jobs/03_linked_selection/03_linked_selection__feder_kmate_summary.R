@@ -95,12 +95,10 @@ flower_counts <- rbindlist(lapply(1:5, function(g) {
 }))
 ts_message("chunk #38 done")
 
-# NOTE: added by /knitr-block — pin the dated results directory to the run this
-# job continues. The summary CSV and the per-site PNGs are written under
-# results/<today>/, and without this the job would start a fresh 2026-11-07
-# folder and re-summarise all 31 sites instead of appending the 28 missing ones
-# to the existing file. Change or delete this line to target a different run.
-today <- as.Date("2026-11-05")
+# NOTE: added by /knitr-block — the notebook defines `today` in chunk #2, which
+# is not part of this job. A pinned date lived here to resume the 2026-11-05
+# run; it is removed so a fresh run writes to the current date instead.
+today <- Sys.Date()
 results_path <- paste("../results/by-date/", today, "/", sep = "")
 
 ts_message("chunk #40 summary `<feder summaries from parquet>` start")
