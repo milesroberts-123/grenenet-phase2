@@ -115,7 +115,11 @@ for(site in as.numeric(unique(sites))){
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%

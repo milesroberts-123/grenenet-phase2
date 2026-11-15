@@ -188,7 +188,11 @@ hapfire_nas <- NULL
 for(site in unique(sites)){
   print(paste("Site:", site))
   hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
     
@@ -967,7 +971,11 @@ for(site in unique(sites)){
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
     collect()
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = "")))
@@ -1077,7 +1085,11 @@ for(site in unique(sites)[26:30]){
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
     collect()
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = "")))
@@ -1177,7 +1189,11 @@ for (site in unique(sites)[29:30]) {
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
     collect()
   
-  for (exprep in 1:12) {
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>%
       dplyr::select(ends_with(paste("_", exprep, sep = "")))
@@ -2271,15 +2287,17 @@ np <- reticulate::import("numpy", convert = FALSE)
 
 np_open <- function(path) {
   a <- np$load(path, mmap_mode = "r")
-  shp <- as.integer(py_to_r(a$shape))
+  # fully qualified: the job header attaches only data.table, so an unqualified
+  # py_to_r() is out of scope there even though it resolves in the notebook
+  shp <- as.integer(reticulate::py_to_r(a$shape))
   list(arr = a, nrow = shp[1], ncol = shp[2],
-       dtype = as.character(py_to_r(a$dtype)))
+       dtype = as.character(reticulate::py_to_r(a$dtype)))
 }
 
 # i is 1-based; numpy indexing is 0-based
 np_row <- function(h, i) {
   stopifnot(h$dtype == "float16", i >= 1L, i <= h$nrow)
-  py_to_r(np$asarray(h$arr[as.integer(i - 1L), ], dtype = "float32"))
+  reticulate::py_to_r(np$asarray(h$arr[as.integer(i - 1L), ], dtype = "float32"))
 }
 
 if (file.exists(af_done)) {
@@ -2520,7 +2538,11 @@ for(site in unique(sites)){
   print(paste("Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     print("Loading data for replicate...")
     hap_rep <- hap_site %>% 
@@ -2743,7 +2765,11 @@ for(site in unique(sites)) {
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for(exprep in 1:12) {
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste(Sys.time()," - Rep:", exprep))
     hap_rep <- hap_site %>%
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
@@ -2860,7 +2886,11 @@ for(site in as.numeric(unique(sites))){
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
@@ -2948,7 +2978,11 @@ for (site in unique(sites)) {
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for (exprep in 1:12) {
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>%
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
@@ -3122,7 +3156,11 @@ for (site in unique(sites)) {
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for (exprep in 1:12) {
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste(Sys.time(), "- Rep:", exprep))
     hap_rep <- hap_site %>%
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
@@ -3245,7 +3283,11 @@ for (site in unique(sites)) {
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for (exprep in 1:12) {
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>%
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
@@ -5111,7 +5153,11 @@ for(site in unique(sites)[28:30]){
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
     collect()
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = "")))
@@ -5846,7 +5892,11 @@ for(site in unique(sites)){
   
   hap_site$window <- blocks$window
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = "")), window)
@@ -5933,7 +5983,11 @@ for(site in unique(sites)){
     dplyr::select(starts_with(paste(site, "_", sep = ""))) %>% 
     collect()
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = "")))
@@ -6560,7 +6614,11 @@ for(site in unique(sites)){
   print(paste("Site:", site))
   hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")), window)
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")), window)
     
@@ -6817,7 +6875,11 @@ for(site in as.numeric(unique(sites))){
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% 
       dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
@@ -6915,7 +6977,11 @@ for(site in as.numeric(unique(sites))){
   print(paste("Site:", site))
   hap_site <- hapfire %>% dplyr::select(starts_with(paste(site, "_", sep = "")))
   
-  for(exprep in 1:12){
+  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
+  # iterate the plots actually present rather than assuming 1:12
+  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
+    colnames(hapfire), value = TRUE)))))
+  for (exprep in site_plots) {
     print(paste("Rep:", exprep))
     hap_rep <- hap_site %>% dplyr::select(ends_with(paste("_", exprep, sep = "")))
     

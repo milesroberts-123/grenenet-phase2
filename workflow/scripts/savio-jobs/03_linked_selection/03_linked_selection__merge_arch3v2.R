@@ -41,15 +41,17 @@ np <- reticulate::import("numpy", convert = FALSE)
 
 np_open <- function(path) {
   a <- np$load(path, mmap_mode = "r")
-  shp <- as.integer(py_to_r(a$shape))
+  # fully qualified: the job header attaches only data.table, so an unqualified
+  # py_to_r() is out of scope there even though it resolves in the notebook
+  shp <- as.integer(reticulate::py_to_r(a$shape))
   list(arr = a, nrow = shp[1], ncol = shp[2],
-       dtype = as.character(py_to_r(a$dtype)))
+       dtype = as.character(reticulate::py_to_r(a$dtype)))
 }
 
 # i is 1-based; numpy indexing is 0-based
 np_row <- function(h, i) {
   stopifnot(h$dtype == "float16", i >= 1L, i <= h$nrow)
-  py_to_r(np$asarray(h$arr[as.integer(i - 1L), ], dtype = "float32"))
+  reticulate::py_to_r(np$asarray(h$arr[as.integer(i - 1L), ], dtype = "float32"))
 }
 
 if (file.exists(af_done)) {
