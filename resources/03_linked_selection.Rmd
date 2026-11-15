@@ -2630,6 +2630,39 @@ ts_message("done: ", n_out, " records kept; elapsed ",
 ```
 
 
+## ONE-TIME: filter to bi-allelic sites
+
+```{r}
+gen0 <- open_dataset(paste0(af_prefix, "_seedmix_randswitch_fixrm.csv"), format = "csv")
+
+hapfire <- open_dataset(paste0(af_prefix, "_trays_randswitch_fixrm.csv"), format = "csv")
+
+gen0 <- gen0 |> 
+  group_by(chrom, pos) |> 
+  mutate(n = n()) |> 
+  arrange(chrom, pos) |>
+  mutate(biallelic = (n == 1)) |>
+  collect()
+
+rows_to_keep <- gen0 |> pull(biallelic)
+
+gen0_out <- gen0 |>
+  filter(biallelic == TRUE)
+
+hapfire_out <- hapfire |> 
+  mutate(biallelic = rows_to_keep) |>
+  filter(biallelic == TRUE) |>
+  select(-biallelic) |>
+  collect()
+
+fwrite(gen0_out, paste0(af_prefix, "_seedmix_randswitch_fixrm_biallelic.csv"))
+
+fwrite(hapfire_out, paste0(af_prefix, "_trays_randswitch_fixrm_biallelic.csv"))
+
+```
+
+
+
 ## load allele frequencies
 
 ```{r}
