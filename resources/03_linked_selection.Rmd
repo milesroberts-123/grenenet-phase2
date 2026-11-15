@@ -2234,8 +2234,6 @@ kmate_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase
 # merged tables written by the ONE-TIME chunk below
 af_prefix <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency"
 
-# parquet cache used by the downstream chunks
-af_parquet <- paste0(dirname(af_prefix), "/kmate_arch3v2_parquet_randswitch")
 
 # superseded export (arch3 panel). Only kept so the old tables stay reproducible;
 # never mix it with kmate_dir, the record sets and values both differ.
@@ -2459,43 +2457,77 @@ if (file.exists(af_done)) {
 ## ONE-TIME: randomly switch tracked allele
 
 ```{r}
-# full dataset
+
+# Extracted to `randswitch_kmate`.
+#
+# ONE-TIME: randomly switch which allele is tracked.
+#
+# The kMate matrices track the ALT allele throughout. For temporal covariance
+# statistics the direction of the trajectory is arbitrary, so a random subset of
+# records is flipped to track the ALT complement instead. The same draw is
+# applied to the seedmix and to every pool column, so a record's whole
+# trajectory is flipped together.
+#
+# Reads : ..._seedmix.csv, ..._trays.csv            (~60 GB)
+# Writes: ..._seedmix_randswitch.csv
+#         ..._trays_randswitch.csv                  (~60 GB)
+#
+# Chunked so memory stays bounded: 50k rows x 893 columns is ~360 MB as doubles.
+# Output is written with fwrite; the previous version used write.table once per
+# 1000-row chunk, which dominated the runtime.
+
+suppressMessages({
+  library(data.table)
+  library(readr)
+})
+
+ts_message <- function(...) message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(...)))
+t0 <- proc.time()
+# af_prefix comes from the `directories on savio` chunk above
+
+trays_in  <- paste0(af_prefix, "_trays.csv")
+trays_out <- paste0(af_prefix, "_trays_randswitch.csv")
+
+ts_message("reading seedmix")
 gen0 <- fread(paste0(af_prefix, "_seedmix.csv"))
 
-# randomly swith which allele is being tracked
-# right now, the non-reference allele is always the one we're tracking
-idx <- sample(c(T,F), size = nrow(gen0), replace = T)
-gen0[idx,"X0_0_0"] <- 1 - gen0[idx,"X0_0_0"]
+# one draw per record, reused for every column of that record
+set.seed(20261115)
+idx <- sample(c(TRUE, FALSE), size = nrow(gen0), replace = TRUE)
+ts_message("flipping ", sum(idx), " of ", length(idx), " records (",
+           round(100 * mean(idx), 1), "%)")
+gen0[idx, X0_0_0 := 1 - X0_0_0]
+fwrite(gen0, paste0(af_prefix, "_seedmix_randswitch.csv"), quote = FALSE)
 
-write.csv(gen0, paste0(af_prefix, "_seedmix_randswitch.csv"), quote = F, row.names = F)
+if (file.exists(trays_out)) file.remove(trays_out)
 
-process_one_minus <- function(idx, chunk_size, output) {
-  function(x, pos) {
-    print(pos)
-    print(Sys.time())
-    # calculate end
-    chunk_size <- nrow(x)
-    end <- pos + chunk_size - 1
-    # subtract 1 from some alleles
-    print(paste("Start:", pos, "End:", end))
-    idx_sub <- idx[pos:end]
-    x[idx_sub,] <- 1 - x[idx_sub,]
-    write.table(x, output, col.names=!file.exists(output), append = T, row.names = F, sep = ",", quote = F)
+n_done <- 0L
+cb <- function(x, pos) {
+  rows <- pos:(pos + nrow(x) - 1L)
+  flip <- which(idx[rows])
+  m <- as.matrix(x)
+  if (length(flip)) m[flip, ] <- 1 - m[flip, ]
+  fwrite(as.data.table(m), trays_out, append = pos > 1, col.names = pos == 1,
+         quote = FALSE)
+  n_done <<- n_done + nrow(m)
+  if (n_done %% 500000L < nrow(m)) {
+    ts_message(sprintf("  %s records (%.0f%%)", format(n_done, big.mark = ","),
+                       100 * n_done / nrow(gen0)))
   }
+  rm(m); gc(FALSE)
+  NULL
 }
 
-# phase 1
+ts_message("streaming trays -> randswitch")
 read_csv_chunked(
-  paste0(af_prefix, "_trays.csv"),
-  callback = SideEffectChunkCallback$new(
-    process_one_minus(
-      idx,
-      1000,
-      paste0(af_prefix, "_trays_randswitch.csv")
-    )
-  ),
-  chunk_size = 1000
+  trays_in,
+  callback = SideEffectChunkCallback$new(cb),
+  chunk_size = 50000L,
+  col_types = cols(.default = col_double())
 )
+
+ts_message("done: ", n_done, " records; elapsed ",
+           round((proc.time() - t0)[["elapsed"]] / 60, 1), " min")
 ```
 
 ## ONE-TIME: drop allele frequencies near absorbing boundaries
@@ -2504,83 +2536,97 @@ kmate allele frequencies all seem to start within the absorbing boundaries, so t
 
 ```{r}
 
-# initial generation
-# tracked allele randomly switched
-gen0 <- fread(paste0(af_prefix, "_seedmix_randswitch.csv"), data.table = F)
+# Extracted to `absorbing_boundaries_kmate`.
+#
+# ONE-TIME: drop allele frequencies near absorbing boundaries.
+#
+#
+#  1. seedmix: drop records whose founding frequency sits within 1/231 of 0 or 1
+#     (or is NA, which is where the merge put exact 0/1).
+#  2. pools: for each (site, plot), truncate the trajectory at its first NA and
+#     leave everything after it NA. The merge turns exact 0/1 into NA, so this
+#     is what stops a fixed or lost record from contributing observations after
+#     the fixation event. Columns are ordered by generation within the group
+#     before truncation.
+#
+# Reads : ..._seedmix_randswitch.csv, ..._trays_randswitch.csv   (~60 GB)
+# Writes: ..._seedmix_randswitch_fixrm.csv
+#         ..._trays_randswitch_fixrm.csv                         (~60 GB)
+#
+# Column order in the output is the input order. The old version rebuilt the
+# table site-by-site, which reordered columns; nothing downstream addresses
+# columns positionally, so preserving the input order is simpler and cheaper.
 
-# later gen
-# tracked allele randomly switched
-# parquet cache, named after the source so it can never be confused with the
-# arch3 export's cache
-if(!dir.exists(af_parquet)){
-  open_dataset(paste0(af_prefix, "_trays_randswitch.csv"), format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
-    write_dataset(af_parquet, format = "parquet", max_rows_per_file = 50000L)
-}
+suppressMessages({
+  library(data.table)
+  library(readr)
+})
 
-# now can just read it
-hapfire <- open_dataset(af_parquet)
+ts_message <- function(...) message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), paste0(...)))
+t0 <- proc.time()
+# af_prefix comes from the `directories on savio` chunk above
 
-# omit allele frequencies that start near absorbing boundaries
-# NA-safe: X0_0_0 is NA wherever the seedmix frequency was exactly 0 or 1, and
-# subsetting with an NA logical would emit a row of NAs instead of dropping it
-non_abosrbing_freq <- !is.na(gen0$X0_0_0) &
+trays_in  <- paste0(af_prefix, "_trays_randswitch.csv")
+trays_out <- paste0(af_prefix, "_trays_randswitch_fixrm.csv")
+
+## ---- 1. seedmix ---------------------------------------------------------
+ts_message("filtering seedmix")
+gen0 <- fread(paste0(af_prefix, "_seedmix_randswitch.csv"))
+keep <- !is.na(gen0$X0_0_0) &
   gen0$X0_0_0 >= 1/231 & gen0$X0_0_0 <= 1 - 1/231
-gen0 <- gen0[which(non_abosrbing_freq), ]
+ts_message("  keeping ", sum(keep), " of ", nrow(gen0), " records (",
+           round(100 * mean(keep), 2), "%)")
+fwrite(gen0[keep], paste0(af_prefix, "_seedmix_randswitch_fixrm.csv"), quote = FALSE)
 
-# output filtered seedmix frequencies
-write.table(gen0, paste0(af_prefix, "_seedmix_randswitch_fixrm.csv"), row.names = F, sep = ",", quote = F)
+## ---- 2. column groups: one per (site, plot), ordered by generation ------
+hdr <- names(fread(trays_in, nrows = 0L))
+parts <- tstrsplit(hdr, "_", fixed = TRUE)
+site <- as.integer(parts[[1]]); gen <- as.integer(parts[[2]]); plot <- as.integer(parts[[3]])
+grp <- paste(site, plot, sep = "_")
+groups <- split(seq_along(hdr), grp)
+groups <- lapply(groups, function(i) i[order(gen[i])])
+groups <- groups[lengths(groups) > 1L]
+ts_message("  ", length(groups), " (site, plot) trajectories to truncate")
 
-# loop over site - replicate combinations
-# remove allele frequency trajectory after first fixation/loss 
-sites <- unique(gsub("_.*", "", colnames(hapfire)))
-hapfire_nas <- NULL
-for(site in unique(sites)){
-  print(paste("Site:", site))
-  hap_site <- hapfire %>% 
-    dplyr::select(starts_with(paste(site, "_", sep = "")))
-  # garden plot numbers run to 18 and have gaps (sites 28, 55, 57), so
-  # iterate the plots actually present rather than assuming 1:12
-  site_plots <- sort(unique(as.integer(sub("^.*_", "", grep(paste0("^", site, "_"),
-    colnames(hapfire), value = TRUE)))))
-  for (exprep in site_plots) {
-    print(paste("Rep:", exprep))
-    print("Loading data for replicate...")
-    hap_rep <- hap_site %>% 
-      dplyr::select(ends_with(paste("_", exprep, sep = ""))) %>%
-      collect()
-    
-    # remove variants that are NA in seedmix
-    print("Removing variants fixed in seedmix...")
-    hap_rep <- hap_rep[non_abosrbing_freq,]
-    
-    # omit allele frequencies that later reach absorbing boundaries
-    # it is possible that measurement errors cause frequency to reach 1 and then come back down
-    # print("Removing measurements near absorbing boundaries...")
-    # hap_rep[(hap_rep < 1/231) | (hap_rep > 1 - 1/231)] <- NA
-    
-    # sort names to be in order of generation
-    print("Sorting columns...")
-    hap_rep <- hap_rep %>% 
-      relocate(all_of(sort(colnames(hap_rep))))
-    
-    print("Removing NAs...")
-    if(ncol(hap_rep) > 1){
-      hap_rep_na <- t(apply(hap_rep, MARGIN = 1, rm_na_after_na))
-      colnames(hap_rep_na) <- colnames(hap_rep)
-    } else {
-      hap_rep_na <- hap_rep
-    }
-    hapfire_nas <- cbind(hapfire_nas, hap_rep_na)
-    rm(hap_rep_na, hap_rep); gc()
+## ---- 3. stream the pools ------------------------------------------------
+if (file.exists(trays_out)) file.remove(trays_out)
+
+n_in <- 0L; n_out <- 0L
+cb <- function(x, pos) {
+  rows <- pos:(pos + nrow(x) - 1L)
+  m <- as.matrix(x)[keep[rows], , drop = FALSE]
+  for (g in groups) {
+    sub <- m[, g, drop = FALSE]
+    if (!anyNA(sub)) next
+    # cumulative any-NA along generations, then NA everything from the first hit
+    ch <- is.na(sub)
+    if (ncol(ch) > 1L) for (j in 2:ncol(ch)) ch[, j] <- ch[, j] | ch[, j - 1L]
+    sub[ch] <- NA
+    m[, g] <- sub
   }
+  fwrite(as.data.table(m), trays_out, append = pos > 1, col.names = pos == 1,
+         quote = FALSE)
+  n_in  <<- n_in + nrow(x)
+  n_out <<- n_out + nrow(m)
+  if (n_in %% 500000L < nrow(x)) {
+    ts_message(sprintf("  %s in, %s kept (%.0f%%)", format(n_in, big.mark = ","),
+                       format(n_out, big.mark = ","), 100 * n_out / n_in))
+  }
+  rm(m, sub); gc(FALSE)
+  NULL
 }
 
-# summary of frequencies that were removed
-print("Percentage of frequencies at loss/fixation:")
-sum(is.na(hapfire_nas))/prod(dim(hapfire_nas)) * 100
+ts_message("streaming trays -> fixrm")
+read_csv_chunked(
+  trays_in,
+  callback = SideEffectChunkCallback$new(cb),
+  chunk_size = 50000L,
+  col_types = cols(.default = col_double())
+)
 
-# output filtered hapfire frequencies
-fwrite(hapfire_nas, paste0(af_prefix, "_trays_randswitch_fixrm.csv"), row.names = F, sep = ",", quote = F)
+na_frac <- NA_real_
+ts_message("done: ", n_out, " records kept; elapsed ",
+           round((proc.time() - t0)[["elapsed"]] / 60, 1), " min")
 ```
 
 

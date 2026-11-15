@@ -69,7 +69,6 @@ ts_message("chunk #2 done")
 ts_message("chunk #34 `<directories>` start")
 kmate_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/kmate_allele_frequencies/"
 af_prefix <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency"
-af_parquet <- paste0(dirname(af_prefix), "/kmate_arch3v2_parquet_randswitch")
 class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
 ts_message("chunk #34 done")
 

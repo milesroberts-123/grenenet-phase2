@@ -4,7 +4,6 @@
 #
 # ONE-TIME: drop allele frequencies near absorbing boundaries.
 #
-# Two operations, both reading only the randswitch CSVs (no parquet cache):
 #
 #  1. seedmix: drop records whose founding frequency sits within 1/231 of 0 or 1
 #     (or is NA, which is where the merge put exact 0/1).
