@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=03_fix_site_labels
+#SBATCH --job-name=05_fix_site_labels
 #SBATCH --account=co_moilab
 #SBATCH --partition=savio4_htc
 #SBATCH --qos=moilab_htc4_normal
@@ -16,4 +16,4 @@
 # Idempotent - a second run reports "nothing to rename" and exits.
 module load r
 
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/03_linked_selection__fix_site_labels.R
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/05_fix_site_labels.R

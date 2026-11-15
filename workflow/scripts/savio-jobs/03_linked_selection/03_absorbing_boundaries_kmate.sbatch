@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=03_randswitch_kmate
+#SBATCH --job-name=03_absorbing_boundaries_kmate
 #SBATCH --account=co_moilab
 #SBATCH --partition=savio4_htc
 #SBATCH --qos=moilab_htc4_normal
@@ -10,9 +10,9 @@
 #SBATCH --output=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/logs/%x_%j.out
 #SBATCH --chdir=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources
 
-# Streams the 60 GB trays CSV and rewrites it flipped. Peak memory is one 50k-row
-# chunk (50000 x 893 doubles ~ 360 MB), so 4 CPUs / 16 GB is ample; the run is
-# I/O bound. 12 h covers ~120 GB of traffic with margin.
+# Same streaming shape as the randswitch job: 60 GB in, 60 GB out, one 50k-row
+# chunk in memory, plus a per-(site, plot) NA truncation that is skipped for any
+# group with no NAs in the chunk. No parquet cache is built.
 module load r
 
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/03_linked_selection__randswitch_kmate.R
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/03_absorbing_boundaries_kmate.R

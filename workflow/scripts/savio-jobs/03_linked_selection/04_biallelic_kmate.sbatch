@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=03_biallelic_kmate
+#SBATCH --job-name=04_biallelic_kmate
 #SBATCH --account=co_moilab
 #SBATCH --partition=savio4_htc
 #SBATCH --qos=moilab_htc4_normal
@@ -18,4 +18,4 @@
 # 4 CPUs / 16 GB is ample; the run is I/O bound (39 GB in, ~32 GB out).
 module load r
 
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/03_linked_selection__biallelic_kmate.R
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/04_biallelic_kmate.R

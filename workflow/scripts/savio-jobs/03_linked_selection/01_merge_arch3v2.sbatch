@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=03_linked_selection_merge_arch3v2
+#SBATCH --job-name=01_merge_arch3v2
 #SBATCH --account=co_moilab
 #SBATCH --partition=savio4_htc
 #SBATCH --qos=moilab_htc4_normal
@@ -17,4 +17,4 @@
 # temporary float32 block files (removed on success).
 module load r
 
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/03_linked_selection__merge_arch3v2.R
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/01_merge_arch3v2.R

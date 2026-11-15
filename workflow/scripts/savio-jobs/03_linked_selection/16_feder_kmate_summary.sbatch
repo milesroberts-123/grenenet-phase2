@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=03_linked_selection_feder_summary
+#SBATCH --job-name=16_feder_kmate_summary
 #SBATCH --account=co_moilab
 #SBATCH --partition=savio4_htc
 #SBATCH --qos=moilab_htc4_normal
@@ -16,4 +16,4 @@
 # manhattan plot of ~2.5M variants.
 module load r
 
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/03_linked_selection__feder_kmate_summary.R
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/16_feder_kmate_summary.R

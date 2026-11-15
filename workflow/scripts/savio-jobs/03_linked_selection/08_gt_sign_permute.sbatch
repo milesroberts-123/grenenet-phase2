@@ -1,5 +1,5 @@
 #!/bin/bash
-#SBATCH --job-name=03_linked_selection_gt_curves_bootstrap
+#SBATCH --job-name=08_gt_sign_permute
 #SBATCH --account=co_moilab
 #SBATCH --partition=savio4_htc
 #SBATCH --qos=moilab_htc4_normal
@@ -14,4 +14,4 @@
 # your OOD RStudio sessions, pin the version here (e.g. r/4.5.0).
 module load r
 
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/03_linked_selection__gt_curves_bootstrap.R
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/08_gt_sign_permute.R
