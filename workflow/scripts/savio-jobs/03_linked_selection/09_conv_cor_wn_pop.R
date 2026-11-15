@@ -91,13 +91,16 @@ table(as.numeric(gsub("_", "", str_extract(colnames(hapfire), "_[0-9]_"))))
 
 # sample sizes: the pool definition lives in the per-generation rowmeta, the same
 # file the merge aggregates from, so the two cannot drift apart
-flower_counts <- rbindlist(lapply(1:5, function(g) {
+# as.data.frame, not a bare data.table: grab_sample_sizes() does
+# rbind(c(0, first_n), ...) and data.table's rbindlist treats the vector
+# as one column, while a data.frame recycles it as a row
+flower_counts <- as.data.frame(rbindlist(lapply(1:5, function(g) {
   era <- if (g <= 3L) "years1-3" else "years4-5"
   d <- fread(paste0(kmate_dir, era, "/gen_matrices/gen", g, ".rowmeta.csv"))
   d[, .(total_flowers = sum(flowerscollected)),
     by = .(pool = paste(site, generation, plot, sep = "_"),
            site, generation, plot)]
-}))
+})))
 ts_message("chunk #38 done")
 
 ts_message("chunk #46 `<conv_cor_wn_pop>` start")
