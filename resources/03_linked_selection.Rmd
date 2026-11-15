@@ -2195,182 +2195,251 @@ rep_gt_perm %>%
 
 # G(t) curves including SVs
 
-kMate class matrices: per-record ALT allele frequencies for SNPs and structural
-variants, estimated from pooled sequencing against the 231-founder pangenome
-panel (`resources/class_matrices/` on Savio). Rows are pools (`site` × `plot`,
-flower-weighted merge of collection timepoints), columns are records. Gen0 is
-the founding seed mix (8 reps). Here we compute gt curves per pool with
-`covmat_from_pmat()` + `gt_from_covmat()`, treating the 8 seed-mix reps'
-average as the gen0 column and gen1-5 as subsequent time points.
+kMate allele frequencies: per-record ALT allele frequencies for SNPs, small
+indels and structural variants, estimated from pooled sequencing against the
+231-founder pangenome panel (`resources/kmate_allele_frequencies/` on Savio,
+arch3v2 export). Rows are pools (`site` × `plot`, flower-weighted merge of
+collection timepoints), columns are records. Gen0 is the founding seed mix
+(8 reps). Here we compute gt curves per pool with `covmat_from_pmat()` +
+`gt_from_covmat()`, treating the 8 seed-mix reps' average as the gen0 column
+and gen1-5 as subsequent time points.
 
-## directory on savio
+Since 2026-11 the years 1-3 and 4-5 tables come from a single kMate run on one
+panel, so every year shares one estimator and one record catalog. The earlier
+tables, built from `resources/class_matrices/` (phase 1) and a separate phase-2
+export, are still on disk under `PHASE_1_2_COMBINED_kmate_allele_frequency_*`.
+
+## directories on savio
 
 ```{r}
+# current source: kMate arch3v2 export (run rerun_arch3v2, 2026-10-20)
+kmate_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/kmate_allele_frequencies/"
+
+# merged tables written by the ONE-TIME chunk below
+af_prefix <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency"
+
+# parquet cache used by the downstream chunks
+af_parquet <- paste0(dirname(af_prefix), "/kmate_arch3v2_parquet_randswitch")
+
+# superseded export (arch3 panel). Only kept so the old tables stay reproducible;
+# never mix it with kmate_dir, the record sets and values both differ.
 class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
 ```
 
-## ONE-TIME: load and merge yearly variant data
+## ONE-TIME: merge kMate arch3v2 allele frequencies (years 1-5)
 
-```{r}
+Replaces the earlier `class_matrices` merge. Two things make this version much
+simpler than the old one:
 
-# load af matrices, slice to (common pools x intersected records), then free
-# gen0: mean across the 8 seed-mix replicate rows
-pmat_final <- NULL
-for (cls in c("sv", "smallindel", "snp")) {
-  pmat_cls <- NULL
-  for(g in 0:5){
-    
-    print(paste("Loading", cls, "matrices", "for generation", g, "..."))
-    
-    # af matrix
-    if(g <= 3){
-      pmat <- read_npy(paste0(class_dir, cls, "_gen", g, "_af.npy"))
-    } else {
-      pmat <- read_npy(paste0(class_dir, "phase2_matrices/gen", g, "_", cls, "_af.npy"))
-    }
+1. **There is no join.** All five generations share one record catalog, and the
+   four `*_column_index.csv` files are byte-identical between `years1-3/` and
+   `years4-5/`, so record `j` of any generation is the same allele. The merge is
+   a row-wise stack on record order.
+2. **Do not join on `chrom:pos`, nor on `(chrom, pos, ref_len, alt_len)`.** 8.7%
+   of records share their full length key (49.5% of SVs), so either key silently
+   pairs different ALT alleles. See `years1-3/README_allele_frequencies.md`.
 
-    # convert to dataframe
-    pmat <- as.data.frame(t(pmat))
-    
-    # pool names
-    if(g == 0){
-      print("Initial generation, so adding dummy pool name...")
-      pmat <- data.frame(
-        `0_0_0` = rowMeans(pmat)
-      )
-    } else if (g >=1 & g <= 3) {
-      print("Adding pool names...")
-      pool_names <- fread(paste0(class_dir, "gen", g, ".pools.csv"))
-      colnames(pmat) <- pool_names$pool
-    } else if (g > 3){
-      pool_names <- fread(paste0(class_dir, "phase2_matrices/gen", g, ".rowmeta.csv"))
-      pool_names$pool <- paste(pool_names$site, pool_names$generation, pool_names$plot, sep = "_")
-      colnames(pmat) <- pool_names$pool
-    }
-    
-    # variant info: carry ref/alt lengths so that variants are matched across
-    # years by allele identity, not by coordinate alone.
-    #
-    # Audited 2026-11-13: the coordinate-only join this replaces never actually
-    # paired different alleles. Of the positions holding exactly one variant on
-    # each side, none had mismatched ref/alt lengths (snp 0 of 1,917,475,
-    # smallindel 0 of 471,550, sv 0 of 13,667), and every phase-1 gen-3 allele
-    # is present in the phase-2 column index (0 absent out of 2,026,052 snp /
-    # 669,553 smallindel / 25,470 sv).
-    #
-    # The real cost of the old join was loss, not corruption: filter(n() == 1)
-    # on (chrom, pos) discarded every position carrying more than one variant,
-    # which is 63% of phase-2 sv rows. Keying on allele lengths keeps alleles
-    # that differ in length instead, so more variants survive the merge.
-    print("Reading variant info...")
-    if(g >= 0 & g <= 3){
-      prec <- fread(paste0(class_dir, cls, "_gen", g, ".records.csv"),
-                    select = c("chrom", "pos", "ref_len", "alt_len"))
-    } else {
-      prec <- fread(paste0(class_dir, "phase2_matrices/", cls, "_column_index.csv"),
-                    select = c("chrom", "pos", "ref_len", "alt_len"))
-    }
+Units: 2,608 samples collapse to 893 pools, one per `(site, generation, plot)`,
+each the flower-weighted mean of its collection timepoints:
 
-    
-    # add chromosome, position and allele lengths so that we can merge by allele
-    print("cbinding variant info...")
-    pmat <- cbind(prec, pmat)
-    
-    # For phase 2 data, we must calculate
-    # weighted average by flower count
-    if(g > 3){
-      # Separate your identification columns from your data columns
-      id_cols <- pmat[, .(chrom, pos, ref_len, alt_len)]
-      data_cols <- pmat[, 5:ncol(pmat)]
-      
-      # Multiply every column by its corresponding weight
-      weighted_data <- as.matrix(data_cols) %*% diag(pool_names$flowerscollected)
-      
-      # Find the unique column names we need to aggregate
-      unique_names <- unique(colnames(data_cols))
-      
-      # Sum up the values and the weights for duplicate groups
-      result_list <- lapply(unique_names, function(name) {
-        # Find matching column positions
-        idx <- which(colnames(data_cols) == name)
-        
-        # Calculate: Sum(Value * Weight) / Sum(Weights)
-        rowSums(weighted_data[, idx, drop = FALSE]) / sum(pool_names$flowerscollected[idx])
-      })
-      
-      # Bind everything back into your final data.table
-      pmat <- cbind(id_cols, as.data.table(result_list))
-      setnames(pmat, c("chrom", "pos", "ref_len", "alt_len", unique_names))
-    }
-    
-    # drop multi-alleleic sites: a position is ambiguous only if more than one
-    # variant there has the same ref/alt length pair, since alleles are now
-    # identified by their lengths as well as their coordinate
-    print("drop multi-alleleic sites within a class...")
-    pmat <- pmat %>%
-      group_by(chrom, pos, ref_len, alt_len) %>% 
-      filter(n() == 1) %>%
-      ungroup()
-    
-    # merge with growing af matrix, matching alleles rather than coordinates
-    print("Merging with variant matrix...")
-    if(is.null(pmat_cls)){
-      pmat_cls <- pmat
-    } else {
-      pmat_cls <- pmat_cls %>%
-        left_join(pmat, by = c("chrom", "pos", "ref_len", "alt_len"))
-    }
-    
-    rm(pmat, prec, pool_names);gc()
-  }
-  
-  print("rbinding variant classes...")
-  pmat_cls$class <- cls
-  pmat_final <- rbind(pmat_final, pmat_cls)
-  rm(pmat_cls); gc()
+    p_pool[record] = sum_t(flowers_t * p_t[record]) / sum_t(flowers_t)
+
+The matrices are float16 and fully dense. No R package reads float16
+(`RcppCNPy` handles only double/integer, and CRAN's `float` is 32-bit only), so
+decoding goes through **numpy**, which implements IEEE 754 binary16 natively,
+via `reticulate`. Exact 0 and exact 1 are turned into NA in both output tables:
+that is the only missingness, since the source has none.
+
+Outputs, all 8,536,388 records in genomic order:
+
+| file | contents |
+|---|---|
+| `..._seedmix.csv` | `chrom,pos,class,X0_0_0` |
+| `..._trays.csv` | 893 pool columns, named `site_generation_plot` |
+| `..._variant_info.csv` | `chrom,pos,class,ref_len,alt_len,n_called` |
+
+```{r merge_kmate_arch3v2}
+af_tmp  <- paste0(dirname(af_prefix), "/kmate_arch3v2_merge_tmp")
+af_done <- paste0(af_prefix, "_trays.csv.done")
+
+# float16 .npy cannot be read by any R package (RcppCNPy handles double/integer
+# only; CRAN's `float` is 32-bit only), so decode through numpy, which has native
+# IEEE 754 binary16 support. numpy is memory-mapped, so only one sample row is
+# materialised at a time (12.5 MB float16 -> 25 MB float32 -> 50 MB in R).
+Sys.setenv(RETICULATE_PYTHON = "/global/home/users/milesroberts/miniforge3/bin/python3")
+np <- reticulate::import("numpy", convert = FALSE)
+
+np_open <- function(path) {
+  a <- np$load(path, mmap_mode = "r")
+  shp <- as.integer(py_to_r(a$shape))
+  list(arr = a, nrow = shp[1], ncol = shp[2],
+       dtype = as.character(py_to_r(a$dtype)))
 }
 
-# drop multiallelics
-print("drop multi-alleleic sites across classes...")
-pmat_final <- pmat_final %>%
-  group_by(chrom, pos) %>% 
-  filter(n() == 1) %>%
-  ungroup()
+# i is 1-based; numpy indexing is 0-based
+np_row <- function(h, i) {
+  stopifnot(h$dtype == "float16", i >= 1L, i <= h$nrow)
+  py_to_r(np$asarray(h$arr[as.integer(i - 1L), ], dtype = "float32"))
+}
 
-# sort by position
-print("Sorting by position...")
-pmat_final <- pmat_final %>%
-  arrange(chrom, pos)
+if (file.exists(af_done)) {
 
-# drop any variants that are all NA
-print("Removing NAs created by merge...")
-pmat_final <- pmat_final %>%
-  filter(if_any(everything(), ~ !is.na(.)))
+  message("merged tables already built: ", af_prefix, "_*.csv")
 
-# write seed mix
-write.csv(pmat_final %>% select(chrom, pos, class, X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix.csv", row.names = F, quote = F)
+} else {
 
-# write allele identity alongside, so the ref/alt lengths that the merge matched
-# on travel with the frequencies instead of being discarded
-write.csv(pmat_final %>% select(chrom, pos, class, ref_len, alt_len), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_variant_info.csv", row.names = F, quote = F)
+  t_start <- Sys.time()
+  dir.create(af_tmp, recursive = TRUE, showWarnings = FALSE)
 
-# write all other generations (frequencies only: schema unchanged)
-fwrite(pmat_final %>% select(-chrom, -pos, -ref_len, -alt_len, -class, -X0_0_0), "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays.csv", row.names = F, quote = F)
-    
+  ## ---- record index: natural order per matrix, output order genomic -------
+  idx_snp <- fread(paste0(kmate_dir, "years1-3/gen_matrices/snp_column_index.csv"))
+  idx_ns  <- fread(paste0(kmate_dir, "years1-3/gen_matrices/nonsnp_column_index.csv"))
+  stopifnot(nrow(idx_snp) == 6269335L, nrow(idx_ns) == 2267053L)
+
+  rec <- rbind(
+    data.table(src = "snp", j = idx_snp$col + 1L,
+               chrom = idx_snp$chrom, pos = idx_snp$pos,
+               ref_len = idx_snp$ref_len, alt_len = idx_snp$alt_len,
+               class = "snp", n_called = idx_snp$n_called),
+    data.table(src = "nonsnp", j = idx_ns$col + 1L,
+               chrom = idx_ns$chrom, pos = idx_ns$pos,
+               ref_len = idx_ns$ref_len, alt_len = idx_ns$alt_len,
+               class = fifelse(abs(idx_ns$alt_len - idx_ns$ref_len) > 50L,
+                               "sv", "smallindel"),
+               n_called = idx_ns$n_called)
+  )
+  setorder(rec, chrom, pos, class, src, j)
+  print(rec[, .N, by = class])
+
+  ## ---- seedmix: mean alt_freq over the 8 founding replicates --------------
+  p0_snp <- numeric(nrow(idx_snp))
+  p0_ns  <- numeric(nrow(idx_ns))
+  for (s in 1:8) {
+    d <- fread(paste0(kmate_dir, "seedmix/SEEDMIX_S", s, ".tsv"),
+               select = c("chrom", "pos", "ref_len", "alt_len", "alt_freq"))
+    is_snp <- d$ref_len == 1L & d$alt_len == 1L
+    if (s == 1L) {
+      # positional alignment is the whole contract of this merge: verify it once
+      stopifnot(sum(is_snp) == nrow(idx_snp),
+                identical(d$chrom[is_snp], idx_snp$chrom),
+                identical(d$pos[is_snp], idx_snp$pos),
+                identical(d$chrom[!is_snp], idx_ns$chrom),
+                identical(d$pos[!is_snp], idx_ns$pos))
+    }
+    p0_snp <- p0_snp + d$alt_freq[is_snp]
+    p0_ns  <- p0_ns  + d$alt_freq[!is_snp]
+    rm(d); gc(FALSE)
+  }
+  p0_snp <- p0_snp / 8
+  p0_ns  <- p0_ns / 8
+  message("seedmix averaged over 8 replicates")
+
+  ## ---- pools: flower-weighted aggregation, one generation at a time -------
+  block_records <- 200000L
+  blk   <- (seq_len(nrow(rec)) - 1L) %/% block_records + 1L
+  nblk  <- max(blk)
+  pool_names <- vector("list", 5L)
+  npools     <- integer(5L)
+
+  for (g in 1:5) {
+    era  <- if (g <= 3L) "years1-3" else "years4-5"
+    gm   <- paste0(kmate_dir, era, "/gen_matrices/")
+    meta <- fread(paste0(gm, "gen", g, ".rowmeta.csv"))
+    meta[, pool := paste(site, generation, plot, sep = "_")]
+    pools <- unique(meta$pool)
+    pidx  <- match(meta$pool, pools)
+    tot   <- as.numeric(tapply(meta$flowerscollected, pidx, sum))
+    w     <- meta$flowerscollected / tot[pidx]
+    pool_names[[g]] <- pools
+    npools[g] <- length(pools)
+    message(sprintf("gen %d: %d samples -> %d pools", g, nrow(meta), length(pools)))
+
+    acc_snp <- matrix(0, length(pools), nrow(idx_snp))
+    acc_ns  <- matrix(0, length(pools), nrow(idx_ns))
+
+    for (cl in c("snp", "nonsnp")) {
+      f <- paste0(gm, "gen", g, "_", cl, "_af.npy")
+      h <- np_open(f)
+      stopifnot(h$nrow == nrow(meta), h$ncol == if (cl == "snp") nrow(idx_snp) else nrow(idx_ns))
+      for (i in seq_len(h$nrow)) {
+        v <- np_row(h, i)
+        if (cl == "snp") acc_snp[pidx[i], ] <- acc_snp[pidx[i], ] + w[i] * v
+        else             acc_ns[pidx[i], ]  <- acc_ns[pidx[i], ]  + w[i] * v
+      }
+      rm(v); gc(FALSE)
+      message("  ", cl, " aggregated (", format(Sys.time(), "%H:%M:%S"), ")")
+    }
+
+    ## write this generation's pool matrix in output order
+    for (b in seq_len(nblk)) {
+      ids <- which(blk == b)
+      m   <- matrix(NA_real_, length(ids), npools[g])
+      si  <- ids[rec$src[ids] == "snp"]
+      ni  <- ids[rec$src[ids] == "nonsnp"]
+      if (length(si)) m[match(si, ids), ] <- t(acc_snp[, rec$j[si], drop = FALSE])
+      if (length(ni)) m[match(ni, ids), ] <- t(acc_ns[,  rec$j[ni], drop = FALSE])
+      writeBin(as.numeric(m), file.path(af_tmp, sprintf("gen%d_block%03d.bin", g, b)),
+               size = 4L)
+      rm(m)
+    }
+    rm(acc_snp, acc_ns); gc(FALSE)
+  }
+
+  ## ---- assemble: all generations side by side, one row block at a time ----
+  tray_cols <- unlist(pool_names)
+  stopifnot(length(tray_cols) == sum(npools), !anyDuplicated(tray_cols))
+
+  for (b in seq_len(nblk)) {
+    ids   <- which(blk == b)
+    parts <- vector("list", 5L)
+    for (g in 1:5) {
+      f <- file.path(af_tmp, sprintf("gen%d_block%03d.bin", g, b))
+      parts[[g]] <- matrix(readBin(f, "numeric", n = length(ids) * npools[g], size = 4L),
+                           nrow = length(ids), ncol = npools[g])
+    }
+    m <- do.call(cbind, parts); rm(parts)
+    colnames(m) <- tray_cols
+    m[m == 0 | m == 1] <- NA      # absorbing boundary -> NA
+    m <- round(m, 5)              # float16 source carries ~3 significant digits
+    fwrite(as.data.table(m), paste0(af_prefix, "_trays.csv"),
+           append = b > 1L, col.names = b == 1L, quote = FALSE, na = "NA")
+    rm(m); gc(FALSE)
+    if (b %% 10L == 0L) message("  wrote block ", b, "/", nblk)
+  }
+
+  ## ---- seedmix and variant info, in the same record order -----------------
+  p0_rec <- numeric(nrow(rec))
+  si     <- rec$src == "snp"
+  p0_rec[si]  <- p0_snp[rec$j[si]]
+  p0_rec[!si] <- p0_ns[rec$j[!si]]
+  p0_rec[p0_rec == 0 | p0_rec == 1] <- NA
+
+  fwrite(data.table(chrom = rec$chrom, pos = rec$pos, class = rec$class,
+                    X0_0_0 = p0_rec),
+         paste0(af_prefix, "_seedmix.csv"), quote = FALSE, na = "NA")
+
+  fwrite(rec[, .(chrom, pos, class, ref_len, alt_len, n_called)],
+         paste0(af_prefix, "_variant_info.csv"), quote = FALSE)
+
+  file.create(af_done)
+  unlink(af_tmp, recursive = TRUE)
+  message("merge complete in ",
+          round(as.numeric(difftime(Sys.time(), t_start, units = "mins")), 1), " min")
+}
 ```
 
 ## ONE-TIME: randomly switch tracked allele
 
 ```{r}
 # full dataset
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix.csv")
+gen0 <- fread(paste0(af_prefix, "_seedmix.csv"))
 
 # randomly swith which allele is being tracked
 # right now, the non-reference allele is always the one we're tracking
 idx <- sample(c(T,F), size = nrow(gen0), replace = T)
 gen0[idx,"X0_0_0"] <- 1 - gen0[idx,"X0_0_0"]
 
-write.csv(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv", quote = F, row.names = F)
+write.csv(gen0, paste0(af_prefix, "_seedmix_randswitch.csv"), quote = F, row.names = F)
 
 process_one_minus <- function(idx, chunk_size, output) {
   function(x, pos) {
@@ -2389,12 +2458,12 @@ process_one_minus <- function(idx, chunk_size, output) {
 
 # phase 1
 read_csv_chunked(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays.csv",
+  paste0(af_prefix, "_trays.csv"),
   callback = SideEffectChunkCallback$new(
     process_one_minus(
       idx,
       1000,
-      "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv"
+      paste0(af_prefix, "_trays_randswitch.csv")
     )
   ),
   chunk_size = 1000
@@ -2409,24 +2478,29 @@ kmate allele frequencies all seem to start within the absorbing boundaries, so t
 
 # initial generation
 # tracked allele randomly switched
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv", data.table = F)
+gen0 <- fread(paste0(af_prefix, "_seedmix_randswitch.csv"), data.table = F)
 
 # later gen
 # tracked allele randomly switched
-if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")){
-  open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv", format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
-    write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch", format = "parquet", max_rows_per_file = 50000L)
+# parquet cache, named after the source so it can never be confused with the
+# arch3 export's cache
+if(!dir.exists(af_parquet)){
+  open_dataset(paste0(af_prefix, "_trays_randswitch.csv"), format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
+    write_dataset(af_parquet, format = "parquet", max_rows_per_file = 50000L)
 }
 
 # now can just read it
-hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")
+hapfire <- open_dataset(af_parquet)
 
 # omit allele frequencies that start near absorbing boundaries
-non_abosrbing_freq <- (gen0$X0_0_0 >= 1/231) & (gen0$X0_0_0 <= 1 - 1/231)
-gen0 <- gen0[non_abosrbing_freq,]
+# NA-safe: X0_0_0 is NA wherever the seedmix frequency was exactly 0 or 1, and
+# subsetting with an NA logical would emit a row of NAs instead of dropping it
+non_abosrbing_freq <- !is.na(gen0$X0_0_0) &
+  gen0$X0_0_0 >= 1/231 & gen0$X0_0_0 <= 1 - 1/231
+gen0 <- gen0[which(non_abosrbing_freq), ]
 
 # output filtered seedmix frequencies
-write.table(gen0, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
+write.table(gen0, paste0(af_prefix, "_seedmix_randswitch_fixrm.csv"), row.names = F, sep = ",", quote = F)
 
 # loop over site - replicate combinations
 # remove allele frequency trajectory after first fixation/loss 
@@ -2474,7 +2548,7 @@ print("Percentage of frequencies at loss/fixation:")
 sum(is.na(hapfire_nas))/prod(dim(hapfire_nas)) * 100
 
 # output filtered hapfire frequencies
-fwrite(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch_fixrm.csv", row.names = F, sep = ",", quote = F)
+fwrite(hapfire_nas, paste0(af_prefix, "_trays_randswitch_fixrm.csv"), row.names = F, sep = ",", quote = F)
 ```
 
 
@@ -2483,32 +2557,25 @@ fwrite(hapfire_nas, "/global/scratch/users/milesroberts/moi_lab_projects/grenene
 ```{r}
 
 # seedmix
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv")
+gen0 <- fread(paste0(af_prefix, "_seedmix_randswitch.csv"))
 
 # now can just read it
 #hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")
-hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv", format = "csv")
+hapfire <- open_dataset(paste0(af_prefix, "_trays_randswitch.csv"), format = "csv")
 
 table(as.numeric(gsub("_", "", str_extract(colnames(hapfire), "_[0-9]_"))))
 
 # hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv")
 
-# sample sizes
-flower_counts <- list.files(path = class_dir, pattern = "[1-3].pools.csv", full.names = T)
-flower_counts <- read_csv(flower_counts, id = "file_path")
-
-flower_counts_2 <- list.files(path = paste0(class_dir,"phase2_matrices/"), pattern = "rowmeta.csv", full.names = T)
-flower_counts_2 <- read_csv(flower_counts_2, id = "file_path")
-
-flower_counts_2$pool <- paste(flower_counts_2$site, flower_counts_2$generation, flower_counts_2$plot, sep = "_")
-
-flower_counts_2 <- flower_counts_2 %>%
-  group_by(pool, site, generation, plot) %>%
-  summarize(total_flowers = sum(flowerscollected))
-
-flower_counts <- bind_rows(flower_counts %>% select(pool, site, generation, plot, total_flowers), flower_counts_2)
-
-rm(flower_counts_2); gc()
+# sample sizes: the pool definition lives in the per-generation rowmeta, which is
+# the same file the merge aggregates from, so the two can never drift apart
+flower_counts <- rbindlist(lapply(1:5, function(g) {
+  era <- if (g <= 3L) "years1-3" else "years4-5"
+  d <- fread(paste0(kmate_dir, era, "/gen_matrices/gen", g, ".rowmeta.csv"))
+  d[, .(total_flowers = sum(flowerscollected)),
+    by = .(pool = paste(site, generation, plot, sep = "_"),
+           site, generation, plot)]
+}))
 ```
 
 ## GLM

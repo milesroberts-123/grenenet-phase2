@@ -70,18 +70,21 @@ theme_set(
 # temperature: berlin
 ts_message("chunk #2 done")
 
-ts_message("chunk #34 `<class_dir>` start")
+ts_message("chunk #34 `<directories>` start")
+kmate_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/kmate_allele_frequencies/"
+af_prefix <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency"
+af_parquet <- paste0(dirname(af_prefix), "/kmate_arch3v2_parquet_randswitch")
 class_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/class_matrices/"
 ts_message("chunk #34 done")
 
 ts_message("chunk #38 `<load kmate allele frequencies + flower counts>` start")
 
 # seedmix
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_seedmix_randswitch.csv")
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency_seedmix_randswitch.csv")
 
 # now can just read it
-#hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_parquet_randswitch")
-hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_allele_frequency_trays_randswitch.csv", format = "csv")
+#hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_arch3v2_parquet_randswitch")
+hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency_trays_randswitch.csv", format = "csv")
 
 # NOTE: suspected fragile regex — the "_[0-9]_" generation pattern breaks
 # silently if any generation label ever has 2+ digits (currently safe: gens 0-5).
@@ -89,22 +92,15 @@ table(as.numeric(gsub("_", "", str_extract(colnames(hapfire), "_[0-9]_"))))
 
 # hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv")
 
-# sample sizes
-flower_counts <- list.files(path = class_dir, pattern = "[1-3].pools.csv", full.names = T)
-flower_counts <- read_csv(flower_counts, id = "file_path")
-
-flower_counts_2 <- list.files(path = paste0(class_dir,"phase2_matrices/"), pattern = "rowmeta.csv", full.names = T)
-flower_counts_2 <- read_csv(flower_counts_2, id = "file_path")
-
-flower_counts_2$pool <- paste(flower_counts_2$site, flower_counts_2$generation, flower_counts_2$plot, sep = "_")
-
-flower_counts_2 <- flower_counts_2 %>%
-  group_by(pool, site, generation, plot) %>%
-  summarize(total_flowers = sum(flowerscollected))
-
-flower_counts <- bind_rows(flower_counts %>% select(pool, site, generation, plot, total_flowers), flower_counts_2)
-
-rm(flower_counts_2); gc()
+# sample sizes: the pool definition lives in the per-generation rowmeta, the same
+# file the merge aggregates from, so the two cannot drift apart
+flower_counts <- rbindlist(lapply(1:5, function(g) {
+  era <- if (g <= 3L) "years1-3" else "years4-5"
+  d <- fread(paste0(kmate_dir, era, "/gen_matrices/gen", g, ".rowmeta.csv"))
+  d[, .(total_flowers = sum(flowerscollected)),
+    by = .(pool = paste(site, generation, plot, sep = "_"),
+           site, generation, plot)]
+}))
 ts_message("chunk #38 done")
 
 ts_message("chunk #60 `<pi_windows_vardp_kmate>` start")
