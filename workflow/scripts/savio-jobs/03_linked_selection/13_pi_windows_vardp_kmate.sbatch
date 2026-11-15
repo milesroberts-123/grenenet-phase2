@@ -6,6 +6,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
+# the biallelic table is 6.2M records, 2.5x the arch3 one these jobs were
+# sized for; the default 4 GB/CPU (16 GB) OOM-killed 13 at site 5
+#SBATCH --mem=64G
 #SBATCH --time=168:00:00
 #SBATCH --output=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/logs/%x_%j.out
 #SBATCH --chdir=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources
