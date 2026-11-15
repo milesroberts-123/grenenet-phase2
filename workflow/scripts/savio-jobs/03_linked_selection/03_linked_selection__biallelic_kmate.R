@@ -66,12 +66,10 @@ sch <- do.call(schema, setNames(rep(list(float64()), length(hdr)), hdr))
 ds <- open_dataset(trays_in, format = "csv",
                    convert_options = csv_convert_options(col_types = sch),
                    read_options = csv_read_options(block_size = 64L * 1024L * 1024L))
-ts_message("  input reports ", format(ds$num_rows, big.mark = ","), " rows (metadata)")
-
 if (file.exists(trays_out)) file.remove(trays_out)
 
 n_in <- 0L; n_out <- 0L; n_batch <- 0L
-reader <- ds$NewScan()$UseThreads(FALSE)$BatchSize(50000L)$Finish()$ToRecordBatchReader()
+reader <- ds$NewScan()$UseThreads(FALSE)$BatchSize(20000L)$Finish()$ToRecordBatchReader()
 repeat {
   rb <- reader$read_next_batch()
   if (is.null(rb)) break
@@ -87,6 +85,7 @@ repeat {
                        format(n_out, big.mark = ","), 100 * n_out / n_in))
   }
   rm(m, rb); gc(FALSE)
+  arrow::default_memory_pool()$ReleaseUnused()
 }
 
 ts_message("  batches: ", n_batch, " | rows read: ", format(n_in, big.mark = ","))
