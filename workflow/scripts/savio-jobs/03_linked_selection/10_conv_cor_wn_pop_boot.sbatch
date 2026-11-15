@@ -6,6 +6,9 @@
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=4
+# 16 GB was not enough: the block bootstrap expands resampled 15k-SNP blocks back
+# to raw variant rows, and the run on 2026-11-15 was killed at 16.37 GB.
+#SBATCH --mem=64G
 #SBATCH --time=24:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=milesroberts@berkeley.edu

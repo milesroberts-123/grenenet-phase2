@@ -87,18 +87,14 @@ table(as.numeric(gsub("_", "", str_extract(colnames(hapfire), "_[0-9]_"))))
 
 # hapfire <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/SV_SNP_INDEL_allele_frequency_trays.csv")
 
-# sample sizes: the pool definition lives in the per-generation rowmeta, the same
-# file the merge aggregates from, so the two cannot drift apart
+# sample sizes: built once by 05_fix_site_labels from the per-generation rowmeta
+# and written to its own table. The generation-4 site relabel is already applied
+# there (the pools labelled 1_4 and 2_4 are really 5_4 and 4_4), so the pool names
+# match the column names of the biallelic table for every site.
 # as.data.frame, not a bare data.table: grab_sample_sizes() does
 # rbind(c(0, first_n), ...) and data.table's rbindlist treats the vector
 # as one column, while a data.frame recycles it as a row
-flower_counts <- as.data.frame(rbindlist(lapply(1:5, function(g) {
-  era <- if (g <= 3L) "years1-3" else "years4-5"
-  d <- fread(paste0(kmate_dir, era, "/gen_matrices/gen", g, ".rowmeta.csv"))
-  d[, .(total_flowers = sum(flowerscollected)),
-    by = .(pool = paste(site, generation, plot, sep = "_"),
-           site, generation, plot)]
-})))
+flower_counts <- as.data.frame(fread(paste0(af_prefix, "_flower_counts_sitesfixed.csv")))
 ts_message("chunk #38 done")
 
 ts_message("chunk #40 `<feder_kmate>` start")

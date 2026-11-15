@@ -12,12 +12,18 @@
 #
 # Scope: this touches nothing upstream. Every source table keeps its own labels,
 # which is why the correction lives here as its own stage rather than being
-# folded back into gen4.rowmeta.csv. Note that flower_counts, which is derived
-# from the rowmeta, therefore still carries the old labels at generation 4.
+# folded back into gen4.rowmeta.csv.
 #
 # Only the header is rewritten, in place. The substitution is single digit to
 # single digit, so the line keeps its exact byte length and the 17.5 GB of data
 # below it is never read or copied. The mapping is written alongside as a CSV.
+#
+# The same correction is applied to the flower counts, which are derived from the
+# rowmeta and would otherwise keep the old labels. Those counts are written to
+# <af_prefix>_flower_counts_sitesfixed.csv, a new file; the rowmeta files are not
+# modified. Without it, every generation-4 sample size for site 4 and site 5 is
+# missing from downstream lookups, because the corrected table names those pools
+# 4_4_* and 5_4_* while the rowmeta still calls them 2_4_* and 1_4_*.
 
 suppressMessages(library(data.table))
 
@@ -25,6 +31,35 @@ ts_message <- function(...) message(sprintf("[%s] %s", format(Sys.time(), "%H:%M
 
 af_prefix <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency"
 trays <- paste0(af_prefix, "_trays_randswitch_fixrm_biallelic.csv")
+kmate_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/kmate_allele_frequencies/"
+flower_out <- paste0(af_prefix, "_flower_counts_sitesfixed.csv")
+
+## ---- flower counts, carrying the same correction ------------------------
+# Built from the rowmeta each run rather than patched in place, so the source
+# tables stay untouched and the two labels cannot silently drift apart again.
+write_flower_counts <- function() {
+  fc <- rbindlist(lapply(1:5, function(g) {
+    era <- if (g <= 3L) "years1-3" else "years4-5"
+    d <- fread(paste0(kmate_dir, era, "/gen_matrices/gen", g, ".rowmeta.csv"))
+    d[, .(total_flowers = sum(flowerscollected)), by = .(site, generation, plot)]
+  }))
+  n_before <- nrow(fc)
+  fc[generation == 4L & site == 1L, site := 5L]
+  fc[generation == 4L & site == 2L, site := 4L]
+  fc[, pool := paste(site, generation, plot, sep = "_")]
+  setcolorder(fc, c("pool", "site", "generation", "plot", "total_flowers"))
+  stopifnot(
+    nrow(fc) == n_before,
+    !anyDuplicated(fc$pool),
+    sum(grepl("^5_4_", fc$pool)) == 12L,
+    sum(grepl("^4_4_", fc$pool)) == 11L,
+    !any(grepl("^1_4_|^2_4_", fc$pool))
+  )
+  fwrite(fc, flower_out, quote = FALSE)
+  ts_message("flower counts written: ", nrow(fc), " pools (",
+             sum(fc$generation == 4L), " at generation 4) -> ", basename(flower_out))
+  invisible(fc)
+}
 
 ## ---- read the header line as raw bytes, terminator included -------------
 read_header_raw <- function(path) {
@@ -59,6 +94,7 @@ for (k in seq_len(nrow(map))) {
 
 if (identical(old_names, new_names)) {
   ts_message("nothing to rename: this table already carries the corrected labels")
+  write_flower_counts()
   quit(save = "no")
 }
 
@@ -97,4 +133,7 @@ mapping <- data.table(
 )
 print(mapping)
 fwrite(mapping, paste0(af_prefix, "_site_label_map.csv"), quote = FALSE)
+
+## ---- flower counts ------------------------------------------------------
+write_flower_counts()
 ts_message("done")
