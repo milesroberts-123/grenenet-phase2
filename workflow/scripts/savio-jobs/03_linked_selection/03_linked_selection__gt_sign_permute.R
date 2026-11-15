@@ -74,11 +74,11 @@ ts_message("chunk #34 done")
 ts_message("chunk #38 `<load kmate allele frequencies + flower counts>` start")
 
 # seedmix
-gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency_seedmix_randswitch.csv")
+gen0 <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency_seedmix_randswitch_fixrm_biallelic.csv")
 
 # now can just read it
 #hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/kmate_arch3v2_parquet_randswitch")
-hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency_trays_randswitch.csv", format = "csv")
+hapfire <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/PHASE_1_2_COMBINED_kmate_arch3v2_allele_frequency_trays_randswitch_fixrm_biallelic.csv", format = "csv")
 
 # NOTE: suspected fragile regex — the "_[0-9]_" generation pattern breaks
 # silently if any generation label ever has 2+ digits (currently safe: gens 0-5).
