@@ -109,11 +109,10 @@ output_feder_kmate <- paste(
   sep = ""
 )
 
-# delete previous run
-# NOTE: suspected — the delete-previous-run guard is commented out, so a rerun
-# APPENDS duplicate rows to feder_t_test_kmate.tsv; delete the file (or uncomment
-# the guard) before rerunning on the same day.
-# check_file_exists(output_feder_kmate)
+# delete previous run: without this the loop below appends duplicate rows to
+# feder_t_test_kmate.tsv, because every write is append_table() and the summary
+# is fwrite(append = TRUE)
+check_file_exists(output_feder_kmate)
 
 # check that directory exists
 folder_path <- dirname(output_feder_kmate)
@@ -202,9 +201,9 @@ feder_kmate_parquet <- open_dataset("/global/scratch/users/milesroberts/moi_lab_
 # calculate averages and variances for a snp at a site
 feder_t_test_summary_file <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",today,"/feder_t_test_kmate_summary.csv")
 
-# NOTE: suspected — same append hazard for the summary file: rows accumulate
-# across runs unless feder_t_test_kmate_summary.csv is deleted first.
-#check_file_exists(feder_t_test_summary_file)
+# same append hazard for the summary file: fwrite() appends below, so the old
+# file has to go first
+check_file_exists(feder_t_test_summary_file)
 
 for(this_site in unique(sites)){
   print(paste("Processing site", this_site, "..."))
