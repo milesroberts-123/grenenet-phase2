@@ -2329,6 +2329,8 @@ if (file.exists(af_done)) {
     p0_snp <- p0_snp + d$alt_freq[is_snp]
     p0_ns  <- p0_ns  + d$alt_freq[!is_snp]
     rm(d); gc(FALSE)
+    message(sprintf("  seedmix replicate %d/8 (%.0f s)", s,
+                    as.numeric(difftime(Sys.time(), t_start, units = "secs"))))
   }
   p0_snp <- p0_snp / 8
   p0_ns  <- p0_ns / 8
@@ -2361,10 +2363,18 @@ if (file.exists(af_done)) {
       f <- paste0(gm, "gen", g, "_", cl, "_af.npy")
       h <- np_open(f)
       stopifnot(h$nrow == nrow(meta), h$ncol == if (cl == "snp") nrow(idx_snp) else nrow(idx_ns))
+      t_cls <- Sys.time()
       for (i in seq_len(h$nrow)) {
         v <- np_row(h, i)
         if (cl == "snp") acc_snp[pidx[i], ] <- acc_snp[pidx[i], ] + w[i] * v
         else             acc_ns[pidx[i], ]  <- acc_ns[pidx[i], ]  + w[i] * v
+        # gen 1 has 892 rows, so a silent pass can run several minutes
+        if (i %% 50L == 0L || i == h$nrow) {
+          el <- as.numeric(difftime(Sys.time(), t_cls, units = "secs"))
+          message(sprintf("    %s %d/%d (%.0f%%), %.0f s elapsed, ~%.0f s left",
+                          cl, i, h$nrow, 100 * i / h$nrow, el,
+                          el / i * (h$nrow - i)))
+        }
       }
       rm(v); gc(FALSE)
       message("  ", cl, " aggregated (", format(Sys.time(), "%H:%M:%S"), ")")
