@@ -8,10 +8,11 @@
 #SBATCH --cpus-per-task=4
 # one task per site. 500 sign permutations per replicate and there are 30
 # sites, so a single all-sites task needs ~100 h even though the slowest site
-# needs ~4 h. Tasks are throttled to 10 concurrent so the array does not take the
-# whole partition; each writes gt/var_cov files for its own site, and
+# needs ~4 h. No throttle (%N): every task computes Sys.Date() at start, so a task
+# that only begins after midnight writes into the next day's results folder and
+# splits the output. Each writes gt/var_cov files for its own site, and
 # 17_concat_gt_resampling joins them afterwards.
-#SBATCH --array=0-29%10
+#SBATCH --array=0-29
 # the biallelic table is 6.2M records and each task holds one site's columns
 #SBATCH --mem=64G
 #SBATCH --time=24:00:00
