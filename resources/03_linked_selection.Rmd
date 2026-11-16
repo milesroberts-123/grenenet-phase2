@@ -2871,9 +2871,19 @@ for(site in unique(sites)){
 
 #glm_results <- fread(output_glm)
 
-glm_results <- open_dataset(output_glm, format = "csv") %>%
-  filter(site == 5) %>%
-  collect()
+# the Savio job runs as a site array and writes one file per site, so read those
+# when the single combined table is not there
+glm_site_files <- list.files(dirname(output_glm),
+                             pattern = "^glm_quasibinomial_coef_site[0-9]+\\.txt$",
+                             full.names = TRUE)
+
+glm_results <- if (file.exists(output_glm)) {
+  open_dataset(output_glm, format = "csv") %>%
+    filter(site == 5) %>%
+    collect()
+} else {
+  rbindlist(lapply(glm_site_files, function(f) fread(f)[site == 5]))
+}
 
 glm_results <- glm_results %>%
   rename(CHROM = chrom,

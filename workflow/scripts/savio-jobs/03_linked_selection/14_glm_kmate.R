@@ -123,109 +123,107 @@ length(unique(blocks$block))
 
 #hapfire$block <- blocks$block
 
-output_glm <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today, "/glm_quasibinomial_coef.txt")
+## ---- job array: one site per task ---------------------------------------
+# This job runs as an array, one site per task. Site 1 alone took ~7 h and the
+# run covers 30 sites, so a single-task version cannot finish inside the 168 h
+# walltime. Each task writes its own
+# results/<today>/glm_quasibinomial_coef_site<site>.txt, so a failed site costs
+# one site rather than the whole run, and per-site files can be concatenated
+# afterwards.
+# Usage: Rscript 14_glm_kmate.R <task_index>   (0-based, i.e. SLURM_ARRAY_TASK_ID)
+site_list <- sort(as.integer(unique(gsub("_.*", "", colnames(hapfire)))))
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 1L) stop("expected a 0-based task index, e.g. Rscript 14_glm_kmate.R 0")
+task <- suppressWarnings(as.integer(args[[1]]))
+if (is.na(task) || task < 0L || task >= length(site_list)) {
+  stop("task index ", args[[1]], " outside 0..", length(site_list) - 1L)
+}
+site <- site_list[task + 1L]
 
+results_dir <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today)
+dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
+output_glm <- paste0(results_dir, "/glm_quasibinomial_coef_site", site, ".txt")
+
+# delete this site's previous output: append_table() would otherwise duplicate
+# every row
 check_file_exists(output_glm)
 
 unique_blocks <- unique(blocks$block)
 
-# check that directory exists
-folder_path <- dirname(output_glm)
-if (!dir.exists(folder_path)) {
-  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
-}
+ts_message("task ", task, " of ", length(site_list) - 1L, " -> site ", site,
+           " -> ", basename(output_glm))
 
 # need to wrap function to handle cases when the data for a snp is all NA
 safe_glm <- possibly(.f = function(df) {
   glm(value ~ t, data = df, weights = total_flowers, family = quasibinomial(link = "logit"))
 }, otherwise = NULL)
 
-for(site in unique(sites)){
-  print(paste("Collecting site:", site))
-  hap_site <- hapfire %>% 
-    dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
-    collect()
-  
-  # get sample sizes
-  rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_site), 10000, total_flowers)
-  
-  # rename the sample-size seedmix row so it matches the gen-0 column added below
-  rep_n$pool[rep_n$pool == 0] = paste(site, "_0_0", sep = "")
-  
-  # sort names to be in order of generation
-  hap_site <- hap_site %>% relocate(all_of(sort(colnames(hap_site))))
-  
-  hap_site <- cbind(blocks, hap_site)
-  
-  # anchor the GLM at generation 0: append the seedmix frequency as the
-  # "<site>_0_0" column (weights 10000 from the rep_n row renamed above)
-  hap_site <- cbind(gen0$X0_0_0, hap_site)
-  colnames(hap_site)[1] = paste(site, "_0_0", sep = "")
-  
-  for(b in unique_blocks){
-    print(paste(Sys.time(), " - Window:", b))
-    
-    hap_block <- hap_site %>% filter(block == b)
-    
-    print("Melting site data...")
-    hap_block <- hap_block %>% pivot_longer(cols = contains("_"), values_to = "value", names_to = "pool")
-    
-    print("Merging site and sample size data...")
-    hap_block <- merge(hap_block, rep_n, by = "pool", all.x = T)
-    
-    hap_block$t <- gsub("_", "", str_extract(hap_block$pool, "_.*_"))
-    
-        # NOTE: suspected — no `site_gen_plot` column exists after the pivot/merge
-        # (the melted column is `pool`), so this assignment target is logical(0) and
-        # the line silently does nothing. The seedmix row now enters with t = 0 via
-        # the regex on the "<site>_0_0" column name added above, so this line is dead.
-    hap_block$t[hap_block$site_gen_plot == "X0_0_0"] <- 0
-    
-    hap_block$t <- as.numeric(hap_block$t)
-    
-    print("Building GLMs...")
-    mod_res <- hap_block %>% group_by(chrom, pos, class) %>%  
-      filter( (value <= 1) & (value >= 0) ) %>%
-      nest() %>%
-      mutate(
-        model = purrr::map(data, ~safe_glm(.x)),
-        # Extract coefficients in a tidy format
-        tidied = purrr::map(model, broom::tidy)
-      ) %>%
-      # Flatten the results back into a regular data frame
-      unnest(tidied) %>% 
-      filter(term == "t") %>%
-      dplyr::select(c("chrom", "pos", "class", "estimate", "std.error", "statistic", "p.value"))
-    
-    print("Saving output...")
-    mod_res$site = site # add site label
-    mod_res$block = b # add site label
-    append_table(mod_res, output_glm)
-    
-    rm(hap_block, mod_res); gc()
-  }
-  rm(hap_site, rep_n); gc()
-}
-
-#glm_results <- fread(output_glm)
-
-glm_results <- open_dataset(output_glm, format = "csv") %>%
-  filter(site == 5) %>%
+print(paste("Collecting site:", site))
+hap_site <- hapfire %>% 
+  dplyr::select(starts_with(paste(site, "_", sep = ""))) %>%
   collect()
 
-glm_results <- glm_results %>%
-  rename(CHROM = chrom,
-         POS = pos) %>%
-  mutate(pvalue = p.adjust(p.value, method = "BH"))
+# get sample sizes
+rep_n <- grab_sample_sizes(flower_counts, pool, colnames(hap_site), 10000, total_flowers)
 
-glm_manhattan <- plot_manhattan(glm_results)
+# rename the sample-size seedmix row so it matches the gen-0 column added below
+rep_n$pool[rep_n$pool == 0] = paste(site, "_0_0", sep = "")
 
-# NOTE: added by /knitr-block — save_plot() writes ../results/by-date/<today>/ and
-# symlinks into ../results/by-analysis/, neither of which exists on Savio (ggsave
-# cannot create directories); make both once before the first save_plot.
-dir.create(paste0("../results/by-date/", today), recursive = TRUE, showWarnings = FALSE)
-dir.create("../results/by-analysis", recursive = TRUE, showWarnings = FALSE)
-save_plot(glm_manhattan, "glm_manhattan_5", today, "../results", width = 7, height = 4)
-ts_message("chunk #39 done")
+# sort names to be in order of generation
+hap_site <- hap_site %>% relocate(all_of(sort(colnames(hap_site))))
 
-ts_message("DONE elapsed %s minutes", (proc.time() - t0)["elapsed"] / 60)
+hap_site <- cbind(blocks, hap_site)
+
+# anchor the GLM at generation 0: append the seedmix frequency as the
+# "<site>_0_0" column (weights 10000 from the rep_n row renamed above)
+hap_site <- cbind(gen0$X0_0_0, hap_site)
+colnames(hap_site)[1] = paste(site, "_0_0", sep = "")
+
+for(b in unique_blocks){
+  print(paste(Sys.time(), " - Window:", b))
+
+  hap_block <- hap_site %>% filter(block == b)
+
+  print("Melting site data...")
+  hap_block <- hap_block %>% pivot_longer(cols = contains("_"), values_to = "value", names_to = "pool")
+
+  print("Merging site and sample size data...")
+  hap_block <- merge(hap_block, rep_n, by = "pool", all.x = T)
+
+  hap_block$t <- gsub("_", "", str_extract(hap_block$pool, "_.*_"))
+
+      # NOTE: suspected — no `site_gen_plot` column exists after the pivot/merge
+      # (the melted column is `pool`), so this assignment target is logical(0) and
+      # the line silently does nothing. The seedmix row now enters with t = 0 via
+      # the regex on the "<site>_0_0" column name added above, so this line is dead.
+  hap_block$t[hap_block$site_gen_plot == "X0_0_0"] <- 0
+
+  hap_block$t <- as.numeric(hap_block$t)
+
+  print("Building GLMs...")
+  mod_res <- hap_block %>% group_by(chrom, pos, class) %>%  
+    filter( (value <= 1) & (value >= 0) ) %>%
+    nest() %>%
+    mutate(
+      model = purrr::map(data, ~safe_glm(.x)),
+      # Extract coefficients in a tidy format
+      tidied = purrr::map(model, broom::tidy)
+    ) %>%
+    # Flatten the results back into a regular data frame
+    unnest(tidied) %>% 
+    filter(term == "t") %>%
+    dplyr::select(c("chrom", "pos", "class", "estimate", "std.error", "statistic", "p.value"))
+
+  print("Saving output...")
+  mod_res$site = site # add site label
+  mod_res$block = b # add site label
+  append_table(mod_res, output_glm)
+
+  rm(hap_block, mod_res); gc()
+}
+
+ts_message("DONE site ", site, " elapsed ", round((proc.time() - t0)["elapsed"] / 60, 1), " minutes")
+
+# NOTE: plotting was removed from this job. It used to read the single combined
+# output and plot one site; with one file per site that belongs after all tasks
+# finish, which the notebook chunk does.
