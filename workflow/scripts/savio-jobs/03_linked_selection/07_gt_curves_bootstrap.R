@@ -104,35 +104,39 @@ blocks <- create_blocks(gen0, chrom, pos, 15000, block_by = "snp", sep = "_")
 
 num_blocks <- length(unique(blocks$window))
 
-output_gt_kmate_blocks <- paste(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
-  today,
-  "/gt_boots_kmate.tsv",
-  sep = ""
-)
+## ---- job array: one site per task ---------------------------------------
+# Sites are independent, so this runs as an array with one site per task. One
+# all-sites task needs ~100 h; per site the worst case is ~4 h, a failure costs
+# one site, and a single site can be resubmitted by its task index.
+# Usage: Rscript 07_gt_curves_bootstrap.R <task_index>   (0-based)
+site_list <- sort(as.integer(unique(gsub("_.*", "", colnames(hapfire)))))
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 1L) stop("expected a 0-based task index")
+task <- suppressWarnings(as.integer(args[[1]]))
+if (is.na(task) || task < 0L || task >= length(site_list)) {
+  stop("task index ", args[[1]], " outside 0..", length(site_list) - 1L)
+}
+site <- site_list[task + 1L]
 
-output_var_cov_blocks <- paste(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
-  today,
-  "/var_cov_boots_kmate.tsv",
-  sep = ""
-)
+# per-site seed: each site draws its own sequence, and rerunning one site
+# reproduces exactly that site's draws
+set.seed(2000L + site)
 
-# delete previous run
+results_dir <- paste0(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",
+  today
+)
+dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
+
+output_gt_kmate_blocks <- paste0(results_dir, "/gt_boots_kmate_site", site, ".tsv")
+output_var_cov_blocks   <- paste0(results_dir, "/var_cov_boots_kmate_site", site, ".tsv")
+
+# delete this site's previous output: append_table() would otherwise duplicate
+# every row
 check_file_exists(output_gt_kmate_blocks)
 check_file_exists(output_var_cov_blocks)
 
-# check that directory exists
-folder_path <- dirname(output_gt_kmate_blocks)
-if (!dir.exists(folder_path)) {
-  dir.create(folder_path, recursive = TRUE, showWarnings = FALSE)
-}
-
-# make list of sites
-# for now, ignore some sites
-sites <- unique(gsub("_.*", "", colnames(hapfire)))
-  
-for (site in unique(sites)) {
+ts_message("task ", task, " of ", length(site_list) - 1L, " -> site ", site)
   print(paste(Sys.time(), "- Site:", site))
   hap_site <- hapfire %>% 
     dplyr::select(starts_with(paste(site, "_", sep = "")))
@@ -210,8 +214,6 @@ for (site in unique(sites)) {
     }
     rm(hap_rep); gc()
   }
-  rm(hap_site); gc()
-}
+rm(hap_site); gc()
 ts_message("chunk #43 done")
-
-ts_message("DONE elapsed %s minutes", (proc.time() - t0)["elapsed"] / 60)
+ts_message("DONE site ", site, " elapsed ", round((proc.time() - t0)["elapsed"] / 60, 1), " minutes")
