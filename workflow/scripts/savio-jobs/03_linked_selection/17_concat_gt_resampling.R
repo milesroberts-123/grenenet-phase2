@@ -52,21 +52,24 @@ site_list <- sort(as.integer(unique(sub("_.*", "", hdr))))
 ts_message("sites expected: ", length(site_list))
 
 pairs <- list(
-  list(combined = "gt_boots_kmate.tsv",      per_site = "gt_boots_kmate_site",      what = "bootstrap G(t)"),
-  list(combined = "var_cov_boots_kmate.tsv", per_site = "var_cov_boots_kmate_site", what = "bootstrap var-cov"),
-  list(combined = "gt_perms_kmate.tsv",      per_site = "gt_perms_kmate_site",      what = "permutation G(t)"),
-  list(combined = "var_cov_perms_kmate.tsv", per_site = "var_cov_perms_kmate_site", what = "permutation var-cov")
+  list(combined = "gt_boots_kmate.tsv",      per_site = "gt_boots_kmate_site",      what = "bootstrap G(t)",      ext = "tsv", sep = "\t"),
+  list(combined = "var_cov_boots_kmate.tsv", per_site = "var_cov_boots_kmate_site", what = "bootstrap var-cov",   ext = "tsv", sep = "\t"),
+  list(combined = "gt_perms_kmate.tsv",      per_site = "gt_perms_kmate_site",      what = "permutation G(t)",    ext = "tsv", sep = "\t"),
+  list(combined = "var_cov_perms_kmate.tsv", per_site = "var_cov_perms_kmate_site", what = "permutation var-cov", ext = "tsv", sep = "\t"),
+  list(combined = "feder_t_test_kmate_summary.csv", per_site = "feder_t_test_kmate_summary_site",
+       what = "feder per-site summary", ext = "csv", sep = ",")
 )
 
 for (p in pairs) {
   # one file per site, found across the searched dates
   files <- unlist(lapply(dir_in, function(d) {
-    file.path(d, paste0(p$per_site, site_list, ".tsv"))
+    file.path(d, paste0(p$per_site, site_list, ".", p$ext))
   }))
   files <- files[file.exists(files)]
 
   # a site must not appear twice, or the run is ambiguous about which copy is real
-  site_of <- as.integer(sub(paste0(".*", p$per_site), "", sub("\\.tsv$", "", basename(files))))
+  site_of <- as.integer(sub(paste0(".*", p$per_site), "",
+                            sub(paste0("\\.", p$ext, "$"), "", basename(files))))
   dup <- unique(site_of[duplicated(site_of)])
   if (length(dup)) {
     stop(p$what, ": site(s) ", paste(dup, collapse = ", "), " present in more than one ",
@@ -85,7 +88,7 @@ for (p in pairs) {
   out <- rbindlist(parts, use.names = TRUE, fill = TRUE)
   target <- file.path(dir_out, p$combined)
   if (file.exists(target)) file.remove(target)
-  fwrite(out, target, sep = "\t")
+  fwrite(out, target, sep = p$sep)
   ts_message(sprintf("%-24s %6d site files -> %10d rows", p$combined, length(files), nrow(out)))
   rm(parts, out); gc()
 }

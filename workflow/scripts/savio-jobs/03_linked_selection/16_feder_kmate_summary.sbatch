@@ -5,15 +5,22 @@
 #SBATCH --qos=moilab_htc4_normal
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --cpus-per-task=8
-#SBATCH --time=24:00:00
-#SBATCH --output=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/logs/%x_%j.out
+#SBATCH --cpus-per-task=4
+# one task per site. The all-sites loop was OOM-killed at site 5 after 29.7 h
+# (2026-11-16); per site the work is one arrow aggregation plus one Manhattan
+# plot. Each task writes feder_t_test_kmate_summary_site<site>.csv and
+# feder_t_test_kmate_site_<site>.png. No throttle: every task computes Sys.Date()
+# at start, so a task that begins after midnight would write into the next day's
+# folder. Requires 18_feder_parquet to have rebuilt the cache first.
+#SBATCH --array=0-29
+#SBATCH --mem=32G
+#SBATCH --time=3:00:00
+#SBATCH --mail-type=END,FAIL
+#SBATCH --mail-user=milesroberts@berkeley.edu
+#SBATCH --output=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/logs/%x_%A_%a.out
 #SBATCH --chdir=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources
 
-# 8 CPUs -> 32 GB under savio4_htc's 4 GB/core rule. The 2026-11-06 feder run was
-# OOM-killed at 4 CPUs / 16 GB while collecting site 5's 120M raw rows; this job
-# aggregates inside arrow instead, and the extra headroom covers the per-site
-# manhattan plot of ~2.5M variants.
 module load r
 
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/16_feder_kmate_summary.R
+# the task index is 0-based and maps onto the sorted site list inside the script
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/16_feder_kmate_summary.R "${SLURM_ARRAY_TASK_ID}"

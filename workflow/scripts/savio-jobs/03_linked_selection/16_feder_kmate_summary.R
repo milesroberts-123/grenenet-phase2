@@ -101,63 +101,63 @@ today <- Sys.Date()
 results_path <- paste("../results/by-date/", today, "/", sep = "")
 
 ts_message("chunk #40 summary `<feder summaries from parquet>` start")
-# NOTE: added by /knitr-block — `sites` is defined earlier in chunk #40, which is
-# not part of this job, so it is restored here verbatim from that chunk.
-sites <- unique(gsub("_.*", "", colnames(hapfire)))
 
-### Try to summarize feder test results into a big table
-# NOTE: added by /knitr-block — `output_feder_kmate` is defined earlier in chunk
-# #40 and is only referenced by the conversion block below, which is skipped
-# while data/feder_kmate_parquet exists (it does). If that directory is ever
-# deleted, run the full feder job instead of this one.
-# one time conversion
-if(!dir.exists("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet")){
-  open_dataset(output_feder_kmate, format = "csv", read_options = csv_read_options(block_size = 16L * 1024L * 1024L)) |>
-  write_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet", format = "parquet", max_rows_per_file = 500000L)
+## ---- job array: one site per task ---------------------------------------
+# One task per site: the per-site aggregation and Manhattan plot are independent,
+# and the all-sites loop was OOM-killed at site 5 after 29.7 h (2026-11-16). Each
+# task writes its own summary CSV and PNG, so a failure costs one site and a site
+# can be resubmitted by task index. 17_concat_gt_resampling joins the CSVs.
+# Usage: Rscript 16_feder_kmate_summary.R <task_index>   (0-based)
+site_list <- sort(as.integer(unique(gsub("_.*", "", colnames(hapfire)))))
+args <- commandArgs(trailingOnly = TRUE)
+if (length(args) < 1L) stop("expected a 0-based task index")
+task <- suppressWarnings(as.integer(args[[1]]))
+if (is.na(task) || task < 0L || task >= length(site_list)) {
+  stop("task index ", args[[1]], " outside 0..", length(site_list) - 1L)
 }
+this_site <- site_list[task + 1L]
 
-feder_kmate_parquet <- open_dataset("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet")
+ts_message("task ", task, " of ", length(site_list) - 1L, " -> site ", this_site)
 
-#yvalues <- fread(output_feder_kmate, nrows = 10)
+# the parquet cache is built by 18_feder_parquet, which always rebuilds it from
+# the current table; 15_feder_kmate used to build it only when absent, which left
+# the 2026-11-06 cache in place and made the 2026-11-16 summary read stale data
+parquet_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet"
+if (!dir.exists(parquet_dir)) stop("parquet cache missing; run 18_feder_parquet first")
+feder_kmate_parquet <- open_dataset(parquet_dir)
 
-#lazy_df <- lazy_dt(yvalues)
+results_dir <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today)
+dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
 
-# calculate averages and variances for a snp at a site
-feder_t_test_summary_file <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",today,"/feder_t_test_kmate_summary.csv")
+# per-site outputs; delete this site's previous files because the CSV is written
+# with append = FALSE but a stale PNG would otherwise survive a failed rerun
+feder_t_test_summary_file <- paste0(results_dir, "/feder_t_test_kmate_summary_site", this_site, ".csv")
+feder_plot_file <- paste0(results_dir, "/feder_t_test_kmate_site_", this_site, ".png")
+check_file_exists(feder_t_test_summary_file)
+check_file_exists(feder_plot_file)
 
-#check_file_exists(feder_t_test_summary_file)
+print(paste("Processing site", this_site, "..."))
+# aggregate inside arrow: collecting a site's raw rows first needs ~6 GB for the
+# larger sites and is what OOM-killed the 2026-11-06 and 2026-11-16 runs
+feder_summary <- feder_kmate_parquet %>%
+  filter(!is.na(yi), site == this_site) %>%
+  group_by(site, chrom, pos) %>%
+  summarize(ybar = mean(yi),
+            s2 = var(yi),
+            n = n()) %>%
+  collect() %>%
+  mutate(tvalue = ybar/sqrt(s2/n),
+         pvalue = 2*pt(abs(tvalue), df = n - 1, lower.tail = F)) %>%
+  left_join(gen0[,c("chrom", "pos", "class")], by = c("chrom", "pos")) %>%
+  mutate(highlight = ifelse(class == "sv", "yes", "no")) %>%
+  rename(CHROM = chrom, POS = pos)
 
-# resume: sites already present in the summary file are skipped, so the summary
-# can be re-run without recomputing the raw test table
-sites_done <- if (file.exists(feder_t_test_summary_file)) {
-  unique(fread(feder_t_test_summary_file, select = "site")$site)
-} else {
-  integer(0)
-}
+print(paste("Plotting site", this_site, "..."))
+man_test <- plot_manhattan(feder_summary, title = paste0("Site ", this_site))
+ggsave(feder_plot_file, man_test, width = 9, height = 5)
+fwrite(feder_summary, feder_t_test_summary_file, row.names = F, sep = ",", quote = F)
+rm(feder_summary, man_test); gc(verbose = FALSE)
 
-for(this_site in setdiff(as.integer(unique(sites)), sites_done)){
-  print(paste("Processing site", this_site, "..."))
-  # aggregate inside arrow: collecting a site's raw rows first needs ~6 GB for the
-  # larger sites and is what OOM-killed the 2026-11-06 run (site 5, 120M rows)
-  feder_summary <- feder_kmate_parquet %>%
-    filter(!is.na(yi), site == this_site) %>%
-    group_by(site, chrom, pos) %>% 
-    summarize(ybar = mean(yi), 
-              s2 = var(yi),
-              n = n()) %>%
-    collect() %>%
-    mutate(tvalue = ybar/sqrt(s2/n),
-           pvalue = 2*pt(abs(tvalue), df = n - 1, lower.tail = F)) %>%
-    left_join(gen0[,c("chrom", "pos", "class")], by = c("chrom", "pos")) %>%
-    mutate(highlight = ifelse(class == "sv", "yes", "no")) %>% 
-    rename(CHROM = chrom, POS = pos)
-
-  print(paste("Plotting site", this_site, "..."))
-  man_test <- plot_manhattan(feder_summary, title = paste0("Site ", this_site))
-  ggsave(paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/",today,"/feder_t_test_kmate_site_", this_site, ".png"), man_test, width = 9, height = 5)
-  fwrite(feder_summary, feder_t_test_summary_file, col.names = !file.exists(feder_t_test_summary_file), row.names = F, sep = ",", quote = F, append = T)
-  rm(feder_summary, man_test); gc(verbose = FALSE)
-}
 ts_message("chunk #40 summary done")
 
-ts_message("DONE elapsed %s minutes", (proc.time() - t0)["elapsed"] / 60)
+ts_message("DONE site ", this_site, " elapsed ", round((proc.time() - t0)["elapsed"] / 60, 1), " minutes")
