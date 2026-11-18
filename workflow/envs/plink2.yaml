@@ -1,0 +1,10 @@
+name: plink2
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  # plink2 is needed for --r-unphased (signed correlation); plink 1.9 can only
+  # emit r^2. The bed/bim/fam conversion still runs under workflow/envs/plink.yaml.
+  # Pinned to the 2.00a5 line: it is the stable release with signed-r support, and
+  # an open range would pull the 2.0.0b betas.
+  - plink2=2.00a5.12
