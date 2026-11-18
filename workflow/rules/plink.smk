@@ -18,7 +18,7 @@ rule plink_ld:
         bed = "results/plink/greneNet.bed",
         bim = "results/plink/greneNet.bim"
     output:
-        temp("results/plink/greneNet.ld")
+        "results/plink/greneNet.ld"
     params:
         plink_ld_window = config["plink_ld_window"],
         plink_ld_window_kb = config["plink_ld_window_kb"],
@@ -42,10 +42,11 @@ rule plink_tsv:
         "results/plink/greneNet.ld"
     output:
         "results/plink/greneNet.ld.tsv"
-    # plink pads the columns with spaces; keep SNP_A, SNP_B and R2 (fields 3, 6, 7
-    # of CHR_A BP_A SNP_A CHR_B BP_B SNP_B R2)
+    # plink writes the LD table with a leading space before CHR_A and space-padded
+    # columns, so collapsing runs of spaces to tabs leaves an empty first field;
+    # --complement -f1 drops exactly that, keeping CHR_A..R2 as seven columns
     shell:
-        r"tr -s ' ' '\t' < {input} | cut -f3,6,7 > {output}"
+        r"tr -s ' ' '\t' < {input} | cut -f 1 --complement > {output}"
 
 
 rule plink_all:
