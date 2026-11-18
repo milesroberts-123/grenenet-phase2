@@ -3,8 +3,11 @@ channels:
   - bioconda
   - conda-forge
 dependencies:
-  # plink2 is needed for --r-unphased (signed correlation); plink 1.9 can only
-  # emit r^2. The bed/bim/fam conversion still runs under workflow/envs/plink.yaml.
-  # Pinned to the 2.00a5 line: it is the stable release with signed-r support, and
-  # an open range would pull the 2.0.0b betas.
-  - plink2=2.00a5.12
+  # --r-unphased (signed r) needs plink2; plink 1.9 can only emit r^2.
+  # The 2.00a5 line is NOT usable here: 2.00a5.12 rejects --ld-window outright
+  # ('Unrecognized flag'), and without it the only pair filter left is the kb
+  # window, which at chromosome scale means every pair on chr1.
+  # The 2.0.0b1.post4 bioconda package is PLINK v2.0.0-b.1.4 (7 Nov 2026), which
+  # supports --ld-window, --ld-window-kb, --ld-window-r2 and --r-unphased, and
+  # writes <prefix>.vcor.
+  - plink2=2.0.0b1.post4
