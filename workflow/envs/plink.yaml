@@ -1,0 +1,8 @@
+name: plink
+channels:
+  - bioconda
+  - conda-forge
+dependencies:
+  # plink 1.9: the rules use --make-bed, --r2 d and --ld-window-*, which are
+  # 1.9 syntax (plink2 spells these differently)
+  - plink>=1.90b6.21,<1.91

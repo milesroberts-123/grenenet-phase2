@@ -1,15 +1,16 @@
 rule plink_convert:
-    intput:
+    input:
         config["founder_vcf"]
     output:
         fam = "results/plink/greneNet.fam",
         bed = "results/plink/greneNet.bed",
         bim = "results/plink/greneNet.bim"
     params:
-        prefix="results/plink/greneNet"
+        prefix = "results/plink/greneNet"
     conda: "../envs/plink.yaml"
     shell:
-        "plink --vcf {input} --make-bed --out {params.prefix}"
+        "plink --vcf {input} --biallelic-only --make-bed --out {params.prefix}"
+
 
 rule plink_ld:
     input:
@@ -17,20 +18,36 @@ rule plink_ld:
         bed = "results/plink/greneNet.bed",
         bim = "results/plink/greneNet.bim"
     output:
-        temp("plink.ld")
+        temp("results/plink/greneNet.ld")
     params:
-        plink_ld_window=config["plink_ld_window"],
-        plink_ld_window_kb=config["plink_ld_window_kb"],
-        plink_ld_window_r2=config["plink_ld_window_r2"]
+        plink_ld_window = config["plink_ld_window"],
+        plink_ld_window_kb = config["plink_ld_window_kb"],
+        plink_ld_window_r2 = config["plink_ld_window_r2"]
+    threads: 32
     conda: "../envs/plink.yaml"
     shell:
-        "plink --bed {input.bed} --bim {input.bim} --fam {input.fam} --r2 d --ld-window {params.plink_ld_window} --ld-window-kb {params.plink_ld_window_kb} --ld-window-r2 {params.plink_ld_window_r2}
+        r"""
+        plink --bed {input.bed} --bim {input.bim} --fam {input.fam} \
+              --r2 d \
+              --ld-window {params.plink_ld_window} \
+              --ld-window-kb {params.plink_ld_window_kb} \
+              --ld-window-r2 {params.plink_ld_window_r2} \
+              --threads {threads} \
+              --out results/plink/greneNet
+        """
+
 
 rule plink_tsv:
-    input: "plink.ld"
-    output: "plink.ld.tsv"
-    shell: "sed 's/ \+/\t/g' {input} | cut -f 1 --complement > {output}"
+    input:
+        "results/plink/greneNet.ld"
+    output:
+        "results/plink/greneNet.ld.tsv"
+    # plink pads the columns with spaces; keep SNP_A, SNP_B and R2 (fields 3, 6, 7
+    # of CHR_A BP_A SNP_A CHR_B BP_B SNP_B R2)
+    shell:
+        r"tr -s ' ' '\t' < {input} | cut -f3,6,7 > {output}"
 
 
 rule plink_all:
-    input: "plink.ld.tsv"
+    input:
+        "results/plink/greneNet.ld.tsv"
