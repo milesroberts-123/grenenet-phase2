@@ -13,9 +13,6 @@ editor_options:
 rm(list = ls())
 gc()
 .rs.restartR(clean = TRUE)
-
-options(arrow.use_threads = FALSE)
-
 ```
 
 # packages
@@ -38,6 +35,8 @@ library(lme4)
 library(scales)
 library(rsq)
 library(grumpy)
+
+options(arrow.use_threads = FALSE)
 
 box::use(rventures[...])
 packageVersion("rventures")
@@ -3511,34 +3510,18 @@ for (site in unique(sites)) {
 ```
 
 
-## all together: gt curves with CI and null
+## PLOT: all together: gt curves with CI and null
 
 ```{r}
 # point estimates
-#gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-16/gt_point_estimates_kmate_classes.tsv")
-#gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_point_estimates_kmate.tsv") %>%
-  # filter(class == "sv") %>%
-  # distinct(site, rep, gen, .keep_all = T)
-# standardization by heterozygosity
-# gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_point_estimates_kmate.tsv") %>%
-#   filter(class == "sv") %>%
-#   distinct(site, rep, gen, .keep_all = T)
-# no standardization by heterozygosity
-
-# parquet error: collecting from parquet file does not leave rows in their original order
-#gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_point_estimates_kmate.tsv") %>%
-#  distinct(site, rep, gen, class, .keep_all = T)
-# point estimates rerun 2026-11-04 with arrow threads off
-#gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_point_estimates_kmate.tsv") %>%
-#  distinct(site, rep, gen, class, .keep_all = T)
-gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-04/gt_point_estimates_kmate.tsv") %>%
+gt_points <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/gt_point_estimates_kmate.tsv") %>%
   distinct(site, rep, gen, class, .keep_all = T)
 
 # because of the variance correction rule (set to zero if sample size correction results in negative variance) some of the gt_abs ratios return NA. We will fix these to zero
 gt_points <- gt_points |> mutate(gt_abs = if_else(is.na(gt_abs), 0, gt_abs))
 
 #### G(t) curves by variant class ####
-gt_points$class <- gsub("smallindel_sv_snp", "all", gt_points$class)
+gt_points$class <- gsub("sv_snp_smallindel", "all", gt_points$class)
 gt_points$class <- gsub("smallindel", "indel", gt_points$class)
 
 ggplot(gt_points, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) +
@@ -3552,33 +3535,12 @@ ggplot(gt_points, aes(x = factor(gen), y = gt_abs, group = rep, color = class)) 
 ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_by_class.pdf"), width = 11, height = 12)
 
 # no difference in curves based on variant type, so I'll just use the SV frequencies because those are easier to bootstrap
-gt_points$class <- gsub("all", "smallindel_sv_snp", gt_points$class)
+gt_points$class <- gsub("all", "sv_snp_smallindel", gt_points$class)
 gt_points <- gt_points %>%
-   filter(class == "smallindel_sv_snp")
+   filter(class == "sv_snp_smallindel")
 
 # bootstrap confidence intervals
-#boot_summary <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_blocks_bootstrap_summary_kmate.tsv")
-#gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-21/gt_boots_kmate.tsv")
-# gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_boots_kmate.tsv") %>%
-#   filter(class == "sv") %>%
-#   distinct(site, rep, gen, boot, .keep_all = T)
-# standardized by heterozygosity
-# gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-01/gt_boots_kmate.tsv") %>%
-#   filter(class == "sv") %>%
-#   distinct(site, rep, gen, boot, .keep_all = T)
-# standardized by heterozygosity, with B&C-canonical gt_bnc columns
-# gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-15/gt_boots_kmate.tsv") %>%
-#   filter(class == "sv") %>%
-#   distinct(site, rep, gen, boot, .keep_all = T)
-# PARQUET BUG: rows of gen0 did not match rows of hapfire matrix, not standardized by heterozygosity
-#gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_boots_kmate.tsv") %>%
-#  filter(class == "sv") %>%
-#  distinct(site, rep, gen, boot, .keep_all = T)
-# 500 bootstrap draws, arrow threads off
-#gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_boots_kmate.tsv") %>%
-# filter(class == "smallindel_sv_snp") %>%
-# distinct(site, rep, gen, boot, .keep_all = T)
-gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-07/gt_boots_kmate.tsv") %>%
+gt_boots <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/gt_boots_kmate.tsv") %>%
  filter(class == "smallindel_sv_snp") %>%
  distinct(site, rep, gen, boot, .keep_all = T) |>
   mutate(gt_abs = as.numeric(gt_abs)) |> 
@@ -3597,25 +3559,7 @@ boot_summary <- gt_boots %>%
   left_join(locations_data |> mutate(site = factor(site)), by = "site")
 
 # sign-permuted null distribution
-#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-17/gt_sign_permutations_kmate.tsv")
-#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-26/gt_sign_permutations_kmate.tsv") %>%
-#  distinct(site, rep, gen, perm, .keep_all = T)
-# standardized by heterozygosity
-#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-09-29/gt_kmate_perms.tsv") %>%
-#  distinct(site, rep, gen, perm, .keep_all = T)
-# standardized by heterozygosity, with B&C-canonical gt_bnc columns;
-# filter class before distinct: the table holds one row per (gen, perm) per
-# variant class, and distinct() would otherwise keep an arbitrary class
-# gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-15/gt_perms_kmate.tsv") %>%
-#   filter(class == "sv") %>%
-#   distinct(site, rep, gen, perm, .keep_all = T)
-# PARQUET BUG: gen0 rows did not match hapfire rows, not standardized by heterozygosity
-#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-13/gt_perms_kmate_n_correction.tsv") %>%
-#  distinct(site, rep, gen, perm, .keep_all = T)
-# 500 sign permutations, arrow threads off
-#gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-10-23/gt_perms_kmate.tsv") %>%
-#  distinct(site, rep, gen, perm, .keep_all = T)
-gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-07/gt_perms_kmate.tsv") %>%
+gt_perms <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/gt_perms_kmate.tsv") %>%
   distinct(site, rep, gen, perm, .keep_all = T) |>
   mutate(gt_abs = as.numeric(gt_abs)) |> 
   mutate(gt_abs = if_else(is.na(gt_abs), 0, gt_abs))
@@ -3679,7 +3623,7 @@ ggplot(boot_summary %>% filter(!is.na(gt_abs)) %>% left_join(worldclim_sitesdata
   geom_line(alpha = 0.25) +
   geom_line(data = boot_summary %>% group_by(site, gen) %>% summarize(gt_abs = mean(gt_abs, na.rm = T), rep = 1) %>% left_join(worldclim_sitesdata |> mutate(site = factor(site)), by = "site"), mapping = aes(color = bio1), alpha = 1, lwd = 1.5) +
   scale_color_scico(palette = "berlin") +
-  geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
+  #geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
   geom_ribbon(data = gt_null |> mutate(site = factor(site)), mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
   theme(text = element_text(size=20)) +
   labs(x = "Generation", y = "Gabs(t)", color = "Mean\nAnnual\nTemp\n(\u00b0C)")
@@ -3687,12 +3631,29 @@ ggplot(boot_summary %>% filter(!is.na(gt_abs)) %>% left_join(worldclim_sitesdata
 ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_all.pdf"), width = 6, height = 5, device = cairo_pdf)
 
 ## faceted version
-ggplot(boot_summary, aes(x = factor(gen), y = gt_abs, group = rep)) +
+keep_sites <- boot_summary |>
+  filter(!is.na(gt_abs)) |>
+  distinct(site) |>
+  pull(site) |>
+  unique()
+
+pdat <- boot_summary |>
+  filter(!is.na(gt_abs), site %in% keep_sites) |>
+  mutate(site = factor(site, levels = keep_sites))
+
+ndat <- gt_null |>
+  filter(!is.na(gt_abs), site %in% keep_sites,
+         is.finite(lpi), is.finite(upi)) |>
+  mutate(site = factor(site, levels = keep_sites))
+
+ggplot(pdat, aes(x = factor(gen), y = gt_abs, group = rep)) +
+  geom_ribbon(data = ndat,
+              aes(x = factor(gen), ymin = lpi, ymax = upi),
+              alpha = 0.4, fill = "grey") +
   geom_point() +
   geom_line() +
-  geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
-  geom_ribbon(data = gt_null, mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
-  facet_wrap(~site, scales = "free_y") +
+  geom_errorbar(aes(ymin = lci, ymax = uci), width = 0.2, colour = "red") +
+  facet_wrap(~ site, scales = "free_y", drop = TRUE) +
   labs(x = "Generation", y = "Gabs(t)")
 
 ggsave(paste0("../results/by-date/", today, "/gt_abs_kmate_faceted.pdf"), width = 9, height = 9)
@@ -3703,18 +3664,18 @@ plot_gt <- function(data){
   geom_point() +
   geom_line() +
   geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
-  geom_ribbon(data = gt_null %>% filter(city_country == unique(data$city_country)), mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
+  geom_ribbon(data = ndat %>% filter(city_country == unique(data$city_country)), mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
   labs(x = "Generation", y = "Gabs(t)", title = unique(data$city_country))
 }
 
-plot_groups_pdf(boot_summary, "city_country", plot_fn = plot_gt, filepath = paste0("../results/by-date/", today, "/gt_abs_kmate_by_site.pdf"), width = 4, height = 4)
+plot_groups_pdf(pdat, "city_country", plot_fn = plot_gt, filepath = paste0("../results/by-date/", today, "/gt_abs_kmate_by_site.pdf"), width = 4, height = 4)
 
 #### plot one example G(t) curve ####
-ggplot(boot_summary |> filter(site == 4, rep == 1), aes(x = factor(gen), y = gt_abs, group = rep)) +
+ggplot(pdat |> filter(site == 4, rep == 1), aes(x = factor(gen), y = gt_abs, group = rep)) +
   geom_point() +
   geom_line() +
   geom_errorbar(aes(ymin=lci, ymax=uci), width=.2, color = "red") +
-  geom_ribbon(data = gt_null |> filter(site == 4, rep == 1), mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
+  geom_ribbon(data = ndat |> filter(site == 4, rep == 1), mapping = aes(x=gen, ymin=lpi, ymax=upi), alpha = 0.2, color = "grey", size = 0.01) + 
   facet_wrap(~site, scales = "free_y") +
   labs(x = "Generation", y = "Gabs(t)") +
   theme(text = element_text(size = 20, color = "black"))
@@ -3723,10 +3684,11 @@ ggsave(paste0("../results/by-date/", today, "/gt_abs_site4_rep1.pdf"), width = 5
 
 # summarize
 # for those populations with selection outside null, what's the percentage?
-gt_abs_summary <- boot_summary %>%
+gt_abs_summary <- pdat %>%
   left_join(gt_null |> mutate( en = factor(gen)), by = c("site", "rep", "gen")) %>%
   group_by(site, rep) %>%
-  filter(gen == max(gen)) %>%
+  #filter(gen == max(gen)) %>%
+  filter(gen > 1) |>
   mutate(gt_abs_excess = lci - upi) %>%
   select(site, rep, gen, gt_abs_excess)
 
@@ -3739,8 +3701,16 @@ sum(gt_abs_summary$gt_abs_excess <= 0, na.rm = T)
 sum( (boot_summary$lci <= boot_summary$gt_abs) & (boot_summary$uci >= boot_summary$gt_abs), na.rm = T) / sum(!is.na(boot_summary$gt_abs)) * 100
 
 # does deviation from null increase if you have more timepoints?
+med_lab <- function(x) {
+  data.frame(y = max(x, na.rm = TRUE),
+             label = sprintf("%.2f", median(x, na.rm = TRUE)))
+}
+
 ggplot(gt_abs_summary %>% filter(!is.na(gt_abs_excess)), aes(x = factor(gen), y = gt_abs_excess)) +
   geom_violin(draw_quantiles = c(0.25, 0.5, 0.75)) +
+  stat_summary(fun.data = med_lab, geom = "text", vjust = -0.4, size = 3,
+               inherit.aes = TRUE) +
+  scale_y_continuous(expand = expansion(mult = c(0.05, 0.12))) +
   geom_sina(alpha = 0.3) +
   scale_x_discrete(drop = TRUE) +
   labs(x = "Generation", y = "Gabs(t) excess beyond null")
@@ -3751,7 +3721,7 @@ ggsave(paste0("../results/by-date/", today, "/gt_abs_excess_over_time.pdf"), wid
 gt_abs_mean_excess <- gt_abs_summary %>%
   ungroup() |>
   group_by(gen) |>
-  reframe(mean_gt_abs_excess = mean(gt_abs_excess),
+  reframe(med_gt_abs_excess = median(gt_abs_excess),
           range_gt_abs_excess = enframe(range(gt_abs_excess)))
 
 # Now 
@@ -3761,23 +3731,42 @@ gt_excess_vs_clim <- gt_abs_summary %>%
 
 # Focus on just replicates that survived, and have selection
 # Is there a correlation with climate?
-# Seemingly yes, but it's marginal
-# zoom_data <- gt_excess_vs_clim %>%
-#   filter(gt_abs_excess >= 0, bio1 < 17, bio1 > 6)
-
-fit_gt_vs_bio1 <- lmerTest::lmer(gt_abs_excess ~ bio1 + gen + gen*bio1 + (1 | site), data = gt_excess_vs_clim)
+fit_gt_vs_bio1 <- lmerTest::lmer(gt_abs_excess ~ bio1 + I(bio1^2) + gen + gen*bio1 + (1 | site/rep), data = gt_excess_vs_clim)
 summary(fit_gt_vs_bio1)
 
-ggplot(gt_excess_vs_clim %>% filter(!is.na(gt_abs_excess)), aes(x = bio1, y = gt_abs_excess, color = bio1, shape = factor(gen))) +
-  geom_point() +
-  #geom_abline(slope = summary(fit_zoom_mixed)$coefficients[1,2], intercept = summary(fit_zoom_mixed)$coefficients[1,1])+
-  geom_smooth(method = "lm", color = "black") +
-  scale_color_scico(palette = "berlin") +
-  #facet_zoom(gt_abs_excess >= 0 & bio1 < 17 & bio1 > 6, horizontal = F) +
-  #theme(zoom = element_rect(colour = "pink", linewidth = 0.8, fill = alpha("pink", 0.01))) +
-  labs(x = "Mean Annual Temperature (Bio1)", y = "Excess G(t)", shape = "Max\nGeneration", color = "Bio1")
+newd <- expand.grid(
+  bio1 = seq(min(gt_excess_vs_clim$bio1), max(gt_excess_vs_clim$bio1), length.out = 100),
+  gen  = sort(unique(gt_excess_vs_clim$gen))
+)
+newd$site <- gt_excess_vs_clim$site[1]
+newd$rep  <- gt_excess_vs_clim$rep[1]
+
+pi <- merTools::predictInterval(fit_gt_vs_bio1, newdata = newd,
+                                which = "fixed", level = 0.95,
+                                n.sims = 1000, type = "linear.prediction",
+                                include.resid.var = FALSE)
+
+newd$fit <- pi$fit
+newd$lwr <- pi$lwr
+newd$upr <- pi$upr
+
+ggplot(gt_excess_vs_clim, aes(bio1, gt_abs_excess)) +
+  geom_point(aes(colour = bio1), alpha = 0.5, size = 1) +
+  scale_colour_scico(palette = "berlin") +
+  geom_ribbon(data = newd, aes(bio1, ymin = lwr, ymax = upr),
+              alpha = 0.2, fill = "black", colour = NA, inherit.aes = FALSE) +
+  geom_line(data = newd, aes(bio1, fit), colour = "black", linewidth = 0.8) +
+  facet_wrap(~ gen, scales = "free") +
+  labs(x = expression(Bio1~"(°C)"), y = "G_abs excess over null")
 
 ggsave(paste0("../results/by-date/", today, "/gt_abs_excess_over_bio1.pdf"), width = 6, height = 5, device = cairo_pdf)
+
+# ggplot(gt_excess_vs_clim %>% filter(!is.na(gt_abs_excess)), aes(x = bio1, y = gt_abs_excess, color = bio1, shape = factor(gen))) +
+#   geom_point() +
+#   geom_abline(slope = summary(fit_zoom_mixed)$coefficients[1,2], intercept = summary(fit_zoom_mixed)$coefficients[1,1])+
+#   geom_smooth(method = "lm", color = "black") +
+#   scale_color_scico(palette = "berlin") +
+#   labs(x = "Mean Annual Temperature (Bio1)", y = "Excess Gabs(t)", shape = "Max\nGeneration", color = "Bio1")
 ```
 
 ## kmate convergence correlations (within environment)
@@ -3988,20 +3977,20 @@ fwrite(boot_summary, paste0(
 ), sep = "\t")
 ```
 
-## plot: convergence correlation results
+## PLOT: convergence correlation results
 
 ```{r}
 conv_cor_point <- fread(paste0(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-04/convergence_correlation_wn_env_kmate.tsv"
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/convergence_correlation_wn_env_kmate.tsv"
 )) |> mutate(conv_cor = conv_cor_numer/conv_cor_denom)
 
 conv_cor_boot_samples <- fread(paste0(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-04/conv_cor_wn_env_kmate_boot_samples.tsv"
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/conv_cor_wn_env_kmate_boot_samples.tsv"
 ))
 
 # percentile intervals
 conv_cor_boot_summary <- fread(paste0(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-04/conv_cor_wn_env_kmate_boot_summary.tsv"
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/conv_cor_wn_env_kmate_boot_summary.tsv"
 ))
 
 alpha <- 0.05
@@ -4053,22 +4042,59 @@ ggplot(conv_cor_point, aes(x = gen, y = conv_cor, group = site)) +
 
 ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_gen.pdf"), width = 5, height = 4)
 
+
+
+
+mod_conv_cor_bio1 <- lmerTest::lmer(conv_cor ~ bio1 + I(bio1^2) + (1|gen), data = conv_cor_point)
+
+summary(mod_conv_cor_bio1)
+
+newd <- expand.grid(
+  bio1 = seq(min(conv_cor_point$bio1, na.rm = TRUE),
+             max(conv_cor_point$bio1, na.rm = TRUE), length.out = 100),
+  gen  = unique(conv_cor_point$gen)          # the grouping factor must be present
+)
+
+# population-level fit: random intercepts set to zero
+pi <- merTools::predictInterval(mod_conv_cor_bio1, newdata = newd,
+                                which = "fixed", level = 0.95, n.sims = 1000,
+                                include.resid.var = FALSE)
+newd$fit <- pi$fit; newd$lci <- pi$lwr; newd$uci <- pi$upr
+
+ggplot(conv_cor_point, aes(x = bio1, y = conv_cor, color = bio1, shape = factor(gen))) +
+  geom_point(size = 3) +
+  geom_errorbar(aes(ymin = lci, ymax = uci), color = "yellow", size = 1.5) +
+  geom_ribbon(data = newd, aes(bio1, ymin = lci, ymax = uci),
+              inherit.aes = FALSE, alpha = 0.2, fill = "grey30", colour = NA) +
+  geom_line(data = newd, aes(bio1, fit),
+            inherit.aes = FALSE, colour = "grey20", linewidth = 0.8) +
+  scale_color_scico(palette = "berlin") +
+  #facet_grid(~ gen, scales = "free_x") +
+  labs(x = "Bio1 (°C)", y = "Convergence correlation\nwithin location",
+       color = "Bio1 (°C)", shape = "Generation") +
+  theme(legend.position = "top", legend.box = "vertical", legend.direction = "horizontal", legend.key.width = unit(1, "cm")) +
+  scale_x_continuous(n.breaks = 3)
+
+
+ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_bio1_quadratic.pdf"), width = 6, height = 6)
+
+
 ggplot(conv_cor_point, aes(x = bio1, y = conv_cor, color = bio1, label = site)) +
   geom_point() +
   scale_color_scico(palette = "berlin") +
   geom_pointrange(mapping = aes(ymin = lci, ymax = uci)) +
   facet_grid(~gen, scales = "free_x") +
-  labs(x = "Bio1", y = "Convergence correlation\nwithin location", color = "Bio1 (\u00b0C)") +
-  geom_smooth(method = "lm", data = ~ filter(.x, bio1 <= 18)) +
+  labs(x = "Bio1 (\u00b0C)", y = "Convergence correlation\nwithin location", color = "Bio1 (\u00b0C)") +
+  geom_smooth(method = "lm", data = ~ filter(.x, bio1 <= 18), color = "grey") +
   geom_text(vjust = -0.8, size = 3.5) +
   geom_errorbar(aes(ymin = lci, ymax = uci), width = 0.5, color = "yellow")+
-  theme(legend.position = "top")
+  theme(legend.position = "top", legend.key.width = unit(2, "cm")) +
+  scale_x_continuous(n.breaks = 3)
 
-ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_bio1.pdf"), width = 8, height = 4)
+ggsave(paste0("../results/by-date/", today, "/convergence_correlation_wn_pop_by_bio1_linear.pdf"), width = 10, height = 3.5)
 
-mod_conv_cor_bio1 <- lmerTest::lmer(conv_cor ~ bio1 + (1|gen), data = conv_cor_point |> filter(bio1 <= 18))
 
-summary(mod_conv_cor_bio1)
+
 
 ```
 
@@ -4198,7 +4224,7 @@ is a spread, not a confidence interval on the median.
 
 ```{r conv_cor_btwn_plot}
 conv_cor_btwn <- fread(paste0(
-  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-05/conv_cor_between_sites_kmate.tsv"
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/conv_cor_between_sites_kmate.tsv"
 )) %>%
   mutate(cc = numer / denom,
          gen = as.integer(gen))
