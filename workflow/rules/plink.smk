@@ -24,7 +24,7 @@ rule plink_ld:
         plink_ld_window_r2=config["plink_ld_window_r2"]
     conda: "../envs/plink.yaml"
     shell:
-        "plink --bed {input.bed} --bim {input.bim} --fam {input.fam} --r2 --ld-window {params.plink_ld_window} --ld-window-kb {params.plink_ld_window_kb} --ld-window-r2 {params.plink_ld_window_r2}
+        "plink --bed {input.bed} --bim {input.bim} --fam {input.fam} --r2 d --ld-window {params.plink_ld_window} --ld-window-kb {params.plink_ld_window_kb} --ld-window-r2 {params.plink_ld_window_r2}
 
 rule plink_tsv:
     input: "plink.ld"
