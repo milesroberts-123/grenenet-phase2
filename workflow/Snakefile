@@ -22,9 +22,9 @@ reads = pd.read_table(
 
 reads = reads[reads['sample'].str.contains('^S')]
 
-sampling_times = pd.read_table(
-    "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
-).set_index(["ID"], drop=False)
+#sampling_times = pd.read_table(
+#    "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
+#).set_index(["ID"], drop=False)
 
 # single-cell expression bins
 seurat_samples = [
