@@ -11,10 +11,11 @@
 # plot. Each task writes feder_t_test_kmate_summary_site<site>.csv and
 # feder_t_test_kmate_site_<site>.png. No throttle: every task computes Sys.Date()
 # at start, so a task that begins after midnight would write into the next day's
-# folder. Requires 18_feder_parquet to have rebuilt the cache first.
+# folder. Requires 18_feder_split to have written data/feder_sites first.
 #SBATCH --array=0-29
-#SBATCH --mem=32G
-#SBATCH --time=3:00:00
+# a site's CSV is ~8 GB; fread holds it plus the aggregated table
+#SBATCH --mem=64G
+#SBATCH --time=4:00:00
 #SBATCH --mail-type=END,FAIL
 #SBATCH --mail-user=milesroberts@berkeley.edu
 #SBATCH --output=/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/logs/%x_%A_%a.out

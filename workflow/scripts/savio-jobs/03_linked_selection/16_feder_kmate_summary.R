@@ -119,12 +119,13 @@ this_site <- site_list[task + 1L]
 
 ts_message("task ", task, " of ", length(site_list) - 1L, " -> site ", this_site)
 
-# the parquet cache is built by 18_feder_parquet, which always rebuilds it from
-# the current table; 15_feder_kmate used to build it only when absent, which left
-# the 2026-11-06 cache in place and made the 2026-11-16 summary read stale data
-parquet_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_kmate_parquet"
-if (!dir.exists(parquet_dir)) stop("parquet cache missing; run 18_feder_parquet first")
-feder_kmate_parquet <- open_dataset(parquet_dir)
+# the parquet cache is gone: converting the 247 GB table to parquet grew arrow's
+# pool to the cgroup limit and was OOM-killed (2026-11-17). 18_feder_split writes
+# one CSV per site instead, so each task reads only its own ~8 GB file with fread
+split_dir <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/data/feder_sites"
+site_file <- file.path(split_dir, paste0("feder_site", this_site, ".csv"))
+if (!file.exists(site_file)) stop("per-site table missing: ", site_file,
+                                  " (run 18_feder_split first)")
 
 results_dir <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/", today)
 dir.create(results_dir, recursive = TRUE, showWarnings = FALSE)
@@ -137,20 +138,25 @@ check_file_exists(feder_t_test_summary_file)
 check_file_exists(feder_plot_file)
 
 print(paste("Processing site", this_site, "..."))
-# aggregate inside arrow: collecting a site's raw rows first needs ~6 GB for the
-# larger sites and is what OOM-killed the 2026-11-06 and 2026-11-16 runs
-feder_summary <- feder_kmate_parquet %>%
-  filter(!is.na(yi), site == this_site) %>%
-  group_by(site, chrom, pos) %>%
-  summarize(ybar = mean(yi),
-            s2 = var(yi),
-            n = n()) %>%
-  collect() %>%
-  mutate(tvalue = ybar/sqrt(s2/n),
-         pvalue = 2*pt(abs(tvalue), df = n - 1, lower.tail = F)) %>%
-  left_join(gen0[,c("chrom", "pos", "class")], by = c("chrom", "pos")) %>%
-  mutate(highlight = ifelse(class == "sv", "yes", "no")) %>%
-  rename(CHROM = chrom, POS = pos)
+# aggregate with data.table on one site's file (~8 GB): a site's rows are already
+# grouped by variant, so ybar/s2/n come straight out of by=chrom,pos
+feder_rows <- fread(site_file)
+feder_summary <- feder_rows[!is.na(yi),
+  .(ybar = mean(yi), s2 = var(yi), n = .N),
+  by = .(chrom, pos)]
+
+feder_summary[, `:=`(tvalue = ybar / sqrt(s2 / n),
+                     pvalue = 2 * pt(abs(ybar / sqrt(s2 / n)), df = n - 1,
+                                     lower.tail = FALSE))]
+
+# class comes from the variant table; merge on the integer key rather than
+# matching pasted strings, which is far slower at 2.5M rows
+feder_summary <- merge(feder_summary, gen0[, .(chrom, pos, class)],
+                       by = c("chrom", "pos"), all.x = TRUE)
+feder_summary[, highlight := ifelse(class == "sv", "yes", "no")]
+feder_summary[, site := this_site]
+setnames(feder_summary, c("chrom", "pos"), c("CHROM", "POS"))
+rm(feder_rows); gc(verbose = FALSE)
 
 print(paste("Plotting site", this_site, "..."))
 man_test <- plot_manhattan(feder_summary, title = paste0("Site ", this_site))
