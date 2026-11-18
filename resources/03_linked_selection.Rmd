@@ -2896,6 +2896,78 @@ save_plot(glm_manhattan, "glm_manhattan_5", today, "../results", width = 7, heig
 
 ```
 
+## kmate increment matrix and covariance
+
+The three chunks below read what `20_increment_matrix_kmate` and
+`21_covariance_kmate` write. They are not computed inline: the increment matrix is
+6.2 M variants × 541 intervals (~27 GB in memory, ~40 GB as CSV), so it is built
+by a batch job that streams the source table, and read here only for its shape and
+a preview.
+
+```{r kmate_increment_matrix}
+# interval plan: one row per (site, replicate, interval), written by job 20
+kmate_increment_plan_file <- paste0(af_prefix, "_increment_plan.csv")
+kmate_increment_file <- paste0(af_prefix, "_increment_matrix.csv")
+
+kmate_increment_plan <- fread(kmate_increment_plan_file)
+
+cat(sprintf(
+  "increment matrix: %s variants x %d intervals\n",
+  format(nrow(gen0), big.mark = ","), nrow(kmate_increment_plan)
+))
+cat("intervals per site:\n")
+print(kmate_increment_plan[, .N, by = site][order(site)])
+cat("gapped series (interval spans more than one generation):\n")
+print(kmate_increment_plan[to_gen - from_gen > 1,
+                           .(site, rep, from_gen, to_gen)][order(site, rep)])
+
+# preview only: the full table does not belong in an interactive session
+kmate_increment_preview <- fread(kmate_increment_file, nrows = 5)
+dim(kmate_increment_preview)
+```
+
+```{r kmate_covariance}
+# uncorrected: stats::cov() over every column, so it carries within-series,
+# cross-replicate and cross-site covariances
+kmate_cov_file <- paste0(af_prefix, "_increment_covariances_kmate.tsv")
+kmate_cov_corrected_file <- paste0(af_prefix, "_increment_covariances_kmate_corrected.tsv")
+
+kmate_cov <- fread(kmate_cov_file)
+kmate_covmat <- as.matrix(kmate_cov[, -1])
+rownames(kmate_covmat) <- kmate_cov$interval
+
+cat("covariance matrix:", paste(dim(kmate_covmat), collapse = " x "), "\n")
+cat("symmetric:", isTRUE(all.equal(kmate_covmat, t(kmate_covmat))), "\n")
+cat("non-finite entries:", sum(!is.finite(kmate_covmat)), "\n")
+summary(diag(kmate_covmat))
+```
+
+```{r kmate_covariance_corrected}
+# corrected: only the within-(site, replicate) blocks were touched, because
+# sampling noise is independent between replicates and sites
+kmate_cov_qc <- fread(paste0(af_prefix, "_increment_covariances_kmate_qc.csv"))
+
+kmate_cov_corrected <- fread(kmate_cov_corrected_file)
+kmate_covmat_corrected <- as.matrix(kmate_cov_corrected[, -1])
+rownames(kmate_covmat_corrected) <- kmate_cov_corrected$interval
+
+stopifnot(identical(dim(kmate_covmat), dim(kmate_covmat_corrected)))
+
+# which entries moved, and do they all sit inside a single series block?
+blk_key <- paste(kmate_increment_plan$site, kmate_increment_plan$rep)[
+  match(kmate_cov$interval, kmate_increment_plan$interval)
+]
+same_series <- outer(blk_key, blk_key, "==")
+moved <- which(abs(kmate_covmat - kmate_covmat_corrected) > 1e-12, arr.ind = TRUE)
+
+cat("entries corrected:", nrow(moved), "\n")
+cat("all inside one series block:", all(same_series[moved]), "\n")
+cat("variances clamped to zero:",
+    sum(diag(kmate_covmat_corrected) == 0) - sum(diag(kmate_covmat) == 0), "\n")
+print(kmate_cov_qc[, .(series = .N, clamped = sum(n_clamped),
+                       median_min_var = median(min_var))])
+```
+
 ## feder t-test
 
 ```{r feder_kmate}
