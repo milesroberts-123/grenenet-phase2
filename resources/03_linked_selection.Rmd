@@ -3581,6 +3581,47 @@ for (site in unique(sites)) {
 
 ```
 
+## PLOT: compare sign-permuted vs empirical cov
+
+```{r}
+emp_cov <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/var_cov_point_estimates_kmate.tsv")
+
+perm_cov <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/var_cov_perms_kmate.tsv")
+
+mean_perm_cov <- perm_cov |>
+  group_by(A, B, site, rep, class) |>
+  summarize(mean_perm_cov = mean(cov)) |>
+  mutate(class = recode_factor(class,
+    smallindel_sv_snp  = "sv_snp_smallindel",
+  ))
+
+
+emp_vs_perm_cov <- emp_cov |>
+  left_join(mean_perm_cov, by = c("A", "B", "site", "rep", "class")) |>
+  filter(!is.na(mean_perm_cov)) |>
+  mutate(term = if_else(A == B, "Var(\u0394p)", "Cov(\u0394pi, \u0394pj)"))
+
+long <- melt(emp_vs_perm_cov[, .(cov, mean_perm_cov, class, term)],
+             measure.vars = c("cov", "mean_perm_cov"),
+             variable.name = "source", value.name = "value")
+
+long[, source := factor(source,
+                        levels = c("cov", "mean_perm_cov"),
+                        labels = c("empirical", "sign-permuted"))]
+
+ggplot(long, aes(x = value, fill = source)) +
+  geom_histogram(position = "identity", alpha = 0.3, bins = 80) +
+  geom_vline(xintercept = 0, linewidth = 0.3, lty = 2) +
+  scale_fill_manual(values = c("empirical" = "grey25",
+                               "sign-permuted" = "firebrick")) +
+  facet_wrap(~term, scales = "free") +
+  labs(x = "",
+       y = "count", fill = NULL, title = "Sign-permutation destrosy covariance\nbut retains variance") +
+  theme(legend.position = "top")
+
+ggsave(paste0("../results/by-date/", today, "/sign_permutation_effect.pdf"), width = 8, height = 5, device = cairo_pdf)
+
+```
 
 ## PLOT: all together: gt curves with CI and null
 
