@@ -5096,6 +5096,107 @@ for(w in unique(ld_decay_blocks$window)) {
 
 ```
 
+## LD decay from plink2 (genome-wide)
+
+The chunk above fits Hill–Weir separately in every 15 kb block, which is why its
+`C` estimates are unstable. The version below pools all pairs, bins them by
+distance, and fits once — the usual way an LD decay curve is estimated.
+
+The input is the plink2 `.vcor` from the `plink_all` workflow target: signed
+correlations between founder genotypes, one row per pair. Aggregating a file this
+size takes minutes, so the bins are cached and only recomputed when missing.
+
+```{r ld_decay_plink}
+ld_vcor <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/plink/greneNet.vcor"
+ld_fam  <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/plink/greneNet.fam"
+ld_bins_file <- paste0(af_prefix, "_ld_decay_bins.tsv")
+ld_bin_width <- 100  # bp
+
+if (!file.exists(ld_vcor)) {
+  stop("no plink2 LD output at ", ld_vcor, "; run the plink_all workflow target first")
+}
+
+# Hill-Weir expects the number of chromosomes in the sample, not individuals
+n_chroms <- 2 * nrow(fread(ld_fam, header = FALSE))
+
+if (!file.exists(ld_bins_file)) {
+  message("aggregating ", basename(ld_vcor), " into ", ld_bin_width, " bp bins")
+
+  # skip the '#' header line and name the columns explicitly: plink2's header
+  # starts with '#CHROM_A', which the CSV reader would otherwise use verbatim
+  ld_ds <- open_dataset(
+    ld_vcor, format = "csv",
+    read_options = csv_read_options(
+      skip_rows = 1L,
+      column_names = c("CHROM_A", "POS_A", "ID_A", "MAJ_A",
+                       "CHROM_B", "POS_B", "ID_B", "MAJ_B", "R")
+    ),
+    parse_options = csv_parse_options(delimiter = "\t")
+  )
+
+  ld_bins <- ld_ds %>%
+    mutate(d = abs(POS_B - POS_A),
+           r2 = R * R,
+           bin = floor(d / ld_bin_width)) %>%
+    group_by(bin) %>%
+    summarize(n = n(), mean_r2 = mean(r2), .groups = "drop") %>%
+    collect() %>%
+    mutate(d = (bin + 0.5) * ld_bin_width) %>%
+    arrange(d)
+
+  fwrite(ld_bins, ld_bins_file, sep = "\t")
+} else {
+  ld_bins <- fread(ld_bins_file)
+}
+
+cat(sprintf("LD bins: %d | pairs: %s | distance %s-%s bp\n",
+            nrow(ld_bins), format(sum(ld_bins$n), big.mark = ","),
+            format(min(ld_bins$d), big.mark = ","),
+            format(max(ld_bins$d), big.mark = ",")))
+
+# fit C = 4 Ne c on the binned means, weighted by the number of pairs behind each
+# bin; fitting raw pairs would understate the standard error by orders of
+# magnitude, since hundreds of millions of pairs are nowhere near independent
+ld_fit <- nls(mean_r2 ~ hill_weir_r2(d, n = n_chroms, C),
+              data = ld_bins,
+              weights = n,
+              start = list(C = 0.01),
+              control = nls.control(maxiter = 1000, warnOnly = TRUE))
+C_hat <- unname(coef(ld_fit)["C"])
+
+ld_threshold <- 0.2
+ld_cross <- tryCatch(
+  uniroot(function(x) hill_weir_r2(x, n_chroms, C_hat) - ld_threshold,
+          lower = 1, upper = max(ld_bins$d) * 100)$root,
+  error = function(e) NA_real_
+)
+
+cat(sprintf("Hill-Weir: 4Ne c = %.4g | n = %d chromosomes | r2 = %.2f at %s kb\n",
+            C_hat, n_chroms, ld_threshold,
+            ifelse(is.na(ld_cross), "n/a", sprintf("%.1f", ld_cross / 1000))))
+
+ld_curve <- data.frame(
+  d = 10^seq(log10(min(ld_bins$d)), log10(max(ld_bins$d)), length.out = 400)
+)
+ld_curve$mean_r2 <- hill_weir_r2(ld_curve$d, n_chroms, C_hat)
+
+p_ld_decay <- ggplot(ld_bins, aes(x = d, y = mean_r2)) +
+  geom_point(aes(size = n), colour = "grey35", alpha = 0.5) +
+  geom_line(data = ld_curve, colour = "firebrick", linewidth = 0.8) +
+  geom_hline(yintercept = ld_threshold, linetype = "dashed", linewidth = 0.3) +
+  scale_x_log10(labels = scales::label_log()) +
+  scale_size_continuous(guide = "none") +
+  labs(x = "Physical distance (bp)",
+       y = expression(mean~r^2),
+       title = "LD decay, founder panel",
+       subtitle = sprintf("Hill-Weir fit: 4Nec = %.3g; r2 = %.2f at %s kb",
+                          C_hat, ld_threshold,
+                          ifelse(is.na(ld_cross), "n/a",
+                                 sprintf("%.1f", ld_cross / 1000))))
+
+save_plot(p_ld_decay, "ld_decay_plink", today, "../results", height = 4.5, width = 6)
+```
+
 ## compile diversity values
 
 ```{r}
