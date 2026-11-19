@@ -90,7 +90,18 @@ early() {
 s2 600 early(){
   // sample() draws without replacement and errors if L exceeds the number of
   // standing mutations, so never ask for more than exist
-  n_take = (L < size(sim.mutations)) ? asInteger(L) else size(sim.mutations);
+  n_avail = size(sim.mutations);
+  n_take = (L < n_avail) ? asInteger(L) else n_avail;
+  // L only controls the architecture while it is small relative to the standing
+  // variation; warn once it approaches that pool
+  if (L > n_avail) {
+    catn("WARNING: L exceeds the standing variation; selecting all " + n_avail +
+         " mutations");
+  } else if (n_avail > 0 & n_take / n_avail > 0.5) {
+    catn("WARNING: L = " + L + " selects " + n_take + " of " + n_avail +
+         " standing mutations (" + asInteger(100 * n_take / n_avail) +
+         "%); L is close to the standing variation");
+  }
   sampled = sample(sim.mutations, n_take);
   catn("Generation: " + sim.cycle + "; Sampled mutations: " + length(sampled));
   for (mut in sampled) {

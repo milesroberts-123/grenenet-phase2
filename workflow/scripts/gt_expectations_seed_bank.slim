@@ -188,10 +188,24 @@ function (void)impose_selected_architecture(void) {
     theta_l = L / (0.577215664901532 + log(2*n_eff));
     alpha   = (VA > 0.0) ? sqrt(VA/theta_l) else 0.0;
 
-    muts   = sim.mutationsOfType(m1);
-    n_loci = (L < size(muts)) ? asInteger(L) else size(muts);
+    muts    = sim.mutationsOfType(m1);
+    n_avail = size(muts);
+    n_loci  = (L < n_avail) ? asInteger(L) else n_avail;
 
-    catn("Architecture: " + size(muts) + " standing mutations, selecting " + n_loci);
+    catn("Architecture: " + n_avail + " standing mutations, selecting " + n_loci);
+
+    // L only controls the architecture while it is small relative to the standing
+    // variation. Once it approaches that pool the run converges on "every standing
+    // variant is selected", and L stops being an independent parameter.
+    if (L > n_avail) {
+        catn("WARNING: L exceeds the standing variation; selecting all " + n_avail +
+             " mutations");
+    } else if (n_avail > 0 & n_loci / n_avail > 0.5) {
+        catn("WARNING: L = " + L + " selects " + n_loci + " of " + n_avail +
+             " standing mutations (" + asInteger(100 * n_loci / n_avail) +
+             "%); L is close to the standing variation, so the architecture is no" +
+             " longer controlled by L alone");
+    }
     catn("Architecture: N_eff = " + n_eff + ", theta_L = " + theta_l +
          ", alpha = " + alpha);
 
