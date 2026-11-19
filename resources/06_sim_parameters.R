@@ -12,10 +12,10 @@ gt_wf_params <- expand.grid(
     rep=1:30,
     adjust=c(T, F),
     # USE_VCF = 0 simulates a fresh genome and burns in de novo mutations
-    # (gt_expectations.slim); USE_VCF = 1 instead seeds the run from standing
-    # variation in a VCF window (gt_expectations_structured.slim). This is the old
-    # struct/unstruct split, renamed; the VCF path still needs TMU and ALPHA
-    # columns, which the wf grid does not yet carry.
+    # (gt_expectations.slim); USE_VCF = 1 seeds the run from standing variation in a
+    # VCF window (gt_expectations_structured.slim). The USE_VCF = 1 rows are not
+    # wired up yet -- that script still takes tmu/alpha -- so their shell branch
+    # exits with an error; see workflow/rules/slim.smk.
     USE_VCF=c(0, 1),
     type="wf"
 )
@@ -23,11 +23,10 @@ gt_wf_params <- expand.grid(
 gt_nonwf_bank_struc <- expand.grid(
     N = 1000,
     MU=7e-09,
-    TMU=c(2e-11),
     R=8.06452e-10,
-    L=1e6,
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
-    ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
+    VA=c(0, 0.001, 0.01, 0.1),
+    L=c(1, 10, 100, 200),
     rep=1:30,
     TAU=12,
     K=c(1000),
@@ -44,11 +43,10 @@ gt_nonwf_bank_struc <- expand.grid(
 
 gt_nonwf_bank_nostruc <- expand.grid(N = 1000,
                                MU=7e-09,
-                               TMU=c(2e-11),
-    R=8.06452e-10,
-    L=1e6,
+                               R=8.06452e-10,
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
-    ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
+    VA=c(0, 0.001, 0.01, 0.1),
+    L=c(1, 10, 100, 200),
     rep=1:30,
     TAU=12,
     K=c(1000),
@@ -65,11 +63,10 @@ gt_nonwf_bank_nostruc <- expand.grid(N = 1000,
 
 gt_nonwf_nobank_struc <- expand.grid(N = 1000,
                                MU=7e-09,
-                               TMU=c(2e-11),
-    R=8.06452e-10,
-    L=1e6,
+                               R=8.06452e-10,
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
-    ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
+    VA=c(0, 0.001, 0.01, 0.1),
+    L=c(1, 10, 100, 200),
     rep=1:30,
     TAU=12,
     K=c(1000),
@@ -91,11 +88,10 @@ gt_wf_params$N[(gt_wf_params$adjust == T)] = as.integer(gt_wf_params$N[(gt_wf_pa
 
 gt_nonwf_nobank_nostruc <- expand.grid(N = 1000,
                                MU=7e-09,
-                               TMU=c(2e-11),
-    R=8.06452e-10,
-    L=1e6,
+                               R=8.06452e-10,
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
-    ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
+    VA=c(0, 0.001, 0.01, 0.1),
+    L=c(1, 10, 100, 200),
     rep=1:30,
     TAU=12,
     K=c(1000),

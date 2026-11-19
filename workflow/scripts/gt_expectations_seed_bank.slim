@@ -59,11 +59,13 @@ initialize() {
     initializeMutationTypeNuc("m3", 0.5, "f", 0.0);
     m1.convertToSubstitution = T;
 
+    // Every new mutation is neutral. The selected architecture is imposed once,
+    // from the standing variation present at that moment, by
+    // impose_selected_architecture() -- exactly as the wf simulations do.
     if(USE_VCF == 1) {
         initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
     } else {
-        mut_props = c(1.0, (TMU/NMU)*SURVIVAL_SELECTION, (TMU/NMU)*(1-SURVIVAL_SELECTION));
-        initializeGenomicElementType("g1", c(m1,m2,m3), mut_props, mmJukesCantor(NMU/3));
+        initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(NMU/3));
     }
     initializeGenomicElement(g1, 0, CHROM_LEN-1);
     initializeRecombinationRate(R);
@@ -81,11 +83,9 @@ initialize() {
 
 reproduction(p2) {
     //catn("Individual fitness: " + individual.fitnessScaling);
-    if(USE_VCF == 0 & sim.cycle <= BURN){
-        REALIZED_FITNESS = N_OFFSPRING;
-    } else {
-        REALIZED_FITNESS = pmax(0.0, N_OFFSPRING*(1 + individual.sumOfMutationsOfType(m3)));
-    }
+    // No m3 mutation exists before impose_selected_architecture() runs, so the
+    // sum is 0 and this reduces to N_OFFSPRING throughout the burn-in.
+    REALIZED_FITNESS = pmax(0.0, N_OFFSPRING*(1 + individual.sumOfMutationsOfType(m3)));
 
     REALIZED_OFFSPRING = rpois(1, REALIZED_FITNESS);
 
@@ -117,7 +117,8 @@ reproduction(p2) {
     catn("  N_OFFSPRING = " + N_OFFSPRING);
     catn("  SIM_LENGTH  = " + SIM_LENGTH);
     catn("  SIGMA       = " + SIGMA);
-    catn("  ALPHA       = " + ALPHA);
+    catn("  VA          = " + VA);
+    catn("  L           = " + L);
     catn("  USE_VCF     = " + USE_VCF);
     catn("  BURN        = " + BURN);
     catn("=====================================");
@@ -138,49 +139,64 @@ reproduction(p2) {
         // reschedule population tracking until initial generations
         community.rescheduleScriptBlock(s1, start=2, end=SIM_LENGTH);
         community.rescheduleScriptBlock(s2, start=2, end=SIM_LENGTH);
-        community.rescheduleScriptBlock(s3, start=SIM_LENGTH+1); // move burn-in code to end of simulation
-        community.rescheduleScriptBlock(s4, start=SIM_LENGTH+1); // burn-in not needed
 
         catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
         catn("Tick 1: No burn-in will be performed and BURN is ignored.");
 
-        catn("Tick 1: Sampling mutations to be selected.");
-        num_mut = asInteger(4*TMU*N_VCF*CHROM_LEN);
-        sampled = sample(sim.mutations, num_mut);
-        catn("Tick 1: Sampled mutations: " + length(sampled));
-        for (mut in sampled) {
-            if (runif(1) < SURVIVAL_SELECTION){
-                mut.setMutationType(m2);
-            } else {
-                mut.setMutationType(m3);
-            }
-            if (runif(1) < 0.5) {
-                mut.setSelectionCoeff(ALPHA);
-            } else {
-                mut.setSelectionCoeff(-ALPHA);
-            }
-        }
+        // the architecture is imposed immediately, on the standing variation
+        impose_selected_architecture();
     } else {
-        catn("Tick 1: Creating initial seed bank WITHOUT population structure.");
+        catn("Tick 1: Creating initial seed bank from the ancestral sequence.");
         // reschedule population tracking until initial generations
         community.rescheduleScriptBlock(s1, start=2, end=BURN+1+SIM_LENGTH);
         community.rescheduleScriptBlock(s2, start=2, end=BURN+1+SIM_LENGTH);
-        community.rescheduleScriptBlock(s3, start=1, end=BURN);
-        community.rescheduleScriptBlock(s4, start=1, end=BURN);
+        // and impose the architecture once the burn-in has built standing variation
+        community.rescheduleScriptBlock(s5, start=BURN+1, end=BURN+1);
         catn("Tick 1: Set burn-in for " + BURN + " generations.");
     }
 }
 
 //===================================================================================
-// MUTATION CALLBACKS (makes mutations neutral during burn-in, and non-neutral after)
+// SELECTED ARCHITECTURE
 //===================================================================================
+//
+// VA and L parameterise the selected loci the same way the wf simulations do:
+// L loci share one effect size, alpha = sqrt(VA / theta_L), where theta_L is the
+// expected number of segregating sites in a sample of 2*N_eff chromosomes
+// (N_eff is the realised seed bank size when the architecture is imposed).
+//
+// SURVIVAL_SELECTION allocates that fraction of the L loci to m2 (seed survival,
+// belowground) and the rest to m3 (fecundity, aboveground). Because both
+// components share alpha, the same fraction of VA goes to each.
 
-s3 500 mutationEffect(m2) {
-  return 1.0;
+function (void)impose_selected_architecture(void) {
+    n_eff   = p1.individualCount;
+    theta_l = L / (0.577215664901532 + log(2*n_eff));
+    alpha   = (VA > 0.0) ? sqrt(VA/theta_l) else 0.0;
+
+    muts   = sim.mutationsOfType(m1);
+    n_loci = (L < size(muts)) ? asInteger(L) else size(muts);
+
+    catn("Architecture: " + size(muts) + " standing mutations, selecting " + n_loci);
+    catn("Architecture: N_eff = " + n_eff + ", theta_L = " + theta_l +
+         ", alpha = " + alpha);
+
+    if (n_loci > 0) {
+        chosen = sample(muts, n_loci);
+        for (mut in chosen) {
+            if (runif(1) < SURVIVAL_SELECTION) {
+                mut.setMutationType(m2);
+            } else {
+                mut.setMutationType(m3);
+            }
+            mut.setSelectionCoeff((runif(1) < 0.5) ? -alpha else alpha);
+        }
+    }
 }
 
-s4 500 mutationEffect(m3) {
-  return 1.0;
+// late() so it runs after the tick-1 VCF load and after the burn-in's early phase
+s5 301 late() {
+    impose_selected_architecture();
 }
 
 // ============================================================================
@@ -308,10 +324,10 @@ s2 300 late() {
         seed_max_age        = max(seed_ages);
         seed_m2_count       = max(p1.individuals.countOfMutationsOfType(m2));
         seed_m3_count       = max(p1.individuals.countOfMutationsOfType(m3));
-        seed_mean_pheno     = mean(p2.individuals.sumOfMutationsOfType(m2) + p2.individuals.countOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
+        seed_mean_pheno     = mean(p2.individuals.sumOfMutationsOfType(m2) + p2.individuals.sumOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
         plant_m2_count      = max(p2.individuals.countOfMutationsOfType(m2));
         plant_m3_count      = max(p2.individuals.countOfMutationsOfType(m3));
-        plant_mean_pheno    = mean(p1.individuals.sumOfMutationsOfType(m2) + p1.individuals.countOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
+        plant_mean_pheno    = mean(p1.individuals.sumOfMutationsOfType(m2) + p1.individuals.sumOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
         catn("Tick " + tick + ": seeds=" + n_seed +
              " plants=" + n_plant +
              " seed_mean_age=" + seed_mean_age +

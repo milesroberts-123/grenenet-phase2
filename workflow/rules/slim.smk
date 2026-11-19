@@ -81,7 +81,7 @@ rule slim:
             get_simcase,
             cases={
                 "wf_novcf": ("wf_prep/{ID}.done"),
-                "wf_vcf": ("bcftools_random_results/{ID}.vcf"),
+                "wf_vcf": [],   # not wired up yet; see the shell branch
                 "bank_vcf": ("bcftools_duplicate_results/{ID}.vcf"),
                 # no VCF is built for a run that starts from the ancestral
                 # sequence, which keeps 1000s of duplicate VCFs out of the DAG
@@ -103,9 +103,9 @@ rule slim:
         VA=lookup(query="ID == '{ID}'", within=gt_params, cols="VA"),
         SIGMA=lookup(query="ID == '{ID}'", within=gt_params, cols="SIGMA"),
         TAU=lookup(query="ID == '{ID}'", within=gt_params, cols="TAU"),
-        # extra parameters for non-wf sims
-        TMU=lookup(query="ID == '{ID}'", within=gt_params, cols="TMU"),
-        ALPHA=lookup(query="ID == '{ID}'", within=gt_params, cols="ALPHA"),
+        # extra parameters for non-wf sims. VA and L are shared with the wf grid:
+        # L is the number of selected loci and VA the additive variance they carry
+        va=lookup(query="ID == '{ID}'", within=gt_params, cols="VA"),
         #gamma=lookup(query="ID == '{ID}'", within=gt_params, cols="gamma"),
         germ_rate=lookup(query="ID == '{ID}'", within=gt_params, cols="GERM_RATE"),
         bank_surv=lookup(query="ID == '{ID}'", within=gt_params, cols="BANK_SURV"),
@@ -134,9 +134,12 @@ rule slim:
                 -d ID={wildcards.ID} \\
                 -d TAU={params.TAU} scripts/gt_expectations.slim
         elif [[ "wf" == "{params.type}" && "1" == "{params.use_vcf}" ]]; then
-            slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{params.vcf_path}"' -d N={params.N} -d sigma={params.SIGMA} -d tmu={params.TMU} -d R={params.R} -d alpha={params.ALPHA} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
+            echo "wf with USE_VCF=1 is not wired up: gt_expectations_structured.slim" >&2
+            echo "still takes -d tmu/-d alpha, and it hardcodes 231 founders and 10 generations." >&2
+            echo "Port it to the VA/L architecture before enabling this branch." >&2
+            exit 1
         elif [[ "bank" == "{params.type}" ]]; then
-            slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d TMU={params.TMU} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d ALPHA={params.ALPHA} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
+            slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.L} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
         else
             echo "Invalid simulation type!"
         fi
