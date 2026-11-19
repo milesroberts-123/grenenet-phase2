@@ -54,7 +54,7 @@ The Snakefile pins `min_version("9.5.1")` and loads `config/config.yaml` from `.
 - **Simulation parameter tables are generated**: edit `resources/06_sim_parameters.R` if you need to change the design, then rerun it to rebuild `config/gt_params.tsv` and `config/fst_params.tsv`.
 - **Do not set memory resources in `profiles/default`**: Savio (UC Berkeley) restricts memory requests on `savio3_htc`/`savio_lowprio`. Memory resources belong in `profiles/msu` (e.g. `mem_mb_per_cpu`) or `profiles/local` only.
 - **Legacy rules** are commented out in the Snakefile under `rules/legacy/`; they are not part of the current pipeline.
-- **Three simulation types** in `slim.smk`: `unstruct`, `struct`, and `bank`. Each uses a different `.slim` script (`gt_expectations.slim`, `gt_expectations_structured.slim`, `gt_expectations_seed_bank.slim`).
+- **Two simulation families** in `slim.smk`, selected by the `type` column: `wf` and `bank`. Within a family, `USE_VCF` picks the source of variation: `0` simulates a fresh genome and burns in de novo mutations, `1` seeds the run from standing variation read out of a VCF. Scripts: `gt_expectations.slim` (wf, USE_VCF=0), `gt_expectations_structured.slim` (wf, USE_VCF=1), `gt_expectations_seed_bank.slim` (bank). The wf VCF path is not yet runnable — it needs `TMU`/`ALPHA` columns that the wf grid does not carry.
 
 ## Notebook validation without cluster data
 

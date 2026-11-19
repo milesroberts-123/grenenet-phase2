@@ -45,18 +45,18 @@ rule bcftools_duplicate:
         bcftools merge --force-samples {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} -Ou -o {output}
         """
 
-rule unstruct_prep:
+rule wf_prep:
     group: "simulation"
     output:
-        temp(touch("unstruct_prep/{ID}.done"))
+        temp(touch("wf_prep/{ID}.done"))
 
 def get_simcase(wildcards):
     row = gt_params.loc[gt_params["ID"] == wildcards.ID, ["type", "USE_VCF"]]
-    simtype = str(row["type"].iloc[0])
-    # a bank simulation with USE_VCF = 0 never reads a VCF, so it needs no VCF input
-    if simtype == "bank" and float(row["USE_VCF"].iloc[0]) == 0.0:
-        return "bank_novcf"
-    return simtype
+    family = str(row["type"].iloc[0])
+    use_vcf = 0 if pd.isna(row["USE_VCF"].iloc[0]) else int(row["USE_VCF"].iloc[0])
+    if family == "wf":
+        return "wf_vcf" if use_vcf == 1 else "wf_novcf"
+    return "bank_vcf" if use_vcf == 1 else "bank_novcf"
 
 
 def bank_flag(wildcards, column, default=0):
@@ -68,7 +68,9 @@ def bank_flag(wildcards, column, default=0):
 def get_vcf_path(wildcards):
     if bank_flag(wildcards, "USE_VCF") == 0:
         return "none"   # never read, but SLiM needs the string constant defined
-    return "bcftools_duplicate_results/%s.vcf" % wildcards.ID
+    family = str(gt_params.loc[gt_params["ID"] == wildcards.ID, "type"].iloc[0])
+    prefix = "bcftools_random_results" if family == "wf" else "bcftools_duplicate_results"
+    return "%s/%s.vcf" % (prefix, wildcards.ID)
 
 
 rule slim:
@@ -78,10 +80,10 @@ rule slim:
         vcf = branch(
             get_simcase,
             cases={
-                "unstruct": ("unstruct_prep/{ID}.done"),
-                "struct": ("bcftools_random_results/{ID}.vcf"),
-                "bank": ("bcftools_duplicate_results/{ID}.vcf"),
-                # no VCF is built for a bank run that starts from the ancestral
+                "wf_novcf": ("wf_prep/{ID}.done"),
+                "wf_vcf": ("bcftools_random_results/{ID}.vcf"),
+                "bank_vcf": ("bcftools_duplicate_results/{ID}.vcf"),
+                # no VCF is built for a run that starts from the ancestral
                 # sequence, which keeps 1000s of duplicate VCFs out of the DAG
                 "bank_novcf": []
             }
@@ -121,7 +123,7 @@ rule slim:
         vcf_path=get_vcf_path
     shell:
         """
-        if [[ "unstruct" == "{params.type}" ]]; then
+        if [[ "wf" == "{params.type}" && "0" == "{params.use_vcf}" ]]; then
             slim -d N={params.N} \\
                 -d L={params.L} \\
                 -d G={params.G} \\
@@ -131,8 +133,8 @@ rule slim:
                 -d VA={params.VA} \\
                 -d ID={wildcards.ID} \\
                 -d TAU={params.TAU} scripts/gt_expectations.slim
-        elif [[ "struct" == "{params.type}" ]]; then
-            slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{input.vcf}"' -d N={params.N} -d sigma={params.SIGMA} -d tmu={params.TMU} -d R={params.R} -d alpha={params.ALPHA} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
+        elif [[ "wf" == "{params.type}" && "1" == "{params.use_vcf}" ]]; then
+            slim -d fastaFile='"{input.fasta}"' -d vcfFile='"{params.vcf_path}"' -d N={params.N} -d sigma={params.SIGMA} -d tmu={params.TMU} -d R={params.R} -d alpha={params.ALPHA} -d ID={wildcards.ID} scripts/gt_expectations_structured.slim
         elif [[ "bank" == "{params.type}" ]]; then
             slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d TMU={params.TMU} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d ALPHA={params.ALPHA} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
         else

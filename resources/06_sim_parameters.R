@@ -11,7 +11,13 @@ gt_wf_params <- expand.grid(
     TAU=10,
     rep=1:30,
     adjust=c(T, F),
-    type=c("unstruct", "struct")
+    # USE_VCF = 0 simulates a fresh genome and burns in de novo mutations
+    # (gt_expectations.slim); USE_VCF = 1 instead seeds the run from standing
+    # variation in a VCF window (gt_expectations_structured.slim). This is the old
+    # struct/unstruct split, renamed; the VCF path still needs TMU and ALPHA
+    # columns, which the wf grid does not yet carry.
+    USE_VCF=c(0, 1),
+    type="wf"
 )
 
 gt_nonwf_bank_struc <- expand.grid(
@@ -119,9 +125,8 @@ gt_params <- bind_rows(gt_wf_params, gt_nonwf_params)
 # add simulation id
 gt_params$ID <- 1:nrow(gt_params)
 
-# which simulation types enter config/gt_params.tsv. "struct" stays out for now:
-# it has no results on Savio and would add 4,800 more simulations.
-sim_types <- c("unstruct", "bank")
+# which simulation families enter config/gt_params.tsv
+sim_types <- c("wf", "bank")
 gt_params <- gt_params %>% filter(type %in% sim_types)
 
 # save
