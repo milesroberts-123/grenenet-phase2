@@ -2938,9 +2938,6 @@ for (i in seq_along(glm_files)) {
 }
 ```
 
-
-```
-
 ## kmate increment matrix and covariance
 
 The three chunks below read what `20_increment_matrix_kmate` and
@@ -3213,7 +3210,7 @@ for(site in as.numeric(unique(sites))){
 }
 ```
 
-## plot Waples Fc (kmate)
+## PLOT: Waples Fc (kmate)
 
 The Waples estimator converts Fc — the standardized variance in allele-frequency
 change — into Ne assuming every variant is neutral. When linked selection inflates
@@ -3785,6 +3782,57 @@ ggplot(long, aes(x = value, fill = source)) +
   theme(legend.position = "top")
 
 ggsave(paste0("../results/by-date/", today, "/sign_permutation_effect.pdf"), width = 8, height = 5, device = cairo_pdf)
+
+```
+
+## PLOT: sumarize temporal covariances
+
+```{r}
+
+af_cov <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/var_cov_point_estimates_kmate.tsv")
+
+af_cov$i <- gsub("_", "", str_extract(af_cov$A,"_[1-9]_"))
+af_cov$j <- gsub("_", "", str_extract(af_cov$B,"_[1-9]_"))
+
+af_cov |>
+  filter(j < i) |>
+  summarize(sum(cov < 0)/n())
+
+af_sum <- af_cov |> 
+  filter(j < i) |>
+  group_by(i, j) |>
+  summarize(num_neg_cov = sum(cov < 0),
+            num_cov_terms = n(),
+            prop_neg_cov = num_neg_cov/num_cov_terms)
+
+ggplot(af_sum, aes(x = i, y = j, fill = prop_neg_cov)) +
+  geom_tile() +
+  scale_fill_scico(direction = -1, end = 0.95, begin = 0.05, palette = "devon") +
+  geom_text(aes(label = signif(prop_neg_cov, 3)), color = "orange") +
+  labs(x = "Generation i", y = "Generation j", fill = "Proportion\nCov(\u0394pi, \u0394pj)<0")
+
+ggsave(paste0("../results/by-date/", today, "/neg_cov_summary_heatmap_global.pdf"), width = 8, height = 6, device = cairo_pdf)
+
+
+### summarize by site ###
+
+af_sum_by_site <- af_cov |> 
+  filter(j < i) |>
+  group_by(site, i, j) |>
+  summarize(num_neg_cov = sum(cov < 0),
+            num_cov_terms = n(),
+            prop_neg_cov = num_neg_cov/num_cov_terms)
+
+ggplot(af_sum_by_site, aes(x = i, y = j, fill = prop_neg_cov)) +
+  geom_tile() +
+  scale_fill_scico(direction = -1, end = 0.95, begin = 0.05, palette = "devon", n.breaks = 3) +
+  geom_text(aes(label = signif(prop_neg_cov, 2)), color = "orange") +
+  facet_wrap(~site) +
+  theme(legend.position = "top", legend.title.position = "top") +
+  #scale_fill_continuous() +
+  labs(x = "Generation i", y = "Generation j", fill = "Proportion\nCov(\u0394pi, \u0394pj)<0")
+
+ggsave(paste0("../results/by-date/", today, "/neg_cov_summary_heatmap_by_site.pdf"), width = 9, height = 9, device = cairo_pdf)
 
 ```
 
@@ -5106,10 +5154,10 @@ The input is the plink2 `.vcor` from the `plink_all` workflow target: signed
 correlations between founder genotypes, one row per pair. Aggregating a file this
 size takes minutes, so the bins are cached and only recomputed when missing.
 
-```{r ld_decay_plink}
+```{r, ld_decay_plink}
 ld_vcor <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/plink/greneNet.vcor"
 ld_fam  <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/plink/greneNet.fam"
-ld_bins_file <- paste0(af_prefix, "_ld_decay_bins.tsv")
+ld_bins_file <- paste0("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/plink/ld_decay_bins.tsv")
 ld_bin_width <- 100  # bp
 
 if (!file.exists(ld_vcor)) {
