@@ -23,7 +23,6 @@ gt_nonwf_bank_struc <- expand.grid(
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
     ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
     rep=1:30,
-    GAMMA=10,
     TAU=12,
     K=c(1000),
     N_OFFSPRING=c(5),
@@ -32,10 +31,9 @@ gt_nonwf_bank_struc <- expand.grid(
     type="bank",
     SURVIVAL_SELECTION=c(0.5,1),
     MIN_AGE=1,
-    MAX_AGE=5,
+    MAX_AGE=3,
     adjust = T,
-    STRUCTURE = 1,
-    BURN=999
+    USE_VCF = 0
 )
 
 gt_nonwf_bank_nostruc <- expand.grid(N = 1000,
@@ -46,7 +44,6 @@ gt_nonwf_bank_nostruc <- expand.grid(N = 1000,
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
     ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
     rep=1:30,
-    GAMMA=10,
     TAU=12,
     K=c(1000),
     N_OFFSPRING=c(5),
@@ -55,10 +52,9 @@ gt_nonwf_bank_nostruc <- expand.grid(N = 1000,
     type="bank",
     SURVIVAL_SELECTION=0.5,
     MIN_AGE=1,
-    MAX_AGE=5,
+    MAX_AGE=3,
     adjust = T,
-    STRUCTURE = 0,
-    BURN=10000
+    USE_VCF = 0
 )
 
 gt_nonwf_nobank_struc <- expand.grid(N = 1000,
@@ -69,7 +65,6 @@ gt_nonwf_nobank_struc <- expand.grid(N = 1000,
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
     ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
     rep=1:30,
-    GAMMA=10,
     TAU=12,
     K=c(1000),
     N_OFFSPRING=c(5),
@@ -78,7 +73,9 @@ gt_nonwf_nobank_struc <- expand.grid(N = 1000,
     type="bank",
     SURVIVAL_SELECTION=c(0.5, 1),
     adjust = T,
-    MAX_AGE=20 # doesn't mattern because BANK_SURV= 0
+    MIN_AGE=0, # no seed bank (BANK_SURV = 0): seeds must germinate immediately
+    MAX_AGE=3, # irrelevant while BANK_SURV = 0
+    USE_VCF=0
     ) 
 
 #gt_nonwf_params <- rbind(gt_nonwf_params, gt_nonwf_wflike)
@@ -94,7 +91,6 @@ gt_nonwf_nobank_nostruc <- expand.grid(N = 1000,
     SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
     ALPHA=c(0, 0.0025, 0.005, 0.01, 0.015),
     rep=1:30,
-    GAMMA=10,
     TAU=12,
     K=c(1000),
     N_OFFSPRING=c(5),
@@ -104,9 +100,9 @@ gt_nonwf_nobank_nostruc <- expand.grid(N = 1000,
     SURVIVAL_SELECTION=0.5,
     adjust = T,
     MIN_AGE=0,
-    MAX_AGE=5, # doesn't mattern because BANK_SURV=0
-    STRUCTURE=0,
-    BURN=10000    )
+    MAX_AGE=3, # doesn't matter because BANK_SURV=0
+    USE_VCF=0
+)
 
 gt_nonwf_params <- bind_rows(gt_nonwf_bank_struc, gt_nonwf_bank_nostruc, gt_nonwf_nobank_struc, gt_nonwf_nobank_nostruc)
 
@@ -123,8 +119,10 @@ gt_params <- bind_rows(gt_wf_params, gt_nonwf_params)
 # add simulation id
 gt_params$ID <- 1:nrow(gt_params)
 
-# subset only 
-gt_params <- gt_params %>% filter(type == "unstruct")
+# which simulation types enter config/gt_params.tsv. "struct" stays out for now:
+# it has no results on Savio and would add 4,800 more simulations.
+sim_types <- c("unstruct", "bank")
+gt_params <- gt_params %>% filter(type %in% sim_types)
 
 # save
 write.table(gt_params, "../config/gt_params.tsv", sep = "\t", quote = F, row.names = F)
