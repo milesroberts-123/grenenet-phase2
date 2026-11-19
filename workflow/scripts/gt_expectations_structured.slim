@@ -39,7 +39,7 @@ early() {
     defineConstant("stats_file", data_dir + '/' + ID + '_stats.tsv');
     // write header
     param_string = "#seed=" + seed + ";alpha=" + alpha + ";N=" + N +
-                 ";L=" + R + ";L=" + L +
+                 ";R=" + R + ";L=" + L +
                  ";tmu=" + tmu;
     writeFile(stats_file, param_string, append=F);
     writeFile(stats_file, "gen\tzbar\tzbar_nofix\tzvar\tgenic_var\tneut_het\tS", append=T);
@@ -51,8 +51,11 @@ early() {
     catn("Scaling up population...");
     p1.setSubpopulationSize(N);
     num_mut = asInteger(4*tmu*N*L);
-    catn("Sampling mutations:" + num_mut);
-    sampled = sample(sim.mutations, num_mut);
+    // sample() draws without replacement and errors if num_mut exceeds the
+    // number of standing mutations, so never ask for more than exist
+    n_take = (num_mut < size(sim.mutations)) ? num_mut else size(sim.mutations);
+    catn("Sampling mutations:" + n_take);
+    sampled = sample(sim.mutations, n_take);
     catn("Sampled mutations: " + length(sampled));
     // Assign +/- alpha
     for (mut in sampled) {

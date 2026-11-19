@@ -90,8 +90,10 @@ reproduction(p2) {
     REALIZED_OFFSPRING = rpois(1, REALIZED_FITNESS);
 
     for (i in seqLen(REALIZED_OFFSPRING)) {
-        if (runif(1) > SIGMA){
-            mate = p2.sampleIndividuals(1);       // random mating within p2
+        if (runif(1) > SIGMA & p2.individualCount > 1){
+            // exclude the focal individual: sampleIndividuals() may otherwise
+            // return it, which would self-fertilise even when SIGMA = 0
+            mate = p2.sampleIndividuals(1, exclude=individual);
             p1.addCrossed(individual, mate);      // offspring land in seed storage
         } else {
             p1.addSelfed(individual);
@@ -143,7 +145,9 @@ reproduction(p2) {
         catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
         catn("Tick 1: No burn-in will be performed and BURN is ignored.");
 
-        // the architecture is imposed immediately, on the standing variation
+        // the architecture is imposed immediately, on the standing variation,
+        // so s5 is deregistered rather than rescheduled
+        community.deregisterScriptBlock(s5);
         impose_selected_architecture();
     } else {
         catn("Tick 1: Creating initial seed bank from the ancestral sequence.");
@@ -194,8 +198,10 @@ function (void)impose_selected_architecture(void) {
     }
 }
 
-// late() so it runs after the tick-1 VCF load and after the burn-in's early phase
-s5 301 late() {
+// Declared far in the future so it never fires on its own schedule: the block is
+// always rescheduled, either to BURN+1 (de novo path) or past the end of the run
+// (VCF path, which imposes the architecture directly in the tick-1 block).
+s5 1000000 late() {
     impose_selected_architecture();
 }
 
@@ -324,10 +330,10 @@ s2 300 late() {
         seed_max_age        = max(seed_ages);
         seed_m2_count       = max(p1.individuals.countOfMutationsOfType(m2));
         seed_m3_count       = max(p1.individuals.countOfMutationsOfType(m3));
-        seed_mean_pheno     = mean(p2.individuals.sumOfMutationsOfType(m2) + p2.individuals.sumOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
+        seed_mean_pheno     = mean(p1.individuals.sumOfMutationsOfType(m2) + p1.individuals.sumOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
         plant_m2_count      = max(p2.individuals.countOfMutationsOfType(m2));
         plant_m3_count      = max(p2.individuals.countOfMutationsOfType(m3));
-        plant_mean_pheno    = mean(p1.individuals.sumOfMutationsOfType(m2) + p1.individuals.sumOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
+        plant_mean_pheno    = mean(p2.individuals.sumOfMutationsOfType(m2) + p2.individuals.sumOfMutationsOfType(m3) + sum(sim.substitutions.selectionCoeff));
         catn("Tick " + tick + ": seeds=" + n_seed +
              " plants=" + n_plant +
              " seed_mean_age=" + seed_mean_age +

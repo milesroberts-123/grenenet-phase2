@@ -60,7 +60,7 @@ initialize() {
   defineConstant("stats_file", data_dir + '/' + basename + '_stats.tsv');
   // write header
   param_string = "#seed=" + seed + ";alpha=" + alpha + ";N=" + N + 
-     	         ";L=" + R + ";L=" + L + 
+     	         ";R=" + R + ";L=" + L + 
                  ";mu=" + MU;
   writeFile(stats_file, param_string, append=F);
   writeFile(stats_file, "gen\tzbar\tzbar_nofix\tzvar\tgenic_var\tneut_het\tS", append=T);
@@ -88,7 +88,10 @@ early() {
 
 // sample mutations to be selected
 s2 600 early(){
-  sampled = sample(sim.mutations, L);
+  // sample() draws without replacement and errors if L exceeds the number of
+  // standing mutations, so never ask for more than exist
+  n_take = (L < size(sim.mutations)) ? asInteger(L) else size(sim.mutations);
+  sampled = sample(sim.mutations, n_take);
   catn("Generation: " + sim.cycle + "; Sampled mutations: " + length(sampled));
   for (mut in sampled) {
     mut.setMutationType(m1);
