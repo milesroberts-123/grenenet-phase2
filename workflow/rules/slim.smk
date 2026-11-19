@@ -65,11 +65,13 @@ def bank_flag(wildcards, column, default=0):
     return default if pd.isna(value) else int(value)
 
 
-def float_param(wildcards, column):
-    """Float parameter; SLiM's float-typed function arguments reject an integer
-    literal such as 0, so VA must always render with a decimal point."""
+def float_param(wildcards, column, default=0.0):
+    """Float parameter. SLiM rejects an integer literal where a float-typed
+    argument is expected (so VA must always render with a decimal point) and
+    rejects "nan" outright (undefined identifier), so missing values must be
+    replaced by a real number before they reach the command line."""
     value = gt_params.loc[gt_params["ID"] == wildcards.ID, column].iloc[0]
-    return 0.0 if pd.isna(value) else float(value)
+    return default if pd.isna(value) else float(value)
 
 
 def get_fasta_path(wildcards):
@@ -133,7 +135,8 @@ rule slim:
         K=lookup(query="ID == '{ID}'", within=gt_params, cols="K"),
         n_offspring=lookup(query="ID == '{ID}'", within=gt_params, cols="N_OFFSPRING"),
         type=lookup(query="ID == '{ID}'", within=gt_params, cols="type"),
-        surv=lookup(query="ID == '{ID}'", within=gt_params, cols="SURVIVAL_SELECTION"),
+        # SURVIVAL_SELECTION is NA on VA = 0 rows, where it has no effect
+        surv=lambda wildcards: float_param(wildcards, "SURVIVAL_SELECTION", 0.5),
         min_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MIN_AGE"),
         max_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MAX_AGE"),
         # USE_VCF = 1 starts from standing variation read out of the VCF and runs

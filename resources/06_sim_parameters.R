@@ -35,7 +35,7 @@ gt_nonwf_bank_struc <- expand.grid(
     GERM_RATE=c(0.15, 1),
     BANK_SURV=c(0.5, 0.8, 1),
     type="bank",
-    SURVIVAL_SELECTION=c(0.5,1),
+    SURVIVAL_SELECTION=c(0, 0.5, 1),
     MIN_AGE=1,
     MAX_AGE=3,
     adjust = T,
@@ -56,7 +56,7 @@ gt_nonwf_bank_nostruc <- expand.grid(N = 1000,
     GERM_RATE=c(0.8),
     BANK_SURV=c(0.6),
     type="bank",
-    SURVIVAL_SELECTION=0.5,
+    SURVIVAL_SELECTION=c(0, 0.5, 1),
     MIN_AGE=1,
     MAX_AGE=3,
     adjust = T,
@@ -77,7 +77,7 @@ gt_nonwf_nobank_struc <- expand.grid(N = 1000,
     GERM_RATE=c(0.8),
     BANK_SURV=c(0.0),
     type="bank",
-    SURVIVAL_SELECTION=c(0.5, 1),
+    SURVIVAL_SELECTION=c(0, 0.5, 1),
     adjust = T,
     MIN_AGE=0, # no seed bank (BANK_SURV = 0): seeds must germinate immediately
     MAX_AGE=3, # irrelevant while BANK_SURV = 0
@@ -103,7 +103,7 @@ gt_nonwf_nobank_nostruc <- expand.grid(N = 1000,
     GERM_RATE=c(0.8),
     BANK_SURV=c(0.0),
     type="bank",
-    SURVIVAL_SELECTION=0.5,
+    SURVIVAL_SELECTION=c(0, 0.5, 1),
     adjust = T,
     MIN_AGE=0,
     MAX_AGE=3, # doesn't matter because BANK_SURV=0
@@ -112,16 +112,19 @@ gt_nonwf_nobank_nostruc <- expand.grid(N = 1000,
 
 gt_nonwf_params <- bind_rows(gt_nonwf_bank_struc, gt_nonwf_bank_nostruc, gt_nonwf_nobank_struc, gt_nonwf_nobank_nostruc)
 
-# VA = 0 makes alpha = 0, so L (the number of selected loci) has no effect: every L
-# value yields the same neutral run. Keep one row per remaining combination and set
-# L to NA rather than simulating the same design four times.
+# VA = 0 makes alpha = 0, so neither L (the number of selected loci) nor
+# SURVIVAL_SELECTION (how their variance is split above / below ground) has any
+# effect: every combination yields the same neutral run. Keep one row per remaining
+# combination and set both to NA rather than simulating the same design repeatedly.
 #
 # Only the nonWF blocks are collapsed. The wf grid is keyed by ID in the notebook
 # (params[params$ID == simid, ]), and dropping rows there would renumber the 4,800
 # wf simulations that already exist.
 gt_nonwf_params <- gt_nonwf_params[gt_nonwf_params$VA > 0 |
-                                     gt_nonwf_params$L == min(gt_nonwf_params$L), ]
+                                     (gt_nonwf_params$L == min(gt_nonwf_params$L) &
+                                        gt_nonwf_params$SURVIVAL_SELECTION == 0.5), ]
 gt_nonwf_params$L[gt_nonwf_params$VA == 0] <- NA
+gt_nonwf_params$SURVIVAL_SELECTION[gt_nonwf_params$VA == 0] <- NA
 
 # adjust Ne based on selfing rate
 gt_wf_params$N[(gt_wf_params$adjust == T)] = as.integer(gt_wf_params$N[(gt_wf_params$adjust == T)]/(1 - gt_wf_params$SIGMA[(gt_wf_params$adjust == T)]/2))

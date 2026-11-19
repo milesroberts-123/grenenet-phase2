@@ -46,6 +46,13 @@ function (void)write_freqs(string file, object<Subpopulation> subpop,
 initialize() {
 
     initializeSLiMModelType("nonWF");
+
+    // per-generation stats mirroring gt_expectations.slim's stats file; written
+    // by the output block on the same ticks that record frequencies
+    defineConstant("stats_file", "slim_results/" + ID + "_stats.tsv");
+    writeFile(stats_file,
+              "gen\tn_seed\tn_plant\tzbar\tzvar\tgenic_var\tgenic_m2\tgenic_m3",
+              append=F);
     // ── Genome ───────────────────────────────────────────────────────────────
     // USE_VCF = 1: a real chromosome sequence read from the FASTA, nucleotide
     // based, with every variant coming from the VCF (no new mutations).
@@ -68,6 +75,13 @@ initialize() {
         initializeMutationType("m1", 0.5, "f", 0.0);
         initializeMutationType("m2", 0.5, "f", 0.0);
         initializeMutationType("m3", 0.5, "f", 0.0);
+        // the burn-in variation is m1; without this it stacks (policy defaults
+        // to "s") and impose_selected_architecture() can draw several co-site
+        // objects that travel as one locus (Manual 26.11.1). Nucleotide-based
+        // types cannot stack, so the USE_VCF = 1 branch needs no policy.
+        m1.mutationStackPolicy = "f";
+        m2.mutationStackPolicy = "f";
+        m3.mutationStackPolicy = "f";
         initializeGenomicElementType("g1", m1, 1.0);
     }
 
@@ -134,6 +148,11 @@ reproduction(p2) {
     catn("  USE_VCF     = " + USE_VCF);
     catn("  BURN        = " + BURN);
     catn("=====================================");
+
+    if (BANK_SURV == 0.0 & MIN_AGE > 0) {
+        catn("WARNING: BANK_SURV = 0 with MIN_AGE > 0: every seed dies in storage" +
+             " before its first germination window; the population will go extinct.");
+    }
 
     // Create seed storage with exactly N_VCF diploid individuals.
     sim.addSubpop("p1", N_VCF);
@@ -343,6 +362,23 @@ s2 300 late() {
 
     if((USE_VCF == 0) & (tick >= BURN+1)){
         write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
+    }
+
+    // stats row: realized additive variance components from the actual
+    // selection coefficients, split by where they act
+    if (USE_VCF == 1 | (USE_VCF == 0 & tick >= BURN+1)) {
+        inds = sim.subpopulations.individuals;
+        phen = inds.sumOfMutationsOfType(m2) + inds.sumOfMutationsOfType(m3);
+        x2 = sim.mutationFrequencies(NULL, sim.mutationsOfType(m2));
+        x3 = sim.mutationFrequencies(NULL, sim.mutationsOfType(m3));
+        s2c = sim.mutationsOfType(m2).selectionCoeff;
+        s3c = sim.mutationsOfType(m3).selectionCoeff;
+        genic_m2 = 2*sum(s2c^2 * x2 * (1-x2));
+        genic_m3 = 2*sum(s3c^2 * x3 * (1-x3));
+        writeFile(stats_file,
+                  paste(c(tick, n_seed, n_plant, mean(phen), var(phen),
+                          genic_m2 + genic_m3, genic_m2, genic_m3), sep="\t"),
+                  append=T);
     }
 
     // Detect extinction.
