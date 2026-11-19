@@ -2870,28 +2870,73 @@ for(site in unique(sites)){
 
 #glm_results <- fread(output_glm)
 
-# the Savio job runs as a site array and writes one file per site, so read those
-# when the single combined table is not there
-glm_site_files <- list.files(dirname(output_glm),
-                             pattern = "^glm_quasibinomial_coef_site[0-9]+\\.txt$",
-                             full.names = TRUE)
+# plotting lives in the `glm_manhattan_kmate_all_sites` chunk below: the Savio job
+# runs as a site array and writes one file per site, which that chunk reads from
+# the newest results folder rather than from `today`'s.
+```
 
-glm_results <- if (file.exists(output_glm)) {
-  open_dataset(output_glm, format = "csv") %>%
-    filter(site == 5) %>%
-    collect()
-} else {
-  rbindlist(lapply(glm_site_files, function(f) fread(f)[site == 5]))
+## GLM Manhattan plots (kmate)
+
+The GLM job (`14_glm_kmate`) runs as a 30-task array and writes one coefficient
+table per site (~600 MB each: one row per variant per block). This chunk reads
+them from the newest results folder dated 2026-11-15 or later, adjusts p-values
+within site, and writes one Manhattan plot per site.
+
+Each site holds ~2.5 M variants, so the loop takes a while — roughly a minute of
+rendering per site — and produces one PDF per site rather than a facetted figure.
+
+```{r glm_manhattan_kmate_all_sites}
+glm_dirs <- list.dirs(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results",
+  recursive = FALSE, full.names = TRUE
+)
+glm_dirs <- glm_dirs[grepl("/[0-9]{4}-[0-9]{2}-[0-9]{2}$", glm_dirs)]
+glm_dirs <- glm_dirs[as.Date(basename(glm_dirs)) >= as.Date("2026-11-15")]
+glm_dirs <- sort(glm_dirs, decreasing = TRUE)
+
+glm_dir <- NULL
+for (d in glm_dirs) {
+  if (length(list.files(d, pattern = "^glm_quasibinomial_coef_site[0-9]+\\.txt$"))) {
+    glm_dir <- d
+    break
+  }
 }
+if (is.null(glm_dir)) {
+  stop("no glm_quasibinomial_coef_site<site>.txt in a results folder dated 2026-11-15 or later")
+}
+message("using ", glm_dir)
 
-glm_results <- glm_results %>%
-  rename(CHROM = chrom,
-         POS = pos) %>%
-  mutate(pvalue = p.adjust(p.value, method = "BH"))
+glm_files <- list.files(glm_dir, pattern = "^glm_quasibinomial_coef_site[0-9]+\\.txt$",
+                        full.names = TRUE)
+glm_sites <- as.integer(sub("^.*site([0-9]+)\\.txt$", "\\1", basename(glm_files)))
+glm_files <- glm_files[order(glm_sites)]
+glm_sites <- sort(glm_sites)
 
-glm_manhattan <- plot_manhattan(glm_results)
+cat(sprintf("%d site files\n", length(glm_files)))
 
-save_plot(glm_manhattan, "glm_manhattan_5", today, "../results", width = 7, height = 4)
+for (i in seq_along(glm_files)) {
+  this_site <- glm_sites[i]
+  print(paste("Site:", this_site, sprintf("(%d of %d)", i, length(glm_files))))
+
+  # select before collect: only four of the nine columns are needed, which keeps
+  # the per-site read to a few hundred MB instead of the full table
+  glm_site <- open_dataset(glm_files[i], format = "csv") %>%
+    select(chrom, pos, class, p.value) %>%
+    collect()
+  setDT(glm_site)
+
+  glm_site[, pvalue := p.adjust(p.value, method = "BH")]
+  glm_site[, highlight := fifelse(class == "sv", "yes", "no")]
+  setnames(glm_site, c("chrom", "pos"), c("CHROM", "POS"))
+
+  glm_manhattan <- plot_manhattan(glm_site, title = paste0("Site ", this_site))
+  save_plot(glm_manhattan,
+            paste0("glm_manhattan_kmate_site", this_site),
+            today, "../results", height = 4, width = 7)
+
+  rm(glm_site, glm_manhattan); gc(verbose = FALSE)
+}
+```
 
 
 ```
@@ -3166,6 +3211,126 @@ for(site in as.numeric(unique(sites))){
     append_table(ne_result, output_ne_kmate)
   }
 }
+```
+
+## plot Waples Fc (kmate)
+
+The Waples estimator converts Fc — the standardized variance in allele-frequency
+change — into Ne assuming every variant is neutral. When linked selection inflates
+the variance, Fc is too large and the implied Ne too small, so Fc itself is the
+interpretable quantity: it should grow as `t / (2Ne)` plus the sampling terms
+`1/S0 + 1/St` under drift alone, and any excess over that line is selection.
+
+```{r waples_fc_kmate_plot}
+# use the newest results folder from 2026-11-15 onwards that holds the table
+waples_dirs <- list.dirs(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results",
+  recursive = FALSE, full.names = TRUE
+)
+waples_dirs <- waples_dirs[grepl("/[0-9]{4}-[0-9]{2}-[0-9]{2}$", waples_dirs)]
+waples_dirs <- waples_dirs[as.Date(basename(waples_dirs)) >= as.Date("2026-11-15")]
+waples_dirs <- sort(waples_dirs, decreasing = TRUE)
+
+waples_file <- NULL
+for (d in waples_dirs) {
+  f <- file.path(d, "waples_1989_ne_kmate_esitmates.txt")
+  if (file.exists(f)) {
+    waples_file <- f
+    break
+  }
+}
+if (is.null(waples_file)) {
+  stop("no waples_1989_ne_kmate_esitmates.txt in a results folder dated 2026-11-15 or later")
+}
+message("using ", waples_file)
+
+fc_kmate <- fread(waples_file)
+
+# drift expectation: E[Fc] = t / (2 Ne) + 1/S0 + 1/St, with S0 = 10000 (seed mix)
+fc_fit <- lm(fc ~ t, data = fc_kmate)
+fc_coef <- coef(fc_fit)
+fc_slope <- unname(fc_coef["t"])
+fc_intercept <- unname(fc_coef["(Intercept)"])
+fc_ne_implied <- 1 / (2 * fc_slope)
+fc_ne_ci <- 1 / (2 * rev(confint(fc_fit)["t", ]))
+
+cat(sprintf(
+  "n = %d replicates, %d sites, t = %d-%d\nFc = %.4f + %.4f * t  -> implied Ne = %.1f (95%% CI %.1f-%.1f)\n",
+  nrow(fc_kmate), uniqueN(fc_kmate$site), min(fc_kmate$t), max(fc_kmate$t),
+  fc_intercept, fc_slope, fc_ne_implied, fc_ne_ci[1], fc_ne_ci[2]
+))
+```
+
+### Fc against generation
+
+```{r waples_fc_vs_gen}
+# drift-only expectation for a few Ne, anchored at the origin; the sampling floor
+# (1/S0 + 1/St, roughly 0.005-0.01 here) is small enough to leave off the guides
+fc_ne_ref <- data.frame(Ne = c(50, 200, 1000))
+fc_ne_ref$label <- paste("drift, Ne =", fc_ne_ref$Ne)
+
+p_fc_gen <- ggplot(fc_kmate, aes(x = t, y = fc)) +
+  geom_abline(data = fc_ne_ref,
+              aes(slope = 1 / (2 * Ne), intercept = 0, linetype = label),
+              colour = "grey45", linewidth = 0.4) +
+  geom_jitter(width = 0.12, height = 0, alpha = 0.28, size = 1.2) +
+  geom_smooth(method = "lm", formula = y ~ x, colour = "firebrick",
+              fill = "firebrick", alpha = 0.15, linewidth = 0.8) +
+  scale_linetype_manual(values = c("dotted", "dashed", "solid")) +
+  labs(x = "Generations since seed mix (t)",
+       y = expression(F[c]),
+       colour = NULL,
+       linetype = NULL,
+       title = "Standardized variance in allele frequency change",
+       subtitle = sprintf("fitted slope implies Ne = %.1f (95%% CI %.1f-%.1f)", 
+                          fc_ne_implied, fc_ne_ci[1], fc_ne_ci[2])) +
+  theme(legend.position = "top")
+
+save_plot(p_fc_gen, "waples_fc_kmate_vs_gen", today, "../results", height = 4.5, width = 6.5)
+```
+
+### Fc distribution by generation
+
+```{r waples_fc_by_gen}
+p_fc_box <- ggplot(fc_kmate, aes(x = factor(t), y = fc)) +
+  geom_violin(trim = TRUE, alpha = 0.25, colour = NA, fill = "grey30") +
+  geom_boxplot(width = 0.14, outlier.shape = NA, fill = "white", linewidth = 0.3) +
+  labs(x = "Generations since seed mix (t)",
+       y = expression(F[c])) +
+  theme(legend.position = "none")
+
+save_plot(p_fc_box, "waples_fc_kmate_by_gen", today, "../results", height = 4, width = 5)
+```
+
+### Fc by site
+
+```{r waples_fc_by_site}
+fc_site <- fc_kmate[, .(mean_fc = mean(fc),
+                        se_fc = sd(fc) / sqrt(.N),
+                        n_rep = .N,
+                        t_last = max(t)),
+                    by = site]
+
+# city labels when the location table is loaded, site numbers otherwise
+if (exists("locations_data") && "city_country" %in% names(locations_data)) {
+  fc_site <- merge(fc_site,
+                   as.data.table(locations_data)[, .(site, city_country)],
+                   by = "site", all.x = TRUE)
+  fc_site[, site_label := fifelse(is.na(city_country),
+                                  paste0("(", site, ")"),
+                                  paste0("(", site, ") ", city_country))]
+} else {
+  fc_site[, site_label := paste0("(", site, ")")]
+}
+
+p_fc_site <- ggplot(fc_site, aes(x = reorder(site_label, -mean_fc), y = mean_fc)) +
+  geom_pointrange(aes(ymin = mean_fc - 2 * se_fc, ymax = mean_fc + 2 * se_fc),
+                  size = 0.35, linewidth = 0.4) +
+  labs(x = NULL, y = expression(bar(F)[c]),
+       title = "Fc by site, averaged over replicate plots") +
+  theme(axis.text.x = element_text(angle = 75, hjust = 1))
+
+save_plot(p_fc_site, "waples_fc_kmate_by_site", today, "../results", height = 4.5, width = 8)
 ```
 
 ## gt curves - point estimates

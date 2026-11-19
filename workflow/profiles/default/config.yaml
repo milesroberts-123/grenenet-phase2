@@ -43,6 +43,13 @@ set-resources:
         runtime: "10m"
     plot_expression_bins:
         runtime: "10m"
+    # plink writes one row per variant pair, so with --ld-window 500 over 6.2 M
+    # variants the LD table is the slow step
+    plink_convert:
+        runtime: "60m"
+    plink_ld:
+        cpus_per_task: 32
+        runtime: "24h"
 
 # parallelization with threads needs to be defined separately:
 # threads and cpus_per_task are supposed to be synonymous for this plugin, but for some reason I need to specify them separately
@@ -53,3 +60,4 @@ set-threads:
     kmc_contam_db: 4
     kmc_rm_contam: 4
     bwa_mem: 4
+    plink_ld: 32

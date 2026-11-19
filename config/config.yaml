@@ -1,3 +1,9 @@
+# plink
+founder_vcf: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/greneNet_final_v1.1_chr1.recode.vcf.gz"
+plink_ld_window: 500
+plink_ld_window_kb: 1000000
+plink_ld_window_r2: 0
+
 # Simulation parameters
 sim_fasta: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/Athaliana_447_TAIR10_chr1.fa"
 

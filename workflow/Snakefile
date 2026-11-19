@@ -22,9 +22,9 @@ reads = pd.read_table(
 
 reads = reads[reads['sample'].str.contains('^S')]
 
-sampling_times = pd.read_table(
-    "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
-).set_index(["ID"], drop=False)
+#sampling_times = pd.read_table(
+#    "../config/sampling_times.tsv", sep="\t", dtype={"ID": str}
+#).set_index(["ID"], drop=False)
 
 # single-cell expression bins
 seurat_samples = [
@@ -59,6 +59,7 @@ include: "rules/fastp.smk"
 include: "rules/slim.smk"
 include: "rules/expression_bins.smk"
 include: "rules/ember.smk"
+include: "rules/plink.smk"
 #include: "rules/legacy/kmc.smk"
 #include: "rules/legacy/kmc_contam_db.smk"
 #include: "rules/legacy/kmc_rm_contam.smk"
