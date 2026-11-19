@@ -195,12 +195,12 @@ function (void)impose_selected_architecture(void) {
     catn("Architecture: " + n_avail + " standing mutations, selecting " + n_loci);
 
     // L only controls the architecture while it is small relative to the standing
-    // variation. Once it approaches that pool the run converges on "every standing
-    // variant is selected", and L stops being an independent parameter.
+    // variation. Once it takes most of that pool the run converges on "every
+    // standing variant is selected", and L stops being an independent parameter.
     if (L > n_avail) {
         catn("WARNING: L exceeds the standing variation; selecting all " + n_avail +
              " mutations");
-    } else if (n_avail > 0 & n_loci / n_avail > 0.5) {
+    } else if (n_avail > 0 & n_loci / n_avail > 0.8) {
         catn("WARNING: L = " + L + " selects " + n_loci + " of " + n_avail +
              " standing mutations (" + asInteger(100 * n_loci / n_avail) +
              "%); L is close to the standing variation, so the architecture is no" +
