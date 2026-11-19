@@ -65,6 +65,13 @@ def bank_flag(wildcards, column, default=0):
     return default if pd.isna(value) else int(value)
 
 
+def float_param(wildcards, column):
+    """Float parameter; SLiM's float-typed function arguments reject an integer
+    literal such as 0, so VA must always render with a decimal point."""
+    value = gt_params.loc[gt_params["ID"] == wildcards.ID, column].iloc[0]
+    return 0.0 if pd.isna(value) else float(value)
+
+
 def get_fasta_path(wildcards):
     # a run that simulates its own genome of size G needs no reference FASTA
     if get_simcase(wildcards) in ("wf_vcf", "bank_vcf"):
@@ -115,12 +122,11 @@ rule slim:
         N=lookup(query="ID == '{ID}'", within=gt_params, cols="N"),
         L=lookup(query="ID == '{ID}'", within=gt_params, cols="L"),
         G=lookup(query="ID == '{ID}'", within=gt_params, cols="G"),
-        VA=lookup(query="ID == '{ID}'", within=gt_params, cols="VA"),
         SIGMA=lookup(query="ID == '{ID}'", within=gt_params, cols="SIGMA"),
         TAU=lookup(query="ID == '{ID}'", within=gt_params, cols="TAU"),
         # extra parameters for non-wf sims. VA and L are shared with the wf grid:
         # L is the number of selected loci and VA the additive variance they carry
-        va=lookup(query="ID == '{ID}'", within=gt_params, cols="VA"),
+        va=lambda wildcards: float_param(wildcards, "VA"),
         #gamma=lookup(query="ID == '{ID}'", within=gt_params, cols="gamma"),
         germ_rate=lookup(query="ID == '{ID}'", within=gt_params, cols="GERM_RATE"),
         bank_surv=lookup(query="ID == '{ID}'", within=gt_params, cols="BANK_SURV"),
@@ -136,17 +142,19 @@ rule slim:
         use_vcf=lambda wildcards: bank_flag(wildcards, "USE_VCF"),
         burn=lambda wildcards: bank_flag(wildcards, "BURN"),
         vcf_path=get_vcf_path,
-        fasta_path=get_fasta_path
+        fasta_path=get_fasta_path,
+        # L is NA for VA = 0 rows (no selected loci); SLiM needs a number
+        l_loci=lambda wildcards: bank_flag(wildcards, "L")
     shell:
         """
         if [[ "wf" == "{params.type}" && "0" == "{params.use_vcf}" ]]; then
             slim -d N={params.N} \\
-                -d L={params.L} \\
+                -d L={params.l_loci} \\
                 -d G={params.G} \\
                 -d MU={params.MU} \\
                 -d R={params.R} \\
                 -d SIGMA={params.SIGMA} \\
-                -d VA={params.VA} \\
+                -d VA={params.va} \\
                 -d ID={wildcards.ID} \\
                 -d TAU={params.TAU} scripts/gt_expectations.slim
         elif [[ "wf" == "{params.type}" && "1" == "{params.use_vcf}" ]]; then
@@ -155,7 +163,7 @@ rule slim:
             echo "Port it to the VA/L architecture before enabling this branch." >&2
             exit 1
         elif [[ "bank" == "{params.type}" ]]; then
-            slim -d FASTA_FILE='"{params.fasta_path}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d G={params.G} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.L} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
+            slim -d FASTA_FILE='"{params.fasta_path}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d G={params.G} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.l_loci} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
         else
             echo "Invalid simulation type!"
         fi

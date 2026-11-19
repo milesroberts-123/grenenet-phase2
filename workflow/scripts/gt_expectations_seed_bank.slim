@@ -184,6 +184,14 @@ reproduction(p2) {
 // components share alpha, the same fraction of VA goes to each.
 
 function (void)impose_selected_architecture(void) {
+    // VA = 0 (or L = 0, which is how a VA = 0 row arrives when L is NA) means no
+    // selected architecture at all: skip before theta_L divides by zero
+    if (VA <= 0.0 | L <= 0) {
+        catn("Architecture: VA = " + VA + ", L = " + L +
+             " -> no selected loci are imposed");
+        return;
+    }
+
     n_eff   = p1.individualCount;
     theta_l = L / (0.577215664901532 + log(2*n_eff));
     alpha   = (VA > 0.0) ? sqrt(VA/theta_l) else 0.0;

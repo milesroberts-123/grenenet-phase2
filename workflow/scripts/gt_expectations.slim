@@ -23,6 +23,8 @@ function (float)ssh(float x) {
 //}
 
 function (float)target_alpha(float va, integer l, integer n){
+  // VA = 0 means no selection: return 0 rather than dividing by theta_l = 0
+  if (va <= 0.0 | l <= 0) return 0.0;
   theta_l = l/(0.577215664901532 + log(2*n));
   return sqrt(va/theta_l);
 }

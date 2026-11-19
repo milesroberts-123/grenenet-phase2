@@ -112,6 +112,17 @@ gt_nonwf_nobank_nostruc <- expand.grid(N = 1000,
 
 gt_nonwf_params <- bind_rows(gt_nonwf_bank_struc, gt_nonwf_bank_nostruc, gt_nonwf_nobank_struc, gt_nonwf_nobank_nostruc)
 
+# VA = 0 makes alpha = 0, so L (the number of selected loci) has no effect: every L
+# value yields the same neutral run. Keep one row per remaining combination and set
+# L to NA rather than simulating the same design four times.
+#
+# Only the nonWF blocks are collapsed. The wf grid is keyed by ID in the notebook
+# (params[params$ID == simid, ]), and dropping rows there would renumber the 4,800
+# wf simulations that already exist.
+gt_nonwf_params <- gt_nonwf_params[gt_nonwf_params$VA > 0 |
+                                     gt_nonwf_params$L == min(gt_nonwf_params$L), ]
+gt_nonwf_params$L[gt_nonwf_params$VA == 0] <- NA
+
 # adjust Ne based on selfing rate
 gt_wf_params$N[(gt_wf_params$adjust == T)] = as.integer(gt_wf_params$N[(gt_wf_params$adjust == T)]/(1 - gt_wf_params$SIGMA[(gt_wf_params$adjust == T)]/2))
 
