@@ -1,23 +1,29 @@
 library("dplyr")
 
-gt_wf_params <- expand.grid(
-    MU=7e-09,
-    R=8.06452e-10,
-    N=c(1000),
-    G=10e6, # high enough so that more that there are at least L mutations post-burn-in
-    L=c(1, 10, 100, 200),
-    VA=c(0, 0.001, 0.01, 0.1),
-    SIGMA=c(0, 0.1, 0.5, 0.9, 0.99),
-    TAU=10,
-    rep=1:30,
-    adjust=c(T, F),
-    # USE_VCF = 0 simulates a fresh genome and burns in de novo mutations
-    # (gt_expectations.slim); USE_VCF = 1 seeds the run from standing variation in a
-    # VCF window (gt_expectations_structured.slim). The USE_VCF = 1 rows are not
-    # wired up yet -- that script still takes tmu/alpha -- so their shell branch
-    # exits with an error; see workflow/rules/slim.smk.
-    USE_VCF=0,
-    type="wf"
+# The wf grid, for a given set of selfing rates. Used twice below so that the
+# original selfing levels keep their row positions: the notebook joins parameters
+# to results by ID (params[params$ID == simid, ]), so the wf simulations that
+# already exist must not move.
+make_wf_grid <- function(sigma) {
+    expand.grid(
+        MU=7e-09,
+        R=8.06452e-10,
+        N=c(1000),
+        G=10e6, # high enough that there are at least L mutations post burn-in
+        L=c(1, 10, 100, 200),
+        VA=c(0, 0.001, 0.01, 0.1),
+        SIGMA=sigma,
+        TAU=10,
+        rep=1:30,
+        adjust=c(T, F),
+        USE_VCF=0, # no VCF: the wf runs simulate a fresh genome and burn in
+        type="wf"
+    )
+}
+
+gt_wf_params <- bind_rows(
+    make_wf_grid(c(0, 0.05, 0.5, 0.95, 0.99)),
+    make_wf_grid(c(0.1, 0.9))          # appended, so the original run IDs are stable
 )
 
 gt_nonwf_params <- expand.grid(
@@ -25,7 +31,7 @@ gt_nonwf_params <- expand.grid(
     MU=7e-09,
     R=8.06452e-10,
     G=10e6, # simulated genome size when USE_VCF = 0
-    SIGMA=c(0, 0.1, 0.5, 0.9, 0.99),
+    SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
     VA=c(0, 0.001, 0.01, 0.1),
     L=c(1, 10, 100, 200),
     rep=1:30,
@@ -41,6 +47,12 @@ gt_nonwf_params <- expand.grid(
     adjust = c(T,F),
     USE_VCF = 0
 )
+
+# BANK_SURV = 0 is the no-seed-bank control. MIN_AGE = 1 would make every seed die
+# in storage before it becomes eligible to germinate (the population goes extinct
+# within two ticks), so those rows germinate in their birth tick and run as a
+# strict annual.
+gt_nonwf_params$MIN_AGE[gt_nonwf_params$BANK_SURV == 0] <- 0
 
 # VA = 0 makes alpha = 0, so neither L (the number of selected loci) nor
 # SURVIVAL_SELECTION (how their variance is split above / below ground) has any

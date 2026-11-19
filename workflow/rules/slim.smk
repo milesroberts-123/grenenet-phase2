@@ -165,7 +165,7 @@ rule slim:
             echo "still takes -d tmu/-d alpha, and it hardcodes 231 founders and 10 generations." >&2
             echo "Port it to the VA/L architecture before enabling this branch." >&2
             exit 1
-        elif [[ "bank" == "{params.type}" ]]; then
+        elif [[ "wf" != "{params.type}" ]]; then
             slim -d FASTA_FILE='"{params.fasta_path}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d G={params.G} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.l_loci} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
         else
             echo "Invalid simulation type!"

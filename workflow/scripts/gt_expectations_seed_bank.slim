@@ -211,7 +211,15 @@ function (void)impose_selected_architecture(void) {
         return;
     }
 
-    n_eff   = p1.individualCount;
+    // The standing variation lives in both the seed bank and the plants, and the
+    // frequencies used below pool both, so the effective sample is the whole
+    // population. Reading the bank alone breaks the annual case (BANK_SURV = 0),
+    // where every ungerminated seed dies in its birth tick and p1 is empty here.
+    n_eff   = p1.individualCount + p2.individualCount;
+    if (n_eff == 0) {
+        catn("WARNING: no individuals at the architecture step; no loci imposed");
+        return;
+    }
     theta_l = L / (0.577215664901532 + log(2*n_eff));
     alpha   = (VA > 0.0) ? sqrt(VA/theta_l) else 0.0;
 
