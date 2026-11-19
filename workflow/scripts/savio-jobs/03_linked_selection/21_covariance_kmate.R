@@ -3,8 +3,9 @@
 # Variance-covariance matrix of the full kmate increment matrix, uncorrected and
 # corrected for finite sample size.
 #
-# The full matrix is stats::cov() over all 541 interval columns, so it carries
-# every within-series, cross-replicate and cross-site covariance. The sample-size
+# The full matrix is the pairwise-complete covariance over all 893 interval
+# columns, so it carries every within-series, cross-replicate and cross-site
+# covariance. The sample-size
 # correction is then applied only to the 352 within-(site, replicate) blocks: the
 # sampling noise of two different replicates (or sites) is independent, so their
 # covariances are unbiased as they stand and correcting them would remove real
@@ -52,8 +53,53 @@ pdiffs <- fread(increments_csv)
 ts_message("increments: ", format(nrow(pdiffs), big.mark = ","), " rows x ",
            ncol(pdiffs), " interval columns")
 
-ts_message("computing covariances (pairwise complete) ...")
-covmat <- stats::cov(pdiffs, use = "pairwise.complete.obs")
+ts_message("computing covariances (pairwise complete, chunked) ...")
+
+# stats::cov() cannot be used here: 6,207,205 x 893 doubles is a long vector
+# (> 2^31 elements) and cov.c has no long-vector support ("long vectors not
+# supported yet"). BLAS is int-indexed as well, so crossprod() over the whole
+# matrix fails the same way. Accumulate the pairwise-complete covariance over
+# row chunks instead:
+#
+#   cov_ij = (sum_ij x_i x_j - (sum_ij x_i)(sum_ij x_j)/n_ij) / (n_ij - 1)
+#
+# where sum_ij and n_ij are restricted to the rows where both columns are
+# present, which is what use = "pairwise.complete.obs" computes.
+p_int  <- ncol(pdiffs)
+ints   <- colnames(pdiffs)
+acc_xy <- matrix(0, p_int, p_int)   # sum of x_i x_j over shared rows
+acc_x  <- matrix(0, p_int, p_int)   # sum of x_i over rows where x_j is present
+acc_n  <- matrix(0, p_int, p_int)   # shared-row counts
+chunk  <- 200000L
+starts <- seq.int(1L, nrow(pdiffs), by = chunk)
+
+for (k in seq_along(starts)) {
+  idx <- starts[k]:min(starts[k] + chunk - 1L, nrow(pdiffs))
+  # pdiffs is a data.table (fread), so a single index selects rows; a plain
+  # matrix would be linear-indexed here, so fail loudly instead of silently
+  # building a one-column chunk
+  x <- as.matrix(pdiffs[idx])
+  if (ncol(x) != p_int) {
+    stop("chunk extraction returned ", ncol(x), " of ", p_int,
+         " columns; pdiffs must be a data.table")
+  }
+  present <- !is.na(x)
+  x[!present] <- 0                 # NA -> 0 makes every sum "both present"
+  storage.mode(present) <- "double"
+
+  acc_xy <- acc_xy + crossprod(x)
+  acc_x  <- acc_x + crossprod(x, present)
+  acc_n  <- acc_n + crossprod(present)
+
+  if (k %% 5L == 0L) {
+    ts_message("  chunk ", k, " of ", length(starts))
+    gc(verbose = FALSE)
+  }
+}
+
+covmat <- (acc_xy - acc_x * t(acc_x) / acc_n) / (acc_n - 1)
+dimnames(covmat) <- list(ints, ints)
+rm(acc_xy, acc_x, acc_n); gc(verbose = FALSE)
 rm(pdiffs); gc(verbose = FALSE)
 
 # written with the interval names as an explicit first column so a later

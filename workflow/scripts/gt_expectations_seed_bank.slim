@@ -59,7 +59,7 @@ initialize() {
     initializeMutationTypeNuc("m3", 0.5, "f", 0.0);
     m1.convertToSubstitution = T;
 
-    if(STRUCTURE == 1) {
+    if(USE_VCF == 1) {
         initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
     } else {
         mut_props = c(1.0, (TMU/NMU)*SURVIVAL_SELECTION, (TMU/NMU)*(1-SURVIVAL_SELECTION));
@@ -81,7 +81,7 @@ initialize() {
 
 reproduction(p2) {
     //catn("Individual fitness: " + individual.fitnessScaling);
-    if(STRUCTURE == 0 & sim.cycle <= BURN){
+    if(USE_VCF == 0 & sim.cycle <= BURN){
         REALIZED_FITNESS = N_OFFSPRING;
     } else {
         REALIZED_FITNESS = pmax(0.0, N_OFFSPRING*(1 + individual.sumOfMutationsOfType(m3)));
@@ -118,7 +118,7 @@ reproduction(p2) {
     catn("  SIM_LENGTH  = " + SIM_LENGTH);
     catn("  SIGMA       = " + SIGMA);
     catn("  ALPHA       = " + ALPHA);
-    catn("  STRUCTURE   = " + STRUCTURE);
+    catn("  USE_VCF     = " + USE_VCF);
     catn("  BURN        = " + BURN);
     catn("=====================================");
 
@@ -130,7 +130,7 @@ reproduction(p2) {
     
     catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
 
-    if (STRUCTURE == 1) {
+    if (USE_VCF == 1) {
          catn("Tick 1: Creating initial seed bank WITH population structure.");
         // Load standing genetic variation from VCF into seed storage.
         p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
@@ -254,7 +254,7 @@ s1 300 early() {
     if (seed_remaining.size() > 0) {
         // catn("Tick " + sim.cycle + ": " + "Mean seed fitness: " + mean(seed_m2_effect_sum));
         // Default annual survival for individuals within the viable age range.
-        if(STRUCTURE == 0 & sim.cycle <= BURN){
+        if(USE_VCF == 0 & sim.cycle <= BURN){
             seed_remaining.fitnessScaling = BANK_SURV; // during burn-in just apply base survival
         } else {
             seed_remaining.fitnessScaling = pmax(0.0, pmin(1.0, BANK_SURV + seed_m2_effect_sum));
@@ -283,11 +283,11 @@ s2 300 late() {
     n_seed  = p1.individualCount;
     n_plant = p2.individualCount;
 
-    if(STRUCTURE == 1){
+    if(USE_VCF == 1){
         write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
     }
 
-    if((STRUCTURE == 0) & (tick >= BURN+1)){
+    if((USE_VCF == 0) & (tick >= BURN+1)){
         write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
     }
 
@@ -329,7 +329,7 @@ s2 300 late() {
     }
 
     // End of scheduled run.
-    if(STRUCTURE == 0){
+    if(USE_VCF == 0){
         if(tick >= BURN+1+SIM_LENGTH){
             catn("=== Simulation reached tick " + tick + " – finished. ===");
             sim.simulationFinished();
