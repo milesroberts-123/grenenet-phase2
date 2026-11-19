@@ -65,6 +65,13 @@ def bank_flag(wildcards, column, default=0):
     return default if pd.isna(value) else int(value)
 
 
+def get_fasta_path(wildcards):
+    # a run that simulates its own genome of size G needs no reference FASTA
+    if get_simcase(wildcards) in ("wf_vcf", "bank_vcf"):
+        return config["sim_fasta"]
+    return "none"
+
+
 def get_vcf_path(wildcards):
     if bank_flag(wildcards, "USE_VCF") == 0:
         return "none"   # never read, but SLiM needs the string constant defined
@@ -88,7 +95,15 @@ rule slim:
                 "bank_novcf": []
             }
             ),
-        fasta = config["sim_fasta"]
+        fasta = branch(
+            get_simcase,
+            cases={
+                "wf_novcf": [],
+                "wf_vcf": (config["sim_fasta"]),
+                "bank_vcf": (config["sim_fasta"]),
+                "bank_novcf": []
+            }
+            ),
     output:
         "slim_results/{ID}_neutfreqs.tsv"
     conda:
@@ -120,7 +135,8 @@ rule slim:
         # burns in for BURN generations with the selected mutation types neutral
         use_vcf=lambda wildcards: bank_flag(wildcards, "USE_VCF"),
         burn=lambda wildcards: bank_flag(wildcards, "BURN"),
-        vcf_path=get_vcf_path
+        vcf_path=get_vcf_path,
+        fasta_path=get_fasta_path
     shell:
         """
         if [[ "wf" == "{params.type}" && "0" == "{params.use_vcf}" ]]; then
@@ -139,7 +155,7 @@ rule slim:
             echo "Port it to the VA/L architecture before enabling this branch." >&2
             exit 1
         elif [[ "bank" == "{params.type}" ]]; then
-            slim -d FASTA_FILE='"{input.fasta}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.L} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
+            slim -d FASTA_FILE='"{params.fasta_path}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d G={params.G} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.L} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
         else
             echo "Invalid simulation type!"
         fi

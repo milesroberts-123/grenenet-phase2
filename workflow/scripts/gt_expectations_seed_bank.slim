@@ -30,7 +30,7 @@
 //  VCF REQUIREMENTS
 //  ----------------
 //  The VCF must contain exactly N_VCF diploid individuals (2*N_VCF haplotypes).
-//  All SNP positions must be <= CHROM_LEN.
+//  All SNP positions must lie within the reference sequence read from the FASTA.
 // ============================================================================
 
 // Started by borrowing code from Vince Buffalo and modifying/updating it to
@@ -46,28 +46,38 @@ function (void)write_freqs(string file, object<Subpopulation> subpop,
 initialize() {
 
     initializeSLiMModelType("nonWF");
-    initializeSLiMOptions(nucleotideBased=T);
-    length = initializeAncestralNucleotides(FASTA_FILE);
-    defineConstant("CHROM_LEN", length);
-    // ── Genetic architecture ─────────────────────────────────────────────────
+    // ── Genome ───────────────────────────────────────────────────────────────
+    // USE_VCF = 1: a real chromosome sequence read from the FASTA, nucleotide
+    // based, with every variant coming from the VCF (no new mutations).
+    // USE_VCF = 0: a simulated genome of G sites, non-nucleotide, in which
+    // mutations accumulate de novo during the burn-in -- the same genome model
+    // as gt_expectations.slim uses for the wf simulations.
+    if (USE_VCF == 1) {
+        initializeSLiMOptions(nucleotideBased=T);
+        // the genome is the reference sequence, so its size comes from the FASTA
+        // and G is not used on this path
+        chr_len = initializeAncestralNucleotides(FASTA_FILE);
+        initializeMutationTypeNuc("m1", 0.5, "f", 0.0);
+        initializeMutationTypeNuc("m2", 0.5, "f", 0.0);
+        initializeMutationTypeNuc("m3", 0.5, "f", 0.0);
+        initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
+    } else {
+        // simulated genome: G is the genome size, as in gt_expectations.slim
+        chr_len = asInteger(G);
+        initializeMutationRate(NMU);
+        initializeMutationType("m1", 0.5, "f", 0.0);
+        initializeMutationType("m2", 0.5, "f", 0.0);
+        initializeMutationType("m3", 0.5, "f", 0.0);
+        initializeGenomicElementType("g1", m1, 1.0);
+    }
+
     // convertToSubstitution must be set explicitly to T in nonWF models
     // (it defaults to F, unlike WF models, because absolute fitness values
     // in nonWF models make it generally unsafe to remove fixed mutations
     // automatically — see SLiM Manual §25.5).
-    initializeMutationTypeNuc("m1", 0.5, "f", 0.0);
-    initializeMutationTypeNuc("m2", 0.5, "f", 0.0);
-    initializeMutationTypeNuc("m3", 0.5, "f", 0.0);
     m1.convertToSubstitution = T;
 
-    // Every new mutation is neutral. The selected architecture is imposed once,
-    // from the standing variation present at that moment, by
-    // impose_selected_architecture() -- exactly as the wf simulations do.
-    if(USE_VCF == 1) {
-        initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(0.0));
-    } else {
-        initializeGenomicElementType("g1", m1, 1.0, mmJukesCantor(NMU/3));
-    }
-    initializeGenomicElement(g1, 0, CHROM_LEN-1);
+    initializeGenomicElement(g1, 0, chr_len - 1);
     initializeRecombinationRate(R);
 }
 
