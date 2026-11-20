@@ -4,27 +4,20 @@ library("dplyr")
 # original selfing levels keep their row positions: the notebook joins parameters
 # to results by ID (params[params$ID == simid, ]), so the wf simulations that
 # already exist must not move.
-make_wf_grid <- function(sigma) {
-    expand.grid(
+gt_wf_params <- expand.grid(
         MU=7e-09,
         R=8.06452e-10,
         N=c(1000),
         G=10e6, # high enough that there are at least L mutations post burn-in
         L=c(1, 10, 100, 200),
         VA=c(0, 0.001, 0.01, 0.1),
-        SIGMA=sigma,
+        SIGMA=c(0, 0.05, 0.5, 0.95, 0.99),
         TAU=10,
         rep=1:30,
         adjust=c(T, F),
         USE_VCF=0, # no VCF: the wf runs simulate a fresh genome and burn in
         type="wf"
     )
-}
-
-gt_wf_params <- bind_rows(
-    make_wf_grid(c(0, 0.05, 0.5, 0.95, 0.99)),
-    make_wf_grid(c(0.1, 0.9))          # appended, so the original run IDs are stable
-)
 
 gt_nonwf_params <- expand.grid(
     N = 1000,
