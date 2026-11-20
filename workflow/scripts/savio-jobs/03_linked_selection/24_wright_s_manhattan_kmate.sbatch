@@ -21,5 +21,7 @@
 # requires rventures >= 3.5.0 (wright_s_estim(components =), plot_manhattan(plot_effects =))
 module load r
 
-# first argument: the results date whose wright_s_estim_site<site>.csv get plotted
-Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/24_wright_s_manhattan_kmate.R "${1:-$(date +%F)}" "${SLURM_ARRAY_TASK_ID}"
+# first argument: the results date holding wright_s_estim_site<site>.csv, or
+# "latest" (the default) to use the newest date folder that has them -- an array
+# stamps results with the date its tasks start, which is not necessarily today
+Rscript --no-save /global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/scripts/savio-jobs/03_linked_selection/24_wright_s_manhattan_kmate.R "${1:-latest}" "${SLURM_ARRAY_TASK_ID}"

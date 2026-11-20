@@ -28,12 +28,30 @@ ts_message <- function(...) {
 }
 
 args <- commandArgs(trailingOnly = TRUE)
-if (length(args) < 2L) stop("expected <s_date> <task_index>")
+if (length(args) < 2L) stop("expected <s_date|latest> <task_index>")
 s_date <- args[[1]]
 task <- suppressWarnings(as.integer(args[[2]]))
 
 results_root <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/"
-s_dir <- paste0(results_root, s_date, "/")
+
+# "latest" resolves to the newest date folder that actually holds s tables. A job
+# array stamps results with the date each task starts, and a long estimation run
+# can start before midnight and finish after it, so a hard-coded or defaulted date
+# silently points at an empty folder.
+if (identical(s_date, "latest")) {
+  candidates <- list.dirs(results_root, recursive = FALSE, full.names = TRUE)
+  candidates <- sort(candidates[grepl("[0-9]{4}-[0-9]{2}-[0-9]{2}$", candidates)],
+                     decreasing = TRUE)
+  has_files <- vapply(candidates, function(d) {
+    length(list.files(d, pattern = "^wright_s_estim_site[0-9]+\\.csv$")) > 0L
+  }, logical(1))
+  if (!any(has_files)) stop("no results folder under ", results_root, " holds s tables")
+  s_dir <- candidates[which(has_files)[1]]
+  s_dir <- paste0(s_dir, "/")
+  ts_message("date 'latest' -> ", basename(s_dir))
+} else {
+  s_dir <- paste0(results_root, s_date, "/")
+}
 
 files <- list.files(s_dir, pattern = "^wright_s_estim_site[0-9]+\\.csv$",
                     full.names = TRUE)
