@@ -2271,6 +2271,13 @@ Outputs, all 8,536,388 records in genomic order:
 | `..._trays.csv` | 893 pool columns, named `site_generation_plot` |
 | `..._variant_info.csv` | `chrom,pos,class,ref_len,alt_len,n_called` |
 
+Per-analysis tables written by the site arrays (one file per site):
+
+| file | contents |
+|---|---|
+| `glm_quasibinomial_coef_site<site>.txt` | per-variant quasibinomial slope on generation |
+| `wright_s_estim_site<site>.csv` | per-variant selection coefficient by segment |
+
 ```{r merge_kmate_arch3v2}
 af_tmp  <- paste0(dirname(af_prefix), "/kmate_arch3v2_merge_tmp")
 af_done <- paste0(af_prefix, "_trays.csv.done")
@@ -2873,6 +2880,137 @@ for(site in unique(sites)){
 # plotting lives in the `glm_manhattan_kmate_all_sites` chunk below: the Savio job
 # runs as a site array and writes one file per site, which that chunk reads from
 # the newest results folder rather than from `today`'s.
+```
+
+## Selection coefficients (kmate)
+
+`rventures::wright_s_estim()` is the first-order approximation to the
+Mathieson & McVean (2013) maximum-likelihood estimator of a constant selection
+coefficient from an allele-frequency time series: for frequencies `f` sampled at
+`dt`-generation intervals it returns `2(f_T - f_0) / (dt * sum f_t(1 - f_t))`,
+the scale used by `fitfreq()` and `WF_sel()` (fitnesses `1`, `1 + s/2`, `1 + s`).
+The estimator uses only the first and last frequencies in the numerator; the
+intermediate ones enter through the denominator.
+
+Two properties of the kmate data shape how it is applied:
+
+1. **Replicates.** Each site is sampled as several pools per generation
+   (`site_generation_plot` columns), so every pool is its own trajectory. Called
+   with `components = TRUE`, the function returns the numerator and denominator
+   separately, which allows the pools to be combined as a ratio of averages,
+   `sum(numerator) / sum(denominator)`, instead of an average of ratios.
+2. **Gaps.** Sites are not sampled in every generation. A missing generation
+   truncates the trajectory rather than being bridged, so each variant is
+   estimated once per contiguous run of generations, with `dt` equal to that
+   run's span. The seedmix is generation 0 and is prepended to any run that
+   starts at generation 1.
+
+Variants whose trajectory starts at or below a minor allele frequency of 0.05
+are ignored (symmetrically, so a start at or above 0.95 is ignored too); so are
+trajectories containing a missing value or an absorbing frequency.
+
+The estimation itself runs as the `23_wright_s_estim_kmate` site array
+(`workflow/scripts/savio-jobs/03_linked_selection/`), one 64 GB task per site,
+writing `results/<date>/wright_s_estim_site<site>.csv`. The chunk below mirrors it
+for a single site so the logic can be inspected without the cluster.
+
+```{r wright_s_estim_kmate}
+# Estimation logic for one site. The site array job
+# (23_wright_s_estim_kmate.R) runs exactly this function, once per task; here it
+# is exercised on one site chosen by hand.
+#
+# Requires an rventures build with wright_s_estim(components = TRUE).
+
+estimate_site <- function(freq, seedmix, min_start_maf = 0.05) {
+  cols <- colnames(freq)
+  site_prefix <- sub("_[0-9]+_[0-9]+$", "", cols[1L])
+  parts <- strsplit(cols, "_", fixed = TRUE)
+  gen <- as.integer(vapply(parts, `[`, character(1), 2L))
+  rep <- as.integer(vapply(parts, `[`, character(1), 3L))
+
+  pieces <- list()
+
+  for (r in sort(unique(rep))) {
+    gens_r <- sort(unique(gen[rep == r]))
+    runs <- split(gens_r, cumsum(c(1L, diff(gens_r) > 1L)))
+
+    for (run in runs) {
+      # the seedmix is generation 0 and belongs only to a run starting at 1
+      use_seed <- min(run) == 1L
+      seg_start <- if (use_seed) 0L else min(run)
+      seg_end <- max(run)
+      dt <- seg_end - seg_start
+      if (dt < 1L) next
+
+      seg_cols <- paste0(site_prefix, "_", run, "_", r)
+      m <- as.matrix(freq[, seg_cols, drop = FALSE])
+      if (use_seed) m <- cbind(seedmix, m)
+
+      p_start <- m[, 1L]
+      keep <- !is.na(p_start) &
+        p_start > min_start_maf & p_start < (1 - min_start_maf)
+      keep <- keep & stats::complete.cases(m)
+      if (any(keep)) {
+        keep[keep] <- rowSums(m[keep, , drop = FALSE] <= 0 |
+                                m[keep, , drop = FALSE] >= 1) == 0L
+      }
+      if (!any(keep)) next
+
+      ms <- m[keep, , drop = FALSE]
+      comp <- lapply(seq_len(nrow(ms)), function(i) {
+        suppressWarnings(wright_s_estim(ms[i, ], dt = dt, components = TRUE))
+      })
+
+      pieces[[length(pieces) + 1L]] <- data.table(
+        idx = which(keep),
+        seg_start = seg_start, seg_end = seg_end, dt = dt, rep = r,
+        numerator = vapply(comp, `[[`, numeric(1), "numerator"),
+        denominator = vapply(comp, `[[`, numeric(1), "denominator")
+      )
+    }
+  }
+
+  if (length(pieces) == 0L) return(NULL)
+  per_rep <- rbindlist(pieces)
+  out <- per_rep[, .(n_obs = .N, sum_num = sum(numerator),
+                     sum_den = sum(denominator)),
+                 by = .(idx, seg_start, seg_end, dt)]
+  out[, s := sum_num / sum_den]
+  out[]
+}
+
+# one site, for inspection; the array job covers all of them
+s_estim_site <- sort(as.integer(unique(gsub("_.*", "", colnames(hapfire)))))[1]
+
+hap_site_s <- hapfire %>%
+  dplyr::select(starts_with(paste0(s_estim_site, "_"))) %>%
+  collect() %>%
+  as.data.frame()
+
+s_estim <- estimate_site(hap_site_s, gen0$X0_0_0)
+head(s_estim)
+```
+
+```{r wright_s_estim_summary}
+# assemble the per-site files written by the 23_wright_s_estim_kmate array
+s_files <- list.files(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results",
+  pattern = "^wright_s_estim_site[0-9]+\\.csv$", recursive = TRUE, full.names = TRUE
+)
+# keep the newest copy of each site file (array reruns land in a later date folder)
+s_files <- s_files[order(file.mtime(s_files))]
+s_files <- s_files[!duplicated(sub(".*_site([0-9]+)\\.csv$", "\\1", s_files), fromLast = TRUE)]
+
+s_estim_all <- rbindlist(lapply(s_files, fread))
+
+# distribution of s by variant class, longest segment of each variant
+s_longest <- s_estim_all[order(chrom, pos, -dt)][, .SD[1], by = .(chrom, pos, class)]
+
+ggplot(s_longest, aes(x = class, y = s)) +
+  geom_violin(fill = "grey85", colour = NA) +
+  geom_boxplot(width = 0.12, outlier.shape = NA) +
+  coord_cartesian(ylim = quantile(s_longest$s, c(0.01, 0.99), na.rm = TRUE)) +
+  labs(x = "variant class", y = "estimated s")
 ```
 
 ## GLM Manhattan plots (kmate)
