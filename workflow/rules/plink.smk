@@ -26,6 +26,11 @@ rule plink_ld:
         plink_ld_window = config["plink_ld_window"] + 1,
         plink_ld_window_kb = config["plink_ld_window_kb"],
         plink_ld_window_r2 = config["plink_ld_window_r2"],
+        # frequency and missingness filters: see config.yaml. Applied here rather
+        # than in plink_convert so the converted bfile stays a faithful record of
+        # the founder VCF, and so changing a threshold reruns only the LD step.
+        plink_maf = config["plink_maf"],
+        plink_geno = config["plink_geno"],
         out = "results/plink/greneNet"
     threads: 32
     conda: "../envs/plink2.yaml"
@@ -35,6 +40,9 @@ rule plink_ld:
     # variants in each pair so the sign can be realigned to the allele the model
     # carries. --ld-window-r2 filters |r| >= sqrt(threshold), so 0 keeps every pair;
     # --ld-window-kb must be raised explicitly because plink2 defaults to 1000 kb.
+    # --maf/--geno drop rare and low-coverage variants before correlating: a rare
+    # variant's r^2 is dominated by sampling noise, which inflates the 1/n floor of
+    # the LD decay curve and biases its fit.
     shell:
         r"""
         plink2 --bfile {params.bfile} \
@@ -42,6 +50,8 @@ rule plink_ld:
                --ld-window {params.plink_ld_window} \
                --ld-window-kb {params.plink_ld_window_kb} \
                --ld-window-r2 {params.plink_ld_window_r2} \
+               --maf {params.plink_maf} \
+               --geno {params.plink_geno} \
                --threads {threads} \
                --out {params.out}
         """

@@ -3,6 +3,13 @@ founder_vcf: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase
 plink_ld_window: 500
 plink_ld_window_kb: 1000000
 plink_ld_window_r2: 0
+# LD is only meaningful for variants common enough to estimate a correlation.
+# A pair's sampling floor is set by its rarer member, so rare variants inflate the
+# floor of the decay curve (r^2 = 1/n + C exp(-4 Ne c d)) and blur the sign of r.
+# 0.05 in the 231 founder lines is ~12 carriers. geno is the per-variant
+# missingness ceiling.
+plink_maf: 0.05
+plink_geno: 0.1
 
 # Simulation parameters
 sim_fasta: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/resources/Athaliana_447_TAIR10_chr1.fa"

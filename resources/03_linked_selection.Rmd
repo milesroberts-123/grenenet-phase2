@@ -5289,8 +5289,15 @@ The chunk above fits Hill–Weir separately in every 15 kb block, which is why i
 distance, and fits once — the usual way an LD decay curve is estimated.
 
 The input is the plink2 `.vcor` from the `plink_all` workflow target: signed
-correlations between founder genotypes, one row per pair. Aggregating a file this
+correlations between founder genotypes, one row per pair. Variants are filtered to
+MAF >= 0.05 and per-variant missingness <= 0.1 (`plink_maf`/`plink_geno` in
+`config/config.yaml`) because a rare variant's r^2 is dominated by sampling noise,
+which inflates the 1/n floor of the fitted decay curve. Aggregating a file this
 size takes minutes, so the bins are cached and only recomputed when missing.
+
+Note that the curve should be read as a mixture: the 231 founders are a globally
+structured sample, so r^2 combines within-population LD with structure-driven
+association at all distances.
 
 ```{r, ld_decay_plink}
 ld_vcor <- "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/plink/greneNet.vcor"
