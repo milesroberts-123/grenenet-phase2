@@ -2911,7 +2911,11 @@ trajectories containing a missing value or an absorbing frequency.
 
 The estimation itself runs as the `23_wright_s_estim_kmate` site array
 (`workflow/scripts/savio-jobs/03_linked_selection/`), one 64 GB task per site,
-writing `results/<date>/wright_s_estim_site<site>.csv`. The chunk below mirrors it
+writing `results/<date>/wright_s_estim_site<site>.csv`. Per-site Manhattan plots
+of the coefficients come from `24_wright_s_manhattan_kmate` (same folder), which
+keeps each variant's longest segment, clips the |s| tail at the site's 99th
+percentile and passes the signed coefficient to
+`rventures::plot_manhattan(plot_effects = TRUE)` The chunk below mirrors it
 for a single site so the logic can be inspected without the cluster.
 
 ```{r wright_s_estim_kmate}
@@ -3011,6 +3015,16 @@ ggplot(s_longest, aes(x = class, y = s)) +
   geom_boxplot(width = 0.12, outlier.shape = NA) +
   coord_cartesian(ylim = quantile(s_longest$s, c(0.01, 0.99), na.rm = TRUE)) +
   labs(x = "variant class", y = "estimated s")
+
+# one site's Manhattan, as written by the 24_wright_s_manhattan_kmate array
+s_png <- list.files(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results",
+  pattern = "^wright_s_manhattan_kmate_site[0-9]+\\.png$", recursive = TRUE,
+  full.names = TRUE
+)
+if (length(s_png)) {
+  include_graphics(s_png[order(file.mtime(s_png))][length(s_png)])
+}
 ```
 
 ## GLM Manhattan plots (kmate)
