@@ -9,9 +9,8 @@
 # denominator, i.e. the most informative), and the y axis is the signed
 # coefficient on a linear scale via rventures::plot_manhattan(plot_effects = TRUE).
 #
-# The raw estimates have a long right tail: even with the starting-MAF filter a
-# two-point segment can return |s| in the tens, so points beyond the site's 99th
-# percentile of |s| are dropped and the cut is stated in the title.
+# Every finite estimate is plotted: no quantile clip and no |s| threshold, so the
+# axis spans the full estimated range including the noisy two-point tails.
 #
 # Usage: Rscript 24_wright_s_manhattan_kmate.R <s_date> <task_index>
 #   s_date:     results folder holding wright_s_estim_site<site>.csv
@@ -82,20 +81,20 @@ ts_message("variants: ", format(nrow(s_site), big.mark = ","))
 finite_s <- s_site[is.finite(s)]
 if (!nrow(finite_s)) stop("site ", this_site, ": no finite s")
 
-clip <- as.numeric(stats::quantile(abs(finite_s$s), 0.99, names = FALSE))
-s_plot <- finite_s[abs(s) <= clip]
+s_plot <- finite_s
 setnames(s_plot, c("chrom", "pos"), c("CHROM", "POS"))
 s_plot <- as.data.frame(s_plot)
 
 ts_message("plotted ", format(nrow(s_plot), big.mark = ","),
-           " variants | |s| <= ", signif(clip, 3))
+           " variants | s range ", signif(min(s_plot$s), 3), " .. ",
+           signif(max(s_plot$s), 3))
 
 ## ---- plot ---------------------------------------------------------------
 man <- plot_manhattan(
   s_plot,
   plot_effects = TRUE,
   effect_col = "s",
-  title = paste0("Site ", this_site, ", |s| <= ", signif(clip, 2), " kept (99%)"),
+  title = paste0("Site ", this_site),
   ylab = "selection coefficient (s)"
 )
 
