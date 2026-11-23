@@ -9,10 +9,13 @@ rule bcftools_random:
     conda:
         "../envs/bcftools.yaml"
     params:
-        L=lookup(query="ID == '{ID}'", within=gt_params, cols="L")
+        # window length in bp. G, not L: L is the number of selected loci since the
+        # VA/L reparameterisation, and a 1-200 bp window holds no founder variants.
+        # int: bedtools -l takes an integer, and G is stored as 10e6
+        window=lambda wildcards: bank_flag(wildcards, "G")
     shell:
         """
-        bedtools random -l {params.L} -n 1 -g {input.fasta}.fai > {output.bed}
+        bedtools random -l {params.window} -n 1 -g {input.fasta}.fai > {output.bed}
         bcftools view -R {output.bed} -o {output.vcf} {input.vcf}
         """
 
