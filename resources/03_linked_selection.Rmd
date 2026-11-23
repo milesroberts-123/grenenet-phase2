@@ -776,6 +776,8 @@ clim_annual <- climate_sites_yearly %>%
   left_join(gen_year, by = "year") %>%
   arrange(site, year)
 
+clim_baseline
+
 cat(sprintf("TerraClimate data: %d sites, years %s\n",
             length(unique(clim_annual$site)),
             paste(sort(unique(clim_annual$year)), collapse = ", ")))
@@ -3977,13 +3979,13 @@ af_sum_by_site <- af_cov |>
 ggplot(af_sum_by_site, aes(x = i, y = j, fill = prop_neg_cov)) +
   geom_tile() +
   scale_fill_scico(direction = -1, end = 0.95, begin = 0.05, palette = "devon", n.breaks = 3) +
-  geom_text(aes(label = signif(prop_neg_cov, 2)), color = "orange") +
+  geom_text(aes(label = round(prop_neg_cov, 2)), color = "orangered") +
   facet_wrap(~site) +
   theme(legend.position = "top", legend.title.position = "top") +
   #scale_fill_continuous() +
   labs(x = "Generation i", y = "Generation j", fill = "Proportion\nCov(\u0394pi, \u0394pj)<0")
 
-ggsave(paste0("../results/by-date/", today, "/neg_cov_summary_heatmap_by_site.pdf"), width = 9, height = 9, device = cairo_pdf)
+ggsave(paste0("../results/by-date/", today, "/neg_cov_summary_heatmap_by_site.pdf"), width = 10, height = 9.5, device = cairo_pdf)
 
 ```
 
@@ -4836,6 +4838,215 @@ ggsave(paste0("../results/by-date/", today, "/af_scatter_p0_by_gen.pdf"),
        width = 12, height = 3, device = cairo_pdf)
 ```
 
+# Climate fluctations and negative covariances
+
+## Get terraclimate yearly values during experiment vs pre-2000 baseline
+
+```{r terraclim}
+## ---- TerraClimate bio1: yearly 2018-2023 + pre-2000 baseline ----
+## THREDDS NCSS on the aggregated v1.1 files; no NetCDF/QBMS needed.
+## NCSS returns packed int16: unpack with value * 0.01 - 99.
+
+cache_dir <- "../results/terraclimate"
+dir.create(cache_dir, showWarnings = FALSE)
+
+tc_monthly <- function(var, lon, lat, from, to) {
+  key <- file.path(cache_dir, sprintf("%s_%.4f_%.4f_%s_%s.rds",
+                                      var, lat, lon, from, to))
+  if (file.exists(key)) return(readRDS(key))
+  url <- sprintf(paste0(
+    "https://thredds.northwestknowledge.net/thredds/ncss/grid/",
+    "agg_terraclimate_%s_1950_CurrentYear_GLOBE.nc",
+    "?var=%s&latitude=%.4f&longitude=%.4f",
+    "&time_start=%sT00:00:00Z&time_end=%sT23:59:59Z&accept=csv"),
+    var, var, lat, lon, from, to)
+  txt <- system2("curl", c("-sSf", shQuote(url)), stdout = TRUE)
+  if (length(txt) < 2) stop("NCSS request failed: ", url)
+  x <- read.csv(text = txt)
+  v <- x[[4]] * 0.01 - 99          # unpack
+  v[v < -100] <- NA                # _FillValue -32768 -> -426.68
+  out <- data.frame(time = x[[1]], value = v)
+  saveRDS(out, key)
+  out
+}
+
+tc_bio1_months <- function(lon, lat, from, to) {
+  tx <- tc_monthly("tmax", lon, lat, from, to)
+  tn <- tc_monthly("tmin", lon, lat, from, to)
+  stopifnot(nrow(tx) == nrow(tn), all(tx$time == tn$time))
+  data.frame(time = tx$time, bio1_month = (tx$value + tn$value) / 2)
+}
+
+tc_bio1_baseline <- function(lon, lat, from = "1958-01-01", to = "1999-12-31") {
+  m <- tc_bio1_months(lon, lat, from, to)
+  data.frame(bio1_baseline = mean(m$bio1_month, na.rm = TRUE),
+             n_months = sum(!is.na(m$bio1_month)))
+}
+
+tc_bio1_yearly <- function(lon, lat, from = "2018-01-01", to = "2023-12-31") {
+  m <- tc_bio1_months(lon, lat, from, to)
+  m$year <- as.integer(substr(m$time, 1, 4))
+  y <- do.call(rbind, lapply(split(m, m$year), function(z) data.frame(
+    year = as.integer(z$year[1]),
+    bio1 = mean(z$bio1_month, na.rm = TRUE),
+    n_months = sum(!is.na(z$bio1_month))
+  )))
+  rownames(y) <- NULL
+  y
+}
+
+load("../data/locations_data.rda")   # 44 sites: site, longitude, latitude
+sites <- locations_data[, c("site", "longitude", "latitude")]
+
+base_list <- vector("list", nrow(sites))
+year_list <- vector("list", nrow(sites))
+for (i in seq_len(nrow(sites))) {
+  s <- sites[i, ]
+  cat(sprintf("[%2d/%2d] site %s (%.3f, %.3f)\n",
+              i, nrow(sites), s$site, s$longitude, s$latitude))
+  base_list[[i]] <- data.frame(site = s$site,
+                               tc_bio1_baseline(s$longitude, s$latitude))
+  year_list[[i]] <- data.frame(site = s$site,
+                               tc_bio1_yearly(s$longitude, s$latitude))
+}
+
+baseline <- do.call(rbind, base_list)
+yearly   <- do.call(rbind, year_list)
+
+write.table(baseline, "../results/terraclimate/bio1_baseline_1958_1999.tsv",
+            sep = "\t", row.names = FALSE, quote = FALSE)
+write.table(yearly, "../results/terraclimate/bio1_yearly_2018_2023.tsv",
+            sep = "\t", row.names = FALSE, quote = FALSE)
+
+clim_anom <- merge(yearly, baseline, by = "site")
+clim_anom$anom_pre2000 <- clim_anom$bio1 - clim_anom$bio1_baseline
+
+## checks: 44 sites, 6 years each, no failed cells
+stopifnot(nrow(baseline) == 44,
+          all(baseline$n_months == 504),
+          nrow(yearly) == 44 * 6,
+          all(yearly$n_months == 12))
+summary(clim_anom$anom_pre2000)
+```
+
+## compare climate anomalies to negative covariance
+
+```{r neg_cov_by_terraclim_anom}
+# Generations 1-5 → years 2018-2022
+# Transition 0->1 uses P0 (common seed stock, no site climate), skip it for climate
+# Allele transitions: 0->1, 1->2, 2->3, 3->4, 4->5
+# Climate transitions: 1->2, 2->3, 3->4, 4->5 (year-to-year at sites)
+gen_year <- data.frame(generation = 1:5, year = 2018:2022)
+
+clim_anom <- clim_anom |>
+  left_join(gen_year, by = "year") |>
+  filter(year <= 2022)
+
+clim_anom_wide <- clim_anom |>
+  select(site, generation, bio1, anom_pre2000) |>
+  pivot_wider(names_from = generation, values_from = c(bio1,anom_pre2000))
+
+ggplot(clim_anom_wide, aes(x = anom_pre2000_1, y = anom_pre2000_4)) +
+  geom_point() +
+  geom_smooth(method = "lm")
+
+var_cov_dp <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/var_cov_point_estimates_kmate.tsv") |> filter(class == "sv_snp_smallindel")
+
+var_cov_dp$genA <- as.numeric(gsub("_", "", str_extract(var_cov_dp$A, "_[0-9]_")))
+var_cov_dp$genB <-  as.numeric(gsub("_", "", str_extract(var_cov_dp$B, "_[0-9]_")))
+
+var_cov_dp <- var_cov_dp |>
+  filter(genA != genB) |>
+  left_join(clim_anom |> select(site, generation, anom_A = anom_pre2000),
+            by = c("site", "genA" = "generation")) |>
+  left_join(clim_anom |> select(site, generation, anom_B = anom_pre2000),
+            by = c("site", "genB" = "generation")) |>
+  mutate(
+    anom_prod = anom_A * anom_B,
+    neg_cov   = as.integer(cov < 0)   # note: your cov_sign was P(cov > 0)
+  )
+
+## mixed model logistic regression
+var_cov_dp <- var_cov_dp |>
+  mutate(anom_prod_z = as.numeric(scale(anom_prod)))
+
+agg <- var_cov_dp |>
+  group_by(site, rep, genA, genB, anom_prod) |>
+  summarise(num_neg = sum(neg_cov), num_cov = n(), .groups = "drop")
+
+m2 <- glmer(
+  cbind(num_neg, num_cov - num_neg) ~ anom_prod +
+    (1 | site) + (1 | site:rep),
+  data = agg, family = binomial
+)
+
+summary(m2)
+
+# Extract Odds Ratios
+exp(fixef(m2))
+
+# Extract Odds Ratios with 95% Confidence Intervals (Wald method is fast)
+exp(confint(m2, parm = "beta_", method = "Wald"))
+
+## prediction grid over the observed range
+rng <- quantile(agg$anom_prod, c(0.01, 0.99), na.rm = TRUE)
+newd <- data.frame(anom_prod = seq(rng[1], rng[2], length.out = 300))
+
+pr <- predict(m2, newd, re.form = NA, type = "link", se.fit = TRUE)
+newd$p  <- plogis(pr$fit)
+newd$lo <- plogis(pr$fit - 1.96 * pr$se.fit)
+newd$hi <- plogis(pr$fit + 1.96 * pr$se.fit)
+
+## observed proportions in bins, weighted by number of pairs
+bins <- agg |>
+  filter(is.finite(anom_prod)) |>
+  mutate(bin = ntile(anom_prod, 15)) |>
+  group_by(bin) |>
+  summarise(x = weighted.mean(anom_prod, num_cov),
+            p = sum(num_neg) / sum(num_cov),
+            n = sum(num_cov), .groups = "drop")
+
+glmer_cor <- cor(bins$x, bins$p, method = "spearman")
+
+glmer_p_value <- ((summary(m2)[10])$coefficients)[2,4]
+
+ggplot() +
+  geom_ribbon(data = newd, aes(anom_prod, ymin = lo, ymax = hi),
+              fill = "grey80", alpha = 0.8) +
+  geom_line(data = newd, aes(anom_prod, p),
+            colour = "#7E1700", linewidth = 1.1) +
+  geom_point(data = bins, aes(x, p),
+             colour = "black", alpha = 0.9) +
+  scale_size_continuous(name = "pairs", range = c(1, 5)) +
+  labs(x = "A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)", title = paste0("glmer(n(Cov(\u0394p1, \u0394p2) > 0), n(Cov(\u0394p1, \u0394p2) < 0)) ~\nA1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(glmer_cor, 3), ", p = ", signif(glmer_p_value, 3)))
+
+ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov.pdf"), device = cairo_pdf)
+
+## simple logistic regression
+m <- glm(neg_cov ~ anom_prod, data = var_cov_dp, family = binomial)
+summary(m)
+1 - m$deviance / m$null.deviance      # McFadden pseudo-R2
+
+cor(bins$x, bins$p, method = "spearman")
+
+# Plot — points are binned means, curve is the GLM fit
+bins <- var_cov_dp |>
+  filter(is.finite(anom_prod)) |>
+  mutate(bin = ntile(anom_prod, 20)) |>
+  group_by(bin) |>
+  summarise(x = mean(anom_prod), p = mean(neg_cov), n = n(), .groups = "drop")
+
+ggplot(bins, aes(x, p)) +
+  geom_point(colour = "grey30") +
+  geom_smooth(data = var_cov_dp, aes(anom_prod, neg_cov),
+              method = "glm", method.args = list(family = "binomial"),
+              inherit.aes = FALSE, colour = "#7E1700", fill = "grey85") +
+  scale_size_continuous(name = "pairs") +
+  labs(x = "anomaly(genA) × anomaly(genB)", y = "P(cov < 0)")
+
+
+```
+
 # Plot OST1 over cell-types
 
 ```{r}
@@ -5341,6 +5552,7 @@ if (!file.exists(ld_bins_file)) {
   )
 
   ld_bins <- ld_ds %>%
+    filter(R > 0) |>
     mutate(d = abs(POS_B - POS_A),
            r2 = R * R,
            bin = floor(d / ld_bin_width)) %>%
