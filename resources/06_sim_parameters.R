@@ -8,7 +8,7 @@ gt_wf_params <- expand.grid(
         MU=7e-09,
         R=8.06452e-10,
         N=c(1000),
-        G=1e6, # simulated genome size for the wf runs
+        G=5e6, # genome size: simulated genome (wf), founder VCF window (nonWF)
         L=c(1, 10, 100),
         VA=c(0, 0.001, 0.01, 0.1),
         SIGMA=c(0, 0.05, 0.5, 0.95),
@@ -23,7 +23,7 @@ gt_nonwf_params <- expand.grid(
     N = 1000,
     MU=7e-09,
     R=8.06452e-10,
-    G=1e6, # unused when USE_VCF = 1: the genome is the reference FASTA
+    G=5e6, # genome size: simulated genome (wf), founder VCF window (nonWF)
     SIGMA=c(0, 0.5, 0.95),
     VA=c(0, 0.001, 0.01, 0.1),
     L=c(1, 10, 100),

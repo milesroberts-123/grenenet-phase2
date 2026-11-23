@@ -19,10 +19,6 @@ sim_vcf: "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/re
 # individual per sample and clones each so the seed bank holds N_VCF of them.
 sim_founders: 231
 
-# length in bp of the random chromosome window each VCF-seeded simulation reads.
-# Independent of G, which is the simulated genome size of the wf runs.
-sim_vcf_window: 5000000
-
 
 # Empirical sequence data parameters
 

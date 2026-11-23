@@ -9,9 +9,9 @@ rule bcftools_random:
     conda:
         "../envs/bcftools.yaml"
     params:
-        # length in bp of the chromosome window each simulation reads, its own
-        # parameter rather than G (which is the wf simulated genome size)
-        window=config["sim_vcf_window"]
+        # G is the genome size: the simulated genome of the wf runs, and the
+        # length of the chromosome window the VCF-seeded runs read
+        window=lambda wildcards: bank_flag(wildcards, "G")
     shell:
         """
         bedtools random -l {params.window} -n 1 -g {input.fasta}.fai > {output.bed}
