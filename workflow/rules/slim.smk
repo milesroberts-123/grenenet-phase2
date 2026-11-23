@@ -9,43 +9,13 @@ rule bcftools_random:
     conda:
         "../envs/bcftools.yaml"
     params:
-        # window length in bp. G, not L: L is the number of selected loci since the
-        # VA/L reparameterisation, and a 1-200 bp window holds no founder variants.
-        # int: bedtools -l takes an integer, and G is stored as 10e6
-        window=lambda wildcards: bank_flag(wildcards, "G")
+        # length in bp of the chromosome window each simulation reads, its own
+        # parameter rather than G (which is the wf simulated genome size)
+        window=config["sim_vcf_window"]
     shell:
         """
         bedtools random -l {params.window} -n 1 -g {input.fasta}.fai > {output.bed}
         bcftools view -R {output.bed} -o {output.vcf} {input.vcf}
-        """
-
-rule bgzip:
-    group: "simulation"
-    input:
-        "bcftools_random_results/{ID}.vcf"
-    output:
-        temp("bcftools_random_results/{ID}.vcf.gz"),
-        temp("bcftools_random_results/{ID}.vcf.gz.tbi")
-    conda:
-        "../envs/bcftools.yaml"
-    shell:
-        """
-        bgzip {input}
-        tabix {input}.gz
-        """
-
-rule bcftools_duplicate:
-    group: "simulation"
-    input:
-        gz="bcftools_random_results/{ID}.vcf.gz",
-        tbi="bcftools_random_results/{ID}.vcf.gz.tbi"
-    output:
-        temp("bcftools_duplicate_results/{ID}.vcf")
-    conda:
-        "../envs/bcftools.yaml"
-    shell:
-        """
-        bcftools merge --force-samples {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} {input.gz} -Ou -o {output}
         """
 
 rule wf_prep:
@@ -87,21 +57,18 @@ def get_fasta_path(wildcards):
 def get_vcf_path(wildcards):
     if bank_flag(wildcards, "USE_VCF") == 0:
         return "none"   # never read, but SLiM needs the string constant defined
-    family = str(gt_params.loc[gt_params["ID"] == wildcards.ID, "type"].iloc[0])
-    prefix = "bcftools_random_results" if family == "wf" else "bcftools_duplicate_results"
-    return "%s/%s.vcf" % (prefix, wildcards.ID)
+    return "bcftools_random_results/%s.vcf" % wildcards.ID
 
 
 rule slim:
     group: "simulation"
     input:
-        #vcf = "bcftools_duplicate_results/{ID}.vcf",
         vcf = branch(
             get_simcase,
             cases={
                 "wf_novcf": ("wf_prep/{ID}.done"),
                 "wf_vcf": [],   # not wired up yet; see the shell branch
-                "bank_vcf": ("bcftools_duplicate_results/{ID}.vcf"),
+                "bank_vcf": ("bcftools_random_results/{ID}.vcf"),
                 # no VCF is built for a run that starts from the ancestral
                 # sequence, which keeps 1000s of duplicate VCFs out of the DAG
                 "bank_novcf": []
@@ -147,6 +114,7 @@ rule slim:
         use_vcf=lambda wildcards: bank_flag(wildcards, "USE_VCF"),
         burn=lambda wildcards: bank_flag(wildcards, "BURN"),
         vcf_path=get_vcf_path,
+        n_founders=config["sim_founders"],
         fasta_path=get_fasta_path,
         # L is NA for VA = 0 rows (no selected loci); SLiM needs a number
         l_loci=lambda wildcards: bank_flag(wildcards, "L")
@@ -168,7 +136,7 @@ rule slim:
             echo "Port it to the VA/L architecture before enabling this branch." >&2
             exit 1
         elif [[ "wf" != "{params.type}" ]]; then
-            slim -d FASTA_FILE='"{params.fasta_path}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d SIGMA={params.SIGMA} -d NMU={params.MU} -d G={params.G} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.l_loci} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
+            slim -d FASTA_FILE='"{params.fasta_path}"' -d VCF_FILE='"{params.vcf_path}"' -d N_VCF=5082 -d N_FOUNDERS={params.n_founders} -d SIGMA={params.SIGMA} -d NMU={params.MU} -d G={params.G} -d R={params.R} -d SIM_LENGTH={params.TAU} -d GERM_RATE={params.germ_rate} -d BANK_SURV={params.bank_surv} -d K={params.K} -d MIN_AGE={params.min_age} -d MAX_BANK_AGE={params.max_age} -d N_OFFSPRING={params.n_offspring} -d VA={params.va} -d L={params.l_loci} -d ID={wildcards.ID} -d SURVIVAL_SELECTION={params.surv} -d USE_VCF={params.use_vcf} -d BURN={params.burn} scripts/gt_expectations_seed_bank.slim
         else
             echo "Invalid simulation type!"
         fi

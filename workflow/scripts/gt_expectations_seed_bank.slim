@@ -29,7 +29,9 @@
 //
 //  VCF REQUIREMENTS
 //  ----------------
-//  The VCF must contain exactly N_VCF diploid individuals (2*N_VCF haplotypes).
+//  The VCF must contain exactly N_FOUNDERS diploid samples, one per founder
+//  accession. Each is loaded as one individual and then cloned N_VCF/N_FOUNDERS
+//  times, so the seed bank (p1) starts as an even mixture of the founders.
 //  All SNP positions must lie within the reference sequence read from the FASTA.
 // ============================================================================
 
@@ -126,8 +128,54 @@ reproduction(p2) {
 }
 
 // ============================================================================
+//  FOUNDER CLONING  (tick 1 only, VCF path)
+// ============================================================================
+//
+//  addCloned() may only be called from a reproduction() callback, and a callback
+//  fires once per individual, so the expansion is done for the first individual
+//  only. Clones are queued and join p1 when the offspring stage ends, before
+//  early() -- which is why the architecture is imposed in s5 at tick 1's late
+//  phase rather than inline.
+
+1 reproduction(p1) {
+    if (individual != p1.individuals[0]) return;
+
+    n_copy = asInteger(N_VCF / N_FOUNDERS);
+    if (n_copy > 1) {
+        founders = p1.individuals;      // snapshot: p1 grows as clones queue
+        for (founder in founders)
+            p1.addCloned(founder, n_copy - 1);
+    }
+}
+
+// ============================================================================
 //  INITIALIZATION  (tick 1 only)
 // ============================================================================
+
+// ============================================================================
+//  SUBPOPULATION SETUP  (tick 1 first(), before the reproduction phase)
+// ============================================================================
+//
+//  Creation has to happen in first(): reproduction() callbacks (step 1 of the
+//  tick cycle) run before early() (step 2), and the founder cloning needs p1 to
+//  exist and to hold the VCF's samples.
+
+1 first() {
+    // Create an initially empty breeding population.
+    sim.addSubpop("p2", 0);
+
+    if (USE_VCF == 1) {
+        // The VCF holds one diploid sample per founder accession. Load one
+        // individual per sample; the reproduction phase then adds an equal
+        // number of clonal copies of each, so the seed bank (p1) starts as an
+        // even mixture of the founders.
+        sim.addSubpop("p1", N_FOUNDERS);
+        p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
+    } else {
+        // no VCF: a simulated genome, filled in by the burn-in below
+        sim.addSubpop("p1", N_VCF);
+    }
+}
 
 1 early() {
     catn("=== Cold Storage NonWF Simulation ===");
@@ -135,6 +183,7 @@ reproduction(p2) {
     catn("  FASTA_FILE  = " + FASTA_FILE);
     catn("  VCF_FILE    = " + VCF_FILE);
     catn("  N_VCF       = " + N_VCF);
+    catn("  N_FOUNDERS  = " + N_FOUNDERS);
     catn("  K           = " + K);
     catn("  GERM_RATE   = " + GERM_RATE);
     catn("  MIN_AGE     = " + MIN_AGE);
@@ -154,30 +203,28 @@ reproduction(p2) {
              " before its first germination window; the population will go extinct.");
     }
 
-    // Create seed storage with exactly N_VCF diploid individuals.
-    sim.addSubpop("p1", N_VCF);
-
-    // Create an initially empty breeding population.
-    sim.addSubpop("p2", 0);
-    
-    catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
-
     if (USE_VCF == 1) {
-         catn("Tick 1: Creating initial seed bank WITH population structure.");
-        // Load standing genetic variation from VCF into seed storage.
-        p1.individuals.readIndividualsFromVCF(VCF_FILE, m1);
-        
+        catn("Tick 1: Creating initial seed bank WITH population structure.");
+
+        n_copy = asInteger(N_VCF / N_FOUNDERS);
+        if (n_copy < 1 | n_copy * N_FOUNDERS != N_VCF)
+            catn("WARNING: N_VCF = " + N_VCF + " is not a whole multiple of " +
+                 "N_FOUNDERS = " + N_FOUNDERS + "; the seed bank will hold " +
+                 (n_copy * N_FOUNDERS) + " individuals.");
+
         // reschedule population tracking until initial generations
         community.rescheduleScriptBlock(s1, start=2, end=SIM_LENGTH);
         community.rescheduleScriptBlock(s2, start=2, end=SIM_LENGTH);
 
-        catn("Tick 1: " + p1.individualCount + " individuals loaded into seed storage.");
+        catn("Tick 1: " + N_FOUNDERS + " founders loaded from the VCF; cloning x" +
+             n_copy + " to " + (n_copy * N_FOUNDERS) + " seeds in this tick's" +
+             " reproduction phase.");
         catn("Tick 1: No burn-in will be performed and BURN is ignored.");
 
-        // the architecture is imposed immediately, on the standing variation,
-        // so s5 is deregistered rather than rescheduled
-        community.deregisterScriptBlock(s5);
-        impose_selected_architecture();
+        // Queued clones only join p1 at the end of this tick's offspring stage,
+        // so the architecture is imposed in s5 at this tick's late phase: there
+        // n_eff is the full seed-bank size, not the founder count.
+        community.rescheduleScriptBlock(s5, start=1, end=1);
     } else {
         catn("Tick 1: Creating initial seed bank from the ancestral sequence.");
         // reschedule population tracking until initial generations
@@ -258,8 +305,8 @@ function (void)impose_selected_architecture(void) {
 }
 
 // Declared far in the future so it never fires on its own schedule: the block is
-// always rescheduled, either to BURN+1 (de novo path) or past the end of the run
-// (VCF path, which imposes the architecture directly in the tick-1 block).
+// always rescheduled, either to BURN+1 (de novo path) or to tick 1's late phase
+// (VCF path, once the founder clones have been added to the seed bank).
 s5 1000000 late() {
     impose_selected_architecture();
 }
