@@ -615,19 +615,19 @@ for(b in unique_blocks[320:418]){
 params <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/config/gt_params.tsv", sep = "\t", header = T, data.table = F)
 
 # grab files of neutral allele freq trajectories
-neutfreq_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results", pattern = "*freqs.tsv", full.names = T)
-#neutfreq_files <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/", params %>% group_by(VA, L, SIGMA, adjust) %>% slice_sample(n = 5) %>% pull(ID), "_neutfreqs.tsv", sep = "")
+neutfreq_files <- list.files("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim", pattern = "*freqs.tsv", full.names = T)
+#neutfreq_files <- paste("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/", params %>% group_by(VA, L, SIGMA, adjust) %>% slice_sample(n = 5) %>% pull(ID), "_neutfreqs.tsv", sep = "")
 
 #neutfreq_files <- sample(neutfreq_files, size = 1000, replace = F)
 
 # files_to_plot <- c(
-#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1_neutfreqs.tsv",
-#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/10_neutfreqs.tsv",
-#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/100_neutfreqs.tsv",
-#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/751_neutfreqs.tsv",
-#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/841_neutfreqs.tsv",
-#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1000_neutfreqs.tsv",
-#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/slim_results/1001_neutfreqs.tsv"
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/1_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/10_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/100_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/751_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/841_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/1000_neutfreqs.tsv",
+#   "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/workflow/results/slim/1001_neutfreqs.tsv"
 # )
 
 sim_curves <- NULL

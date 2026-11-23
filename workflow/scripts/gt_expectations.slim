@@ -31,7 +31,7 @@ function (float)target_alpha(float va, integer l, integer n){
 
 initialize() {
   defineConstant("seed", getSeed());
-  defineConstant("data_dir", 'slim_results');
+  defineConstant("data_dir", 'results/slim');
   defineConstant("neutfreqs_file", data_dir + "/" + ID + "_neutfreqs.tsv");
  
   catn("Tick 1: Target alpha:" + target_alpha(VA, L, N)); 

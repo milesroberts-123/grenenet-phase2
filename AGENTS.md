@@ -5,7 +5,7 @@ Research repo for population-genetics simulations and pool-seq analyses. Primary
 ## Entry points
 
 - **Snakemake pipeline**: `workflow/Snakefile` is the main entry point.
-  - `all_gt_sims` — SLiM genetic-drift simulations (`slim_results/{ID}_neutfreqs.tsv`).
+  - `all_gt_sims` — SLiM genetic-drift simulations (`results/slim/{ID}_neutfreqs.tsv`).
   - `all_poolseq` — fastp + freqk empirical allele-frequency calls (`freqk_call_results/{sample}.txt`).
 - **R analysis**: `resources/03_linked_selection.Rmd` is the current primary notebook.
 - **Parameter generation**: `resources/06_sim_parameters.R` regenerates `config/gt_params.tsv`.

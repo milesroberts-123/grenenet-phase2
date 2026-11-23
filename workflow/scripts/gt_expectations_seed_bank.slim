@@ -49,7 +49,7 @@ initialize() {
 
     // per-generation stats mirroring gt_expectations.slim's stats file; written
     // by the output block on the same ticks that record frequencies
-    defineConstant("stats_file", "slim_results/" + ID + "_stats.tsv");
+    defineConstant("stats_file", "results/slim/" + ID + "_stats.tsv");
     writeFile(stats_file,
               "gen\tn_seed\tn_plant\tzbar\tzvar\tgenic_var\tgenic_m2\tgenic_m3",
               append=F);
@@ -365,11 +365,11 @@ s2 300 late() {
     n_plant = p2.individualCount;
 
     if(USE_VCF == 1){
-        write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
+        write_freqs("results/slim/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
     }
 
     if((USE_VCF == 0) & (tick >= BURN+1)){
-        write_freqs("slim_results/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
+        write_freqs("results/slim/" + ID + "_neutfreqs.tsv", p2, m1, sim.cycle);
     }
 
     // stats row: realized additive variance components from the actual

@@ -114,7 +114,7 @@ rule slim:
             }
             ),
     output:
-        "slim_results/{ID}_neutfreqs.tsv"
+        "results/slim/{ID}_neutfreqs.tsv"
     conda:
         "../envs/msprime.yaml"
     params:

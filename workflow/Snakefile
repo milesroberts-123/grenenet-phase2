@@ -33,7 +33,7 @@ seurat_samples = [
 
 rule all_gt_sims:
     input:
-        expand("slim_results/{ID}_neutfreqs.tsv", ID=gt_params["ID"])
+        expand("results/slim/{ID}_neutfreqs.tsv", ID=gt_params["ID"])
 
 rule all_poolseq:
     input:
