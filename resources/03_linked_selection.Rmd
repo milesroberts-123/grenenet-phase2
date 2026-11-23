@@ -4939,6 +4939,7 @@ summary(clim_anom$anom_pre2000)
 gen_year <- data.frame(generation = 1:5, year = 2018:2022)
 
 clim_anom <- clim_anom |>
+  select(-any_of("generation")) |>
   left_join(gen_year, by = "year") |>
   filter(year <= 2022)
 
@@ -4950,12 +4951,17 @@ ggplot(clim_anom_wide, aes(x = anom_pre2000_1, y = anom_pre2000_4)) +
   geom_point() +
   geom_smooth(method = "lm")
 
-var_cov_dp <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/var_cov_point_estimates_kmate.tsv") |> filter(class == "sv_snp_smallindel")
+var_cov_raw <- fread("/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results/2026-11-15/var_cov_point_estimates_kmate.tsv")
+print(table(var_cov_raw$class))
 
-var_cov_dp$genA <- as.numeric(gsub("_", "", str_extract(var_cov_dp$A, "_[0-9]_")))
-var_cov_dp$genB <-  as.numeric(gsub("_", "", str_extract(var_cov_dp$B, "_[0-9]_")))
+var_cov_dp <- var_cov_raw |> filter(class == "sv_snp_smallindel")
+stopifnot(nrow(var_cov_dp) > 0)
 
 var_cov_dp <- var_cov_dp |>
+  mutate(
+    genA = as.integer(sub("^[^_]+_([^_]+)_.*$", "\\1", A)),
+    genB = as.integer(sub("^[^_]+_([^_]+)_.*$", "\\1", B))
+  ) |>
   filter(genA != genB) |>
   left_join(clim_anom |> select(site, generation, anom_A = anom_pre2000),
             by = c("site", "genA" = "generation")) |>
@@ -4963,13 +4969,10 @@ var_cov_dp <- var_cov_dp |>
             by = c("site", "genB" = "generation")) |>
   mutate(
     anom_prod = anom_A * anom_B,
-    neg_cov   = as.integer(cov < 0)   # note: your cov_sign was P(cov > 0)
+    neg_cov   = as.integer(cov < 0)
   )
 
 ## mixed model logistic regression
-var_cov_dp <- var_cov_dp |>
-  mutate(anom_prod_z = as.numeric(scale(anom_prod)))
-
 agg <- var_cov_dp |>
   group_by(site, rep, genA, genB, anom_prod) |>
   summarise(num_neg = sum(neg_cov), num_cov = n(), .groups = "drop")
@@ -4986,7 +4989,7 @@ summary(m2)
 exp(fixef(m2))
 
 # Extract Odds Ratios with 95% Confidence Intervals (Wald method is fast)
-exp(confint(m2, parm = "beta_", method = "Wald"))
+exp(confint(m2, method = "Wald")[names(fixef(m2)), , drop = FALSE])
 
 ## prediction grid over the observed range
 rng <- quantile(agg$anom_prod, c(0.01, 0.99), na.rm = TRUE)
@@ -5008,17 +5011,17 @@ bins <- agg |>
 
 glmer_cor <- cor(bins$x, bins$p, method = "spearman")
 
-glmer_p_value <- ((summary(m2)[10])$coefficients)[2,4]
+glmer_p_value <- summary(m2)$coefficients["anom_prod", "Pr(>|z|)"]
 
 ggplot() +
   geom_ribbon(data = newd, aes(anom_prod, ymin = lo, ymax = hi),
               fill = "grey80", alpha = 0.8) +
   geom_line(data = newd, aes(anom_prod, p),
             colour = "#7E1700", linewidth = 1.1) +
-  geom_point(data = bins, aes(x, p),
+  geom_point(data = bins, aes(x, p, size = n),
              colour = "black", alpha = 0.9) +
   scale_size_continuous(name = "pairs", range = c(1, 5)) +
-  labs(x = "A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)", title = paste0("glmer(n(Cov(\u0394p1, \u0394p2) > 0), n(Cov(\u0394p1, \u0394p2) < 0)) ~\nA1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(glmer_cor, 3), ", p = ", signif(glmer_p_value, 3)))
+  labs(x = "A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)", title = paste0("glmer(n(Cov(\u0394p1, \u0394p2) < 0), n(Cov(\u0394p1, \u0394p2) > 0)) ~\nA1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(glmer_cor, 3), ", p = ", signif(glmer_p_value, 3)))
 
 ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov.pdf"), device = cairo_pdf)
 
@@ -5027,17 +5030,18 @@ m <- glm(neg_cov ~ anom_prod, data = var_cov_dp, family = binomial)
 summary(m)
 1 - m$deviance / m$null.deviance      # McFadden pseudo-R2
 
-cor(bins$x, bins$p, method = "spearman")
-
 # Plot — points are binned means, curve is the GLM fit
-bins <- var_cov_dp |>
+bins_raw <- var_cov_dp |>
   filter(is.finite(anom_prod)) |>
   mutate(bin = ntile(anom_prod, 20)) |>
   group_by(bin) |>
   summarise(x = mean(anom_prod), p = mean(neg_cov), n = n(), .groups = "drop")
 
-ggplot(bins, aes(x, p)) +
-  geom_point(colour = "grey30") +
+glm_cor <- cor(bins_raw$x, bins_raw$p, method = "spearman")
+print(glm_cor)
+
+ggplot(bins_raw, aes(x, p)) +
+  geom_point(aes(size = n), colour = "grey30") +
   geom_smooth(data = var_cov_dp, aes(anom_prod, neg_cov),
               method = "glm", method.args = list(family = "binomial"),
               inherit.aes = FALSE, colour = "#7E1700", fill = "grey85") +
