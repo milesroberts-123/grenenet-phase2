@@ -24,7 +24,7 @@ gt_nonwf_params <- expand.grid(
     MU=7e-09,
     R=8.06452e-10,
     G=10e6, # simulated genome size when USE_VCF = 0
-    SIGMA=c(0, 0.05, 0.5, 0.95),
+    SIGMA=c(0, 0.5, 0.95),
     VA=c(0, 0.001, 0.01, 0.1),
     L=c(1, 10, 100, 200),
     rep=1:30,
@@ -32,13 +32,13 @@ gt_nonwf_params <- expand.grid(
     K=c(1000),
     N_OFFSPRING=c(5),
     GERM_RATE=c(0.5, 0.6),
-    BANK_SURV=c(0, 0.5, 0.75),
+    BANK_SURV=c(0, 0.5),
     type="nonwf",
     SURVIVAL_SELECTION=c(0, 0.5, 1),
     MIN_AGE=1,
     MAX_AGE=3,
-    adjust = c(T,F),
-    USE_VCF = 0
+    adjust=T,
+    USE_VCF=1
 )
 
 # BANK_SURV = 0 is the no-seed-bank control. MIN_AGE = 1 would make every seed die

@@ -129,7 +129,6 @@ rule slim:
         # extra parameters for non-wf sims. VA and L are shared with the wf grid:
         # L is the number of selected loci and VA the additive variance they carry
         va=lambda wildcards: float_param(wildcards, "VA"),
-        #gamma=lookup(query="ID == '{ID}'", within=gt_params, cols="gamma"),
         germ_rate=lookup(query="ID == '{ID}'", within=gt_params, cols="GERM_RATE"),
         bank_surv=lookup(query="ID == '{ID}'", within=gt_params, cols="BANK_SURV"),
         K=lookup(query="ID == '{ID}'", within=gt_params, cols="K"),
