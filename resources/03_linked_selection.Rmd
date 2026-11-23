@@ -4941,7 +4941,10 @@ gen_year <- data.frame(generation = 1:5, year = 2018:2022)
 clim_anom <- clim_anom |>
   select(-any_of("generation")) |>
   left_join(gen_year, by = "year") |>
-  filter(year <= 2022)
+  filter(year <= 2022) |>
+  group_by(site) |>
+  mutate(anom_c = anom_pre2000 - mean(anom_pre2000, na.rm = TRUE)) |>
+  ungroup()
 
 clim_anom_wide <- clim_anom |>
   select(site, generation, bio1, anom_pre2000) |>
@@ -4963,18 +4966,23 @@ var_cov_dp <- var_cov_dp |>
     genB = as.integer(sub("^[^_]+_([^_]+)_.*$", "\\1", B))
   ) |>
   filter(genA != genB) |>
-  left_join(clim_anom |> select(site, generation, anom_A = anom_pre2000),
+  left_join(clim_anom |> select(site, generation,
+                                anom_A = anom_pre2000,
+                                anom_cA = anom_c),
             by = c("site", "genA" = "generation")) |>
-  left_join(clim_anom |> select(site, generation, anom_B = anom_pre2000),
+  left_join(clim_anom |> select(site, generation,
+                                anom_B = anom_pre2000,
+                                anom_cB = anom_c),
             by = c("site", "genB" = "generation")) |>
   mutate(
-    anom_prod = anom_A * anom_B,
-    neg_cov   = as.integer(cov < 0)
+    anom_prod   = anom_A * anom_B,
+    anom_prod_c = anom_cA * anom_cB,
+    neg_cov     = as.integer(cov < 0)
   )
 
 ## mixed model logistic regression
 agg <- var_cov_dp |>
-  group_by(site, rep, genA, genB, anom_prod) |>
+  group_by(site, rep, genA, genB, anom_prod, anom_prod_c) |>
   summarise(num_neg = sum(neg_cov), num_cov = n(), .groups = "drop")
 
 m2 <- glmer(
@@ -4990,6 +4998,28 @@ exp(fixef(m2))
 
 # Extract Odds Ratios with 95% Confidence Intervals (Wald method is fast)
 exp(confint(m2, method = "Wald")[names(fixef(m2)), , drop = FALSE])
+
+## within-site centered anomalies
+m2c <- glmer(
+  cbind(num_neg, num_cov - num_neg) ~ anom_prod_c +
+    (1 | site) + (1 | site:rep),
+  data = agg, family = binomial
+)
+
+summary(m2c)
+
+exp(fixef(m2c))
+exp(confint(m2c, method = "Wald")[names(fixef(m2c)), , drop = FALSE])
+
+## side-by-side coefficient comparison
+data.frame(
+  model = c("pre2000", "within_site_centered"),
+  term  = c("anom_prod", "anom_prod_c"),
+  OR    = exp(c(fixef(m2)["anom_prod"], fixef(m2c)["anom_prod_c"])),
+  p     = c(summary(m2)$coefficients["anom_prod", "Pr(>|z|)"],
+            summary(m2c)$coefficients["anom_prod_c", "Pr(>|z|)"])
+)
+AIC(m2, m2c)
 
 ## prediction grid over the observed range
 rng <- quantile(agg$anom_prod, c(0.01, 0.99), na.rm = TRUE)
@@ -5024,6 +5054,39 @@ ggplot() +
   labs(x = "A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)", title = paste0("glmer(n(Cov(\u0394p1, \u0394p2) < 0), n(Cov(\u0394p1, \u0394p2) > 0)) ~\nA1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(glmer_cor, 3), ", p = ", signif(glmer_p_value, 3)))
 
 ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov.pdf"), device = cairo_pdf)
+
+## centered-anomaly prediction grid
+rng_c <- quantile(agg$anom_prod_c, c(0.01, 0.99), na.rm = TRUE)
+newd_c <- data.frame(anom_prod_c = seq(rng_c[1], rng_c[2], length.out = 300))
+
+pr_c <- predict(m2c, newd_c, re.form = NA, type = "link", se.fit = TRUE)
+newd_c$p  <- plogis(pr_c$fit)
+newd_c$lo <- plogis(pr_c$fit - 1.96 * pr_c$se.fit)
+newd_c$hi <- plogis(pr_c$fit + 1.96 * pr_c$se.fit)
+
+bins_c <- agg |>
+  filter(is.finite(anom_prod_c)) |>
+  mutate(bin = ntile(anom_prod_c, 15)) |>
+  group_by(bin) |>
+  summarise(x = weighted.mean(anom_prod_c, num_cov),
+            p = sum(num_neg) / sum(num_cov),
+            n = sum(num_cov), .groups = "drop")
+
+centered_cor <- cor(bins_c$x, bins_c$p, method = "spearman")
+centered_p <- summary(m2c)$coefficients["anom_prod_c", "Pr(>|z|)"]
+
+ggplot() +
+  geom_ribbon(data = newd_c, aes(anom_prod_c, ymin = lo, ymax = hi),
+              fill = "grey80", alpha = 0.8) +
+  geom_line(data = newd_c, aes(anom_prod_c, p),
+            colour = "#7E1700", linewidth = 1.1) +
+  geom_point(data = bins_c, aes(x, p, size = n),
+             colour = "black", alpha = 0.9) +
+  scale_size_continuous(name = "pairs", range = c(1, 5)) +
+  labs(x = "centered A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)",
+       title = paste0("glmer(n(Cov(\u0394p1, \u0394p2) < 0), n(Cov(\u0394p1, \u0394p2) > 0)) ~\ncentered A1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(centered_cor, 3), ", p = ", signif(centered_p, 3)))
+
+ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov_centered.pdf"), device = cairo_pdf)
 
 ## simple logistic regression
 m <- glm(neg_cov ~ anom_prod, data = var_cov_dp, family = binomial)
