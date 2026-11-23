@@ -5,7 +5,7 @@ rule bcftools_random:
         vcf=config["sim_vcf"]
     output:
         bed=temp("random_{ID}.bed"),
-        vcf=temp("bcftools_random_results/{ID}.vcf")
+        vcf=temp("results/bcftools_random/{ID}.vcf")
     conda:
         "../envs/bcftools.yaml"
     params:
@@ -57,7 +57,7 @@ def get_fasta_path(wildcards):
 def get_vcf_path(wildcards):
     if bank_flag(wildcards, "USE_VCF") == 0:
         return "none"   # never read, but SLiM needs the string constant defined
-    return "bcftools_random_results/%s.vcf" % wildcards.ID
+    return "results/bcftools_random/%s.vcf" % wildcards.ID
 
 
 rule slim:
@@ -68,7 +68,7 @@ rule slim:
             cases={
                 "wf_novcf": ("wf_prep/{ID}.done"),
                 "wf_vcf": [],   # not wired up yet; see the shell branch
-                "bank_vcf": ("bcftools_random_results/{ID}.vcf"),
+                "bank_vcf": ("results/bcftools_random/{ID}.vcf"),
                 # no VCF is built for a run that starts from the ancestral
                 # sequence, which keeps 1000s of duplicate VCFs out of the DAG
                 "bank_novcf": []
