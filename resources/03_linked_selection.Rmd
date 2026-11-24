@@ -4964,8 +4964,19 @@ var_cov_dp <- var_cov_dp |>
   mutate(
     genA = as.integer(sub("^[^_]+_([^_]+)_.*$", "\\1", A)),
     genB = as.integer(sub("^[^_]+_([^_]+)_.*$", "\\1", B))
-  ) |>
-  filter(genA != genB) |>
+  )
+
+## The covariance matrix is symmetric: cov(A,B) must equal cov(B,A). Check the
+## swapped pairs, then keep one triangle so each dyad enters the model once.
+sym_check <- var_cov_dp |>
+  select(site, rep, A, B, cov) |>
+  inner_join(var_cov_dp |> select(site, rep, A_swap = A, B_swap = B, cov_swap = cov),
+             by = c("site", "rep", "A" = "B_swap", "B" = "A_swap"))
+stopifnot(nrow(sym_check) == nrow(var_cov_dp),
+          isTRUE(all.equal(sym_check$cov, sym_check$cov_swap, tolerance = 1e-10)))
+
+var_cov_dp <- var_cov_dp |>
+  filter(genA < genB) |>
   left_join(clim_anom |> select(site, generation,
                                 anom_A = anom_pre2000,
                                 anom_cA = anom_c),
@@ -5112,6 +5123,129 @@ ggplot(bins_raw, aes(x, p)) +
   labs(x = "anomaly(genA) × anomaly(genB)", y = "P(cov < 0)")
 
 
+```
+
+```{r neg_cov_resampling}
+## Cluster bootstrap by site and within-site permutation of climate years for
+## the within-site centered model (m2c), after removing symmetric duplicates.
+
+set.seed(20261124)
+n_boot  <- 1999
+n_perm  <- 1999
+n_cores <- 4
+
+agg_df   <- as.data.frame(agg)
+beta_obs <- unname(fixef(m2c)["anom_prod_c"])
+beta_se  <- summary(m2c)$coefficients["anom_prod_c", "Std. Error"]
+
+## ---- cluster bootstrap: resample the gardens, keep everything within a garden ----
+site_ids   <- unique(agg_df$site)
+boot_seeds <- sample.int(1e6, n_boot)
+
+boot_one <- function(i) {
+  set.seed(boot_seeds[i])
+  s <- sample(site_ids, replace = TRUE)
+  d <- do.call(rbind, lapply(seq_along(s), function(k) {
+    z <- agg_df[agg_df$site == s[k], , drop = FALSE]
+    z$boot_site <- k
+    z$boot_rep  <- paste0(k, "_", z$rep)
+    z
+  }))
+  fit <- tryCatch(
+    glmer(cbind(num_neg, num_cov - num_neg) ~ anom_prod_c +
+            (1 | boot_site) + (1 | boot_rep),
+          data = d, family = binomial),
+    error = function(e) NULL
+  )
+  if (is.null(fit)) return(c(beta = NA_real_, singular = NA_integer_))
+  c(beta = unname(fixef(fit)["anom_prod_c"]),
+    singular = as.integer(isSingular(fit)))
+}
+
+boot_res  <- parallel::mclapply(seq_len(n_boot), boot_one, mc.cores = n_cores)
+boot_beta <- vapply(boot_res, function(x) {
+  if (inherits(x, "try-error") || is.null(x)) NA_real_ else x[["beta"]]
+}, numeric(1))
+boot_sing <- vapply(boot_res, function(x) {
+  if (inherits(x, "try-error") || is.null(x)) NA_integer_ else x[["singular"]]
+}, numeric(1))
+boot_ci <- quantile(boot_beta, c(0.025, 0.975), na.rm = TRUE)
+
+cat(sprintf("bootstrap: %d/%d fits, %d singular; median %.4f, SE %.4f, 95%% CI %.4f to %.4f\n",
+            sum(!is.na(boot_beta)), n_boot, sum(boot_sing == 1, na.rm = TRUE),
+            median(boot_beta, na.rm = TRUE), sd(boot_beta, na.rm = TRUE),
+            boot_ci[1], boot_ci[2]))
+
+ggplot(data.frame(beta = boot_beta[!is.na(boot_beta)]), aes(beta)) +
+  geom_histogram(bins = 50, fill = "grey75", colour = "white") +
+  geom_vline(xintercept = beta_obs, colour = "#7E1700", linewidth = 1) +
+  geom_vline(xintercept = boot_ci, colour = "#7E1700", linetype = 2) +
+  labs(x = "beta (centered anomaly product)", y = "bootstrap replicates",
+       title = "Cluster bootstrap by site (centered anomaly product)")
+
+ggsave(paste0("../results/by-date/", today, "/anom_cov_bootstrap_centered.pdf"),
+       device = cairo_pdf)
+
+## ---- within-site permutation of climate years ----
+perm_seeds     <- sample.int(1e6, n_perm)
+clim_perm_base <- clim_anom |> select(site, generation, anom_c)
+
+perm_one <- function(i) {
+  set.seed(perm_seeds[i])
+  cp <- clim_perm_base |>
+    group_by(site) |>
+    mutate(anom_c_perm = sample(anom_c)) |>
+    ungroup() |>
+    select(site, generation, anom_c_perm)
+
+  d <- agg_df |>
+    select(-anom_prod_c) |>
+    left_join(cp, by = c("site", "genA" = "generation")) |>
+    rename(anom_cA = anom_c_perm) |>
+    left_join(cp, by = c("site", "genB" = "generation")) |>
+    rename(anom_cB = anom_c_perm) |>
+    mutate(anom_prod_c_perm = anom_cA * anom_cB)
+
+  fit <- tryCatch(
+    glmer(cbind(num_neg, num_cov - num_neg) ~ anom_prod_c_perm +
+            (1 | site) + (1 | site:rep),
+          data = d, family = binomial),
+    error = function(e) NULL
+  )
+  if (is.null(fit)) return(NA_real_)
+  unname(fixef(fit)["anom_prod_c_perm"])
+}
+
+perm_res  <- parallel::mclapply(seq_len(n_perm), perm_one, mc.cores = n_cores)
+perm_beta <- vapply(perm_res, function(x) {
+  if (inherits(x, "try-error") || is.null(x)) NA_real_ else x
+}, numeric(1))
+
+n_ok  <- sum(!is.na(perm_beta))
+p_one <- (sum(perm_beta <= beta_obs, na.rm = TRUE) + 1) / (n_ok + 1)
+p_two <- (sum(abs(perm_beta) >= abs(beta_obs), na.rm = TRUE) + 1) / (n_ok + 1)
+
+cat(sprintf("permutation: %d/%d fits; p(one-sided) = %.4f, p(two-sided) = %.4f\n",
+            n_ok, n_perm, p_one, p_two))
+
+ggplot(data.frame(beta = perm_beta[!is.na(perm_beta)]), aes(beta)) +
+  geom_histogram(bins = 50, fill = "grey75", colour = "white") +
+  geom_vline(xintercept = beta_obs, colour = "#7E1700", linewidth = 1) +
+  labs(x = "beta (centered anomaly product)", y = "permutations",
+       title = paste0("Within-site year permutation, one-sided p = ", signif(p_one, 3)))
+
+ggsave(paste0("../results/by-date/", today, "/anom_cov_permutation_centered.pdf"),
+       device = cairo_pdf)
+
+## ---- summary ----
+data.frame(
+  statistic = c("beta", "OR", "model SE", "bootstrap SE",
+                "boot 2.5%", "boot 97.5%",
+                "perm p (one-sided)", "perm p (two-sided)"),
+  value = c(beta_obs, exp(beta_obs), unname(beta_se),
+            sd(boot_beta, na.rm = TRUE), unname(boot_ci[1]), unname(boot_ci[2]),
+            p_one, p_two)
+)
 ```
 
 # Plot OST1 over cell-types
