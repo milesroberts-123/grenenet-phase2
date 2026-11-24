@@ -3295,6 +3295,40 @@ for(this_site in setdiff(as.integer(unique(sites)), sites_done)){
 }
 ```
 
+## Feder test pooled across all sites (kmate)
+
+```{r feder_pooled_kmate}
+# One t-test per variant over every (site, replicate) observation, instead of
+# within a site over its replicates. Built by
+# workflow/scripts/savio-jobs/03_linked_selection/25_feder_pooled_kmate.R, which
+# streams the raw feder table with arrow and writes its output into the same
+# results folder as the run it read.
+#
+# Two things differ from the per-site summaries above:
+#   * df is ~360 rather than ~11, so a much smaller |t| clears significance and
+#     the hit count is not comparable between the two tests.
+#   * a variant favoured at some sites and disfavoured at others cancels inside
+#     ybar while inflating s2, so heterogeneous selection is not detected here.
+feder_pooled_files <- list.files(
+  "/global/scratch/users/milesroberts/moi_lab_projects/grenenet-phase2/results",
+  pattern = "^feder_pooled_kmate_summary\\.csv$",
+  recursive = TRUE,
+  full.names = TRUE
+)
+feder_pooled_file <- feder_pooled_files[which.max(file.mtime(feder_pooled_files))]
+feder_pooled <- fread(feder_pooled_file)
+
+feder_pooled[, .(variants = .N,
+                 median_n = median(n),
+                 hits_bh05 = sum(p_adj < 0.05, na.rm = TRUE))]
+
+# every variant is retained; this only orders the display
+feder_pooled[order(p_adj)][1:20,
+  .(CHROM, POS, class, n, ybar, tvalue, pvalue, p_adj)]
+
+include_graphics(sub("_summary\\.csv$", "_manhattan.png", feder_pooled_file))
+```
+
 ## Waples 1989 Ne estimator (kmate)
 
 ```{r waples_1989_ne_kmate}
