@@ -5059,12 +5059,12 @@ ggplot() +
               fill = "grey80", alpha = 0.8) +
   geom_line(data = newd, aes(anom_prod, p),
             colour = "#7E1700", linewidth = 1.1) +
-  geom_point(data = bins, aes(x, p, size = n),
+  geom_point(data = bins, aes(x, p),
              colour = "black", alpha = 0.9) +
   scale_size_continuous(name = "pairs", range = c(1, 5)) +
-  labs(x = "A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)", title = paste0("glmer(n(Cov(\u0394p1, \u0394p2) < 0), n(Cov(\u0394p1, \u0394p2) > 0)) ~\nA1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(glmer_cor, 3), ", p = ", signif(glmer_p_value, 3)))
+  labs(x = "A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)", title = paste0("glmer(P(Cov(\u0394p1, \u0394p2) < 0) ~\nA1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(glmer_cor, 3), ", p = ", signif(glmer_p_value, 3)))
 
-ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov.pdf"), device = cairo_pdf)
+ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov_uncentered.pdf"), device = cairo_pdf, width = 7, height = 7)
 
 ## centered-anomaly prediction grid
 rng_c <- quantile(agg$anom_prod_c, c(0.01, 0.99), na.rm = TRUE)
@@ -5091,13 +5091,13 @@ ggplot() +
               fill = "grey80", alpha = 0.8) +
   geom_line(data = newd_c, aes(anom_prod_c, p),
             colour = "#7E1700", linewidth = 1.1) +
-  geom_point(data = bins_c, aes(x, p, size = n),
+  geom_point(data = bins_c, aes(x, p),
              colour = "black", alpha = 0.9) +
   scale_size_continuous(name = "pairs", range = c(1, 5)) +
   labs(x = "centered A1×A2", y = "P(Cov(\u0394p1, \u0394p2) < 0)",
-       title = paste0("glmer(n(Cov(\u0394p1, \u0394p2) < 0), n(Cov(\u0394p1, \u0394p2) > 0)) ~\ncentered A1A2 + (1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(centered_cor, 3), ", p = ", signif(centered_p, 3)))
+       title = paste0("glmer(P(Cov(\u0394p1, \u0394p2) < 0)~centered A1A2 +\n(1 | site) + (1 | site:rep), family = binomial)\nr = ", signif(centered_cor, 3), ", p = ", signif(centered_p, 3)))
 
-ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov_centered.pdf"), device = cairo_pdf)
+ggsave(paste0("../results/by-date/", today, "/anomaly_cov_vs_increment_cov_centered.pdf"), device = cairo_pdf, width = 7, height = 7)
 
 ## simple logistic regression
 m <- glm(neg_cov ~ anom_prod, data = var_cov_dp, family = binomial)
@@ -5115,7 +5115,7 @@ glm_cor <- cor(bins_raw$x, bins_raw$p, method = "spearman")
 print(glm_cor)
 
 ggplot(bins_raw, aes(x, p)) +
-  geom_point(aes(size = n), colour = "grey30") +
+  geom_point(colour = "grey30") +
   geom_smooth(data = var_cov_dp, aes(anom_prod, neg_cov),
               method = "glm", method.args = list(family = "binomial"),
               inherit.aes = FALSE, colour = "#7E1700", fill = "grey85") +
