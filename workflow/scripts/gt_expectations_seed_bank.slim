@@ -113,7 +113,10 @@ reproduction(p2) {
     // sum is 0 and this reduces to N_OFFSPRING throughout the burn-in.
     REALIZED_FITNESS = pmax(0.0, N_OFFSPRING*(1 + individual.sumOfMutationsOfType(m3)));
 
-    REALIZED_OFFSPRING = rpois(1, REALIZED_FITNESS);
+    // rpois() rejects lambda = 0, which pmax() hands it for any plant whose
+    // selected alleles sum to -1 or below (four negative loci at alpha = 0.31).
+    // Such a plant has zero expected offspring, so it simply contributes none.
+    REALIZED_OFFSPRING = (REALIZED_FITNESS > 0.0) ? rpois(1, REALIZED_FITNESS) else 0;
 
     for (i in seqLen(REALIZED_OFFSPRING)) {
         if (runif(1) > SIGMA & p2.individualCount > 1){
