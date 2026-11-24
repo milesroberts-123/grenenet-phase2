@@ -35,28 +35,36 @@ echo "chromosome: $CHROM"
 
 # haplotypes x loci, 0/1, MAF >= 0.05, complete calls only.
 # The VCF is phased, so each sample contributes its two haplotypes directly.
-CACHE=$TMPDIR/vw_founder_chr${CHROM}.tsv
+CACHE=$TMPDIR/vw_founder_chr${CHROM}_v2.tsv
 if [[ ! -s "$CACHE" ]]; then
   echo "building $CACHE"
   "$BCF" query -r "$CHROM" -f '%POS\t[%GT\t]\n' "$VCF" 2>/dev/null \
   | awk -F'\t' 'BEGIN{OFS="\t"}
       {
-        pos=$1; s=0; nh=0; out=""; bad=0
+        # build the line from pos with OFS so no empty field can appear, and skip
+        # the empty field left by the trailing tab of [%GT\t]
+        pos=$1; s=0; nh=0; line=pos; bad=0
         for (i=2; i<=NF; i++) {
           gt=$i
+          if (gt=="") continue
           if (gt=="." || gt=="./." || gt==".|.") { bad=1; break }
           a=substr(gt,1,1); b=substr(gt,3,1)
           if (a=="." || b==".") { bad=1; break }
           s += a + b; nh += 2
-          out = out OFS a OFS b
+          line = line OFS a OFS b
         }
-        if (bad) next
+        if (bad || nh == 0) next
         af = s/nh
         if (af < 0.05 || af > 0.95) next
-        print pos out
+        print line
       }' > "$CACHE"
 fi
-echo "cache: $(wc -l < "$CACHE") loci x $(( $(head -1 "$CACHE" | awk -F'\t' '{print NF-1}') )) haplotypes"
+NCOL=$(head -1 "$CACHE" | awk -F'\t' '{print NF-1}')
+echo "cache: $(wc -l < "$CACHE") loci x ${NCOL} haplotypes"
+if [[ "$NCOL" -ne 462 ]]; then
+  echo "ERROR: expected 462 haplotypes (231 accessions x 2), got ${NCOL}" >&2
+  exit 1
+fi
 
 Rscript --no-save "$ROOT/workflow/scripts/savio-jobs/03_linked_selection/26_vw_panel_compare.R" \
   "$CACHE" "$OUT" "$CHROM"

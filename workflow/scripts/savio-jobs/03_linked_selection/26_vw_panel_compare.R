@@ -49,6 +49,8 @@ H <- t(as.matrix(M[, -1, with = FALSE]))   # haplotypes x loci
 storage.mode(H) <- "double"
 rm(M); invisible(gc())
 nloci <- ncol(H)
+# 231 founder accessions, each contributing its two phased haplotypes
+if (nrow(H) != 462) stop("expected 462 haplotypes (231 x 2), got ", nrow(H))
 ts("chromosome ", chrom, ": ", nrow(H), " haplotypes x ", nloci,
    " loci (MAF >= 0.05, fully called)")
 
