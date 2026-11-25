@@ -75,7 +75,19 @@ for (win in c("first", "last")) {
   }
 
   pbar2 <- t(M[, sel, drop = FALSE])                              # plots x loci
-  pbar1 <- matrix(rep(seed, each = length(sel)), nrow = length(sel))
+
+  # Vw::Q() fails on pre-existing NA (its `if (any(pbar2 == 0) | ...)` returns NA
+  # and if() errors), so loci incomplete in either the seed mix or this site's
+  # pools are dropped before the call. Frequencies of exactly 0/1 are handled
+  # inside Q() itself and are left alone.
+  ok <- stats::complete.cases(pbar2) & !is.na(seed)
+  if (sum(ok) < 100L) {
+    ts("site ", this_site, " ", win, ": only ", sum(ok),
+       " complete loci -- skipping")
+    next
+  }
+  pbar2 <- pbar2[, ok, drop = FALSE]
+  pbar1 <- matrix(rep(seed[ok], each = length(sel)), nrow = length(sel))
 
   Qm <- Q(pbar1, pbar2)
   s  <- s_for(g)
@@ -86,7 +98,8 @@ for (win in c("first", "last")) {
 
   res[[length(res) + 1L]] <- data.table(
     site = this_site, window = win, ngen = g,
-    n_plots = length(sel), n_loci = nrow(M),
+    n_plots = length(sel), n_loci = nrow(pbar2),
+    frac_loci_used = nrow(pbar2) / nrow(M),
     s = s,
     Va = unname(coef(fit)["a"]),
     Ne = 0.5 / unname(coef(fit)["b"]),
