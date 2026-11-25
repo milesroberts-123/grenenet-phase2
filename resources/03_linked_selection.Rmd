@@ -4874,7 +4874,7 @@ ggsave(paste0("../results/by-date/", today, "/af_scatter_p0_by_gen.pdf"),
 
 # Climate fluctations and negative covariances
 
-## Get terraclimate yearly values during experiment vs pre-2000 baseline
+## ONE-TIME: Get terraclimate yearly values during experiment vs pre-2000 baseline
 
 ```{r terraclim}
 ## ---- TerraClimate bio1: yearly 2018-2023 + pre-2000 baseline ----
@@ -4951,7 +4951,11 @@ write.table(baseline, "../results/terraclimate/bio1_baseline_1958_1999.tsv",
             sep = "\t", row.names = FALSE, quote = FALSE)
 write.table(yearly, "../results/terraclimate/bio1_yearly_2018_2023.tsv",
             sep = "\t", row.names = FALSE, quote = FALSE)
+```
 
+```{r}
+baseline <- fread("../results/terraclimate/bio1_baseline_1958_1999.tsv")
+yearly <- fread("../results/terraclimate/bio1_yearly_2018_2023.tsv")
 clim_anom <- merge(yearly, baseline, by = "site")
 clim_anom$anom_pre2000 <- clim_anom$bio1 - clim_anom$bio1_baseline
 
@@ -5159,14 +5163,15 @@ ggplot(bins_raw, aes(x, p)) +
 
 ```
 
+## permutations and bootstraps for GLM
+
 ```{r neg_cov_resampling}
 ## Cluster bootstrap by site and within-site permutation of climate years for
 ## the within-site centered model (m2c), after removing symmetric duplicates.
-
 set.seed(20261124)
-n_boot  <- 1999
-n_perm  <- 1999
-n_cores <- 4
+n_boot  <- 999
+n_perm  <- 999
+n_cores <- 1
 
 agg_df   <- as.data.frame(agg)
 beta_obs <- unname(fixef(m2c)["anom_prod_c"])
@@ -5214,8 +5219,8 @@ ggplot(data.frame(beta = boot_beta[!is.na(boot_beta)]), aes(beta)) +
   geom_histogram(bins = 50, fill = "grey75", colour = "white") +
   geom_vline(xintercept = beta_obs, colour = "#7E1700", linewidth = 1) +
   geom_vline(xintercept = boot_ci, colour = "#7E1700", linetype = 2) +
-  labs(x = "beta (centered anomaly product)", y = "bootstrap replicates",
-       title = "Cluster bootstrap by site (centered anomaly product)")
+  labs(x = "centered anomaly product GLM coefficient", y = "bootstrap replicates",
+       title = "Cluster bootstrap by site")
 
 ggsave(paste0("../results/by-date/", today, "/anom_cov_bootstrap_centered.pdf"),
        device = cairo_pdf)
@@ -5265,7 +5270,7 @@ cat(sprintf("permutation: %d/%d fits; p(one-sided) = %.4f, p(two-sided) = %.4f\n
 ggplot(data.frame(beta = perm_beta[!is.na(perm_beta)]), aes(beta)) +
   geom_histogram(bins = 50, fill = "grey75", colour = "white") +
   geom_vline(xintercept = beta_obs, colour = "#7E1700", linewidth = 1) +
-  labs(x = "beta (centered anomaly product)", y = "permutations",
+  labs(x = "centered anomaly product GLM coefficient", y = "permutations",
        title = paste0("Within-site year permutation, one-sided p = ", signif(p_one, 3)))
 
 ggsave(paste0("../results/by-date/", today, "/anom_cov_permutation_centered.pdf"),
