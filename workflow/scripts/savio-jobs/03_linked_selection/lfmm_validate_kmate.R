@@ -37,7 +37,7 @@ trays_csv <- file.path(dir, "trays.csv"); seedmix_csv <- file.path(dir, "seedmix
 climate_rda <- file.path(dir, "climate.rda"); k_csv <- file.path(dir, "k.csv")
 fwrite(trays, trays_csv); fwrite(seedmix, seedmix_csv)
 climate_sites_yearly <- climate; save(climate_sites_yearly, file = climate_rda)
-fwrite(data.table(generation = 2L, n_pools = n_pools, n_records = 78L,
+fwrite(data.table(generation = 2L, n_pools = n_pools, n_records = 80L,
                   component = 1L, eig_prop = 0.5, broken_stick = 0.2,
                   cum_var = 0.5, K_broken_stick = 2L, cum_var_at_K = 0.5), k_csv)
 
@@ -52,7 +52,7 @@ if (!file.exists(out_csv)) stop("runner produced no output")
 r <- fread(out_csv)
 print(dim(r)); print(names(r)); print(head(r[, .(chrom, pos, class, pval, z, K, lambda)], 3))
 
-stopifnot(nrow(r) == 78L,
+stopifnot(nrow(r) == 80L,
           all(c("chrom", "pos", "class", "pval", "B", "z", "generation", "K", "lambda") %in% names(r)),
           unique(r$generation) == 2L,
           unique(r$K) == 2L,
