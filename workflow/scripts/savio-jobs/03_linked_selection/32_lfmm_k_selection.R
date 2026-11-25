@@ -105,21 +105,30 @@ for (g in sort(unique(gens))) {
   # contemporary MAF across this generation's pools, as in the reference
   maf <- rowMeans(Y, na.rm = TRUE)
   maf <- pmin(maf, 1 - maf)
-  # a record must also be complete across this generation's pools: eigen() of a
-  # covariance with NA fails, and the reference's imputation was inert because
-  # their matrix had no missingness. Counted separately so the loss is visible.
-  complete <- rowSums(is.na(Y)) == 0L
-  keep <- is.finite(maf) & maf >= maf_min & complete
+  keep <- is.finite(maf) & maf >= maf_min
   ts("generation ", g, ": ", length(cols), " pools, ", sum(keep), " of ",
-     nrow(Y), " records kept (", sum(!complete), " incomplete, ",
-     sum(!complete & is.finite(maf) & maf >= maf_min), " of those would pass MAF)")
+     nrow(Y), " records pass MAF >= ", maf_min)
   if (sum(keep) < 100L) next
   Y <- Y[keep, , drop = FALSE]
   p0g <- p0[keep]
 
-  # dp against the founding seed mix, then centre each record across pools
+  # dp against the founding seed mix
   dp <- Y - p0g
-  dp <- dp - rowMeans(dp, na.rm = TRUE)
+  # Missing cells are filled with the record's mean dp across pools, which is the
+  # reference's rule (build_lfmm_input.py: colmean over pools, per record). Their
+  # matrix had no missingness so the step was inert; here it is load-bearing --
+  # requiring every pool to be called at a record would drop most of the class.
+  n_imp <- sum(!is.finite(dp))
+  if (n_imp > 0L) {
+    cmean <- rowMeans(dp, na.rm = TRUE)
+    if (anyNA(cmean)) cmean[is.na(cmean)] <- 0
+    idx <- which(!is.finite(dp), arr.ind = TRUE)
+    dp[idx] <- cmean[idx[, 1L]]
+  }
+  ts("generation ", g, ": imputed ", n_imp, " cells (",
+     round(100 * n_imp / length(dp), 2), "%)")
+  # centre each record across pools
+  dp <- dp - rowMeans(dp)
 
   nr <- nrow(dp)
   C  <- crossprod(dp) / nr

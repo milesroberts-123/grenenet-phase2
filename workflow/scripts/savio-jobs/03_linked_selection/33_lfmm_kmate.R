@@ -92,16 +92,22 @@ ts("generation ", gen, ": ", length(cols), " pools, year ", year_of(gen),
 Y <- as.matrix(D[, ..cols])
 storage.mode(Y) <- "double"
 maf <- rowMeans(Y, na.rm = TRUE); maf <- pmin(maf, 1 - maf)
-complete <- rowSums(is.na(Y)) == 0L
-keep <- is.finite(maf) & maf >= maf_min & complete
-ts("records kept: ", sum(keep), " of ", nrow(Y), " (",
-   sum(!complete), " incomplete, ", sum(!complete & is.finite(maf) & maf >= maf_min),
-   " of those above MAF)")
+keep <- is.finite(maf) & maf >= maf_min
+ts("records kept: ", sum(keep), " of ", nrow(Y), " pass MAF >= ", maf_min)
 if (sum(keep) < 100L) stop("too few records at generation ", gen)
 Y <- Y[keep, , drop = FALSE]
 rec <- sm[keep_rec[keep], .(chrom, pos, class)]
 p0 <- p0_all[keep_rec][keep]
 dp <- Y - p0
+# reference imputation: a record's missing cells take that record's mean dp
+n_imp <- sum(!is.finite(dp))
+if (n_imp > 0L) {
+  cmean <- rowMeans(dp, na.rm = TRUE)
+  if (anyNA(cmean)) cmean[is.na(cmean)] <- 0
+  idx <- which(!is.finite(dp), arr.ind = TRUE)
+  dp[idx] <- cmean[idx[, 1L]]
+}
+ts("imputed ", n_imp, " cells (", round(100 * n_imp / length(dp), 2), "%)")
 rm(Y, D); invisible(gc())
 
 # pools x records, row-major on disk: t(dp) is records x pools, and its

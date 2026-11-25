@@ -62,8 +62,8 @@ stopifnot(length(unique(k$generation)) == 1L,
           unique(k$generation) == 1L,
           nrow(k) == n_pools,
           unique(k$n_pools) == n_pools,
-          # 200 non-SNP records, 3 of them incomplete
-          unique(k$n_records) == n_indel + n_sv - 3L,
+          # 200 non-SNP records; the 3 incomplete ones are now imputed, not dropped
+          unique(k$n_records) == n_indel + n_sv,
           length(unique(k$K_broken_stick)) == 1L,
           unique(k$K_broken_stick) >= 1L, unique(k$K_broken_stick) <= 4L)
 # the planted rank is 2; broken stick should land near it, not at the noise floor
