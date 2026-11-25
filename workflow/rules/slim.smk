@@ -29,9 +29,7 @@ def get_simcase(wildcards):
     use_vcf = 0 if pd.isna(row["USE_VCF"].iloc[0]) else int(row["USE_VCF"].iloc[0])
     if family == "wf":
         return "wf_vcf" if use_vcf == 1 else "wf_novcf"
-    # seed-bank runs always seed from the VCF, whatever the table says: the
-    # fresh-genome burn-in path is no longer supported
-    return "bank_vcf"
+    return "bank_vcf" if use_vcf == 1 else "bank_novcf"
 
 
 def bank_flag(wildcards, column, default=0):
@@ -57,17 +55,9 @@ def get_fasta_path(wildcards):
 
 
 def get_vcf_path(wildcards):
-    # seed-bank rows are forced to USE_VCF=1, so the VCF is always read there;
-    # a run that simulates its own genome (wf_novcf) never reaches this function
+    if bank_flag(wildcards, "USE_VCF") == 0:
+        return "none"   # never read, but SLiM needs the string constant defined
     return "results/bcftools_random/%s.vcf" % wildcards.ID
-
-
-def use_vcf_for(wildcards):
-    """The USE_VCF value the SLiM script sees: seed-bank runs are forced to 1."""
-    family = str(gt_params.loc[gt_params["ID"] == wildcards.ID, "type"].iloc[0])
-    if family == "wf":
-        return bank_flag(wildcards, "USE_VCF")
-    return 1
 
 
 rule slim:
@@ -79,6 +69,9 @@ rule slim:
                 "wf_novcf": ("wf_prep/{ID}.done"),
                 "wf_vcf": [],   # not wired up yet; see the shell branch
                 "bank_vcf": ("results/bcftools_random/{ID}.vcf"),
+                # no VCF is built for a run that starts from the ancestral
+                # sequence, which keeps 1000s of duplicate VCFs out of the DAG
+                "bank_novcf": []
             }
             ),
         fasta = branch(
@@ -87,6 +80,7 @@ rule slim:
                 "wf_novcf": [],
                 "wf_vcf": (config["sim_fasta"]),
                 "bank_vcf": (config["sim_fasta"]),
+                "bank_novcf": []
             }
             ),
     output:
@@ -114,11 +108,10 @@ rule slim:
         surv=lambda wildcards: float_param(wildcards, "SURVIVAL_SELECTION", 0.5),
         min_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MIN_AGE"),
         max_age=lookup(query="ID == '{ID}'", within=gt_params, cols="MAX_AGE"),
-        # USE_VCF = 1 seeds the run from standing variation read out of the VCF and
-        # runs no burn-in; USE_VCF = 0 starts from the ancestral FASTA sequence and
-        # burns in for BURN generations with the selected mutation types neutral.
-        # Seed-bank rows are always forced to 1; only the wf family can be 0.
-        use_vcf=use_vcf_for,
+        # USE_VCF = 1 starts from standing variation read out of the VCF and runs
+        # no burn-in; USE_VCF = 0 starts from the ancestral FASTA sequence and
+        # burns in for BURN generations with the selected mutation types neutral
+        use_vcf=lambda wildcards: bank_flag(wildcards, "USE_VCF"),
         burn=lambda wildcards: bank_flag(wildcards, "BURN"),
         vcf_path=get_vcf_path,
         n_founders=config["sim_founders"],
