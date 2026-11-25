@@ -101,8 +101,8 @@ for (win in c("first", "last")) {
 
   res[[length(res) + 1L]] <- data.table(
     site = this_site, window = win, ngen = g,
-    n_plots = length(sel), n_loci = nrow(pbar2),
-    frac_loci_used = nrow(pbar2) / nrow(M),
+    n_plots = length(sel), n_loci = ncol(pbar2),
+    frac_loci_used = ncol(pbar2) / ncol(M),
     s = s,
     Va = unname(coef(fit)["a"]),
     Ne = 0.5 / unname(coef(fit)["b"]),
