@@ -37,7 +37,21 @@ ts <- function(...) message(sprintf("[%s] %s", format(Sys.time(), "%H:%M:%S"), p
 t0 <- proc.time()
 
 panel <- fread(panel_csv)
+
+# Optional cap on panel size: the first n loci of the frozen window are a nested
+# contiguous sub-panel, so 10k/50k/100k are directly comparable.
+n_cap <- if (length(args) >= 6L) as.integer(args[[6]]) else 0L
+if (n_cap > 0L) {
+  if (n_cap > nrow(panel)) stop("panel holds ", nrow(panel), " loci, asked for ", n_cap)
+  panel <- panel[seq_len(n_cap), ]
+}
+
 s_tab <- fread(s_csv)
+# s may be tabulated per panel size (window-size comparison) or for one panel only
+if ("n_loci" %in% names(s_tab) && n_cap > 0L) {
+  s_tab <- s_tab[n_loci == n_cap]
+  if (!nrow(s_tab)) stop("no s tabulated for n_loci = ", n_cap)
+}
 pool_cols <- setdiff(names(panel), c("chrom", "pos", "class", "seedmix"))
 site_of <- sub("_.*", "", pool_cols)
 sites <- sort(unique(as.integer(site_of)))
@@ -70,14 +84,18 @@ s_for <- function(g) {
 # between generations t and tau after the base, not from the base itself). Only
 # adjacent measured generations are used for the consecutive set, so ngen = 1 and
 # the package's own nR^(2*ngen) multiplier is exactly the L_m the derivation wants.
-mode <- if (length(args) >= 5L) args[[5]] else "both"
+mode <- if (length(args) >= 5L) args[[5]] else "onen"
 ug <- sort(unique(gens))
 win_tab <- data.table(window = character(), t0 = integer(), tau = integer())
-if (mode %in% c("seedmix", "both")) {
-  win_tab <- rbind(win_tab, data.table(window = c("base_to_first", "base_to_last"),
-                                       t0 = 0L, tau = c(min(ug), max(ug))))
+if (mode %in% c("seedmix", "both", "onen")) {
+  # "onen" = one-generation windows only: the base-to-first window and every
+  # adjacent measured pair. Both have ngen = 1, where the package's nR^(2*ngen)
+  # multiplier is exact and no multi-generation accumulation is assumed.
+  taus <- if (mode == "onen") min(ug) else c(min(ug), max(ug))
+  wins <- if (mode == "onen") "base_to_first" else c("base_to_first", "base_to_last")
+  win_tab <- rbind(win_tab, data.table(window = wins, t0 = 0L, tau = taus))
 }
-if (mode %in% c("consecutive", "both")) {
+if (mode %in% c("consecutive", "both", "onen")) {
   adj <- ug[which(diff(ug) == 1L)]
   if (length(adj)) {
     win_tab <- rbind(win_tab, data.table(window = paste0("gen", adj, "_to_gen", adj + 1L),
@@ -163,6 +181,7 @@ for (w in seq_len(nrow(win_tab))) {
 }
 
 if (!length(res)) stop("site ", this_site, ": nothing to write")
-out <- file.path(out_dir, sprintf("vw_site%02d.csv", this_site))
+out <- file.path(out_dir, sprintf("vw_site%02d%s.csv", this_site,
+  if (n_cap > 0L) sprintf("_n%d", n_cap) else ""))
 fwrite(rbindlist(res), out)
 ts("wrote ", out, "  elapsed ", round((proc.time() - t0)["elapsed"] / 60, 1), " min")
