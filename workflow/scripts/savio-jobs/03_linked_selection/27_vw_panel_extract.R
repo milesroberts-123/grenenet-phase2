@@ -46,11 +46,25 @@ if (!file.exists(cache_file)) stop("founder cache missing: ", cache_file,
   "\n  rerun 26_vw_panel_compare.sbatch first")
 C <- fread(cache_file, header = FALSE, showProgress = FALSE)
 pos_all <- C[[1]]
-if (length(pos_all) < n_loci) stop("cache holds ", length(pos_all), " loci, need ", n_loci)
+
+# The founder cache comes from the founder VCF; the per-site frequencies come
+# from the experiment's variant catalogue. Only loci in both can be used, so the
+# panel is drawn from the intersection rather than from the VCF set alone.
+ts("reading seedmix to intersect with the experiment catalogue")
+sm <- fread(seedmix_csv, select = c("chrom", "pos", "class", "X0_0_0"))
+sm_pos <- sm$pos[sm$chrom == paste0("Chr", chrom)]
+in_both <- pos_all %in% sm_pos
+pos_pool <- pos_all[in_both]
+ts("founder loci: ", length(pos_all), "  also in the experiment: ", length(pos_pool))
+if (length(pos_pool) < n_loci) {
+  stop("only ", length(pos_pool), " loci are in both the founder VCF and the ",
+       "experiment catalogue, cannot build a ", n_loci, "-locus panel")
+}
+
 set.seed(20261124)
-start_i <- sample(seq_len(length(pos_all) - n_loci + 1L), 1L)
+start_i <- sample(seq_len(length(pos_pool) - n_loci + 1L), 1L)
 win <- start_i:(start_i + n_loci - 1L)
-win_pos <- pos_all[win]
+win_pos <- pos_pool[win]
 ts("panel: ", n_loci, " loci, chr", chrom, " ", min(win_pos), "-", max(win_pos))
 
 # ---------------------------------------------------------------------------
@@ -61,7 +75,7 @@ w_table <- function(ngen) {
   (1 - 0.5 * (1 - exp(-2 * d * rrate)))^(2 * ngen)
 }
 
-H <- t(as.matrix(C[win, -1, with = FALSE]))
+H <- t(as.matrix(C[in_both, -1, with = FALSE][win, ]))
 storage.mode(H) <- "double"
 rm(C); invisible(gc())
 if (nrow(H) != 462) stop("expected 462 haplotypes, got ", nrow(H))
@@ -104,12 +118,9 @@ print(s_tab)
 # ---------------------------------------------------------------------------
 # 3. locate the panel rows in the seedmix table (row order defines the trays)
 # ---------------------------------------------------------------------------
-ts("reading seedmix")
-sm <- fread(seedmix_csv, select = c("chrom", "pos", "class", "X0_0_0"))
-if (nrow(sm) != 6207205L) ts("note: seedmix rows = ", nrow(sm))
 idx <- which(sm$chrom == paste0("Chr", chrom) & sm$pos %in% win_pos)
 ts("panel rows found in seedmix: ", length(idx), " of ", n_loci)
-if (length(idx) < 0.95 * n_loci) stop("only ", length(idx), " panel loci present in the seedmix table")
+if (length(idx) != n_loci) stop("expected ", n_loci, " panel loci in the seedmix table, found ", length(idx))
 
 # row numbers for awk (header excluded, so data line of seedmix row i is i+1)
 tmp_idx <- tempfile(fileext = ".txt")
