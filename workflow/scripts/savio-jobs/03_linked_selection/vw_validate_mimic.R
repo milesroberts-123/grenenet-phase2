@@ -38,8 +38,12 @@ pbar2[pbar2 > 0.99] <- 0.99
 
 ref <- est_Va_bc(pbar1, pbar2, L = L, nR = nR, ngen = 1L)
 
-# the shortcut used per site
-s  <- averageLD(L, nR, nrep = nrep, ngen = 1L)
+# the shortcut used per site. averageLD returns an nrep x nrep matrix holding one
+# repeated value, so the scalar is that value taken through the same upper.tri
+# indexing est_Va_bc uses.
+A  <- averageLD(L, nR, nrep = nrep, ngen = 1L)
+s  <- unique(as.numeric(A[upper.tri(A, diag = TRUE)]))
+stopifnot(length(s) == 1L)
 Qm <- Q(pbar1, pbar2)
 q  <- Qm[upper.tri(Qm, diag = TRUE)]
 a  <- rep(0.5 * s, length(q))
