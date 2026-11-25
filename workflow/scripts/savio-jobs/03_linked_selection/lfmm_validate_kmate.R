@@ -22,9 +22,10 @@ groups <- rep(c("snp", "smallindel", "sv"), c(40L, 60L, 20L))
 n_rec <- length(groups)
 pool_names <- c(paste0("1_2_", 1:4), paste0("2_2_", 1:4))
 p0 <- runif(n_rec, 0.2, 0.8)
-af <- t(p0 + matrix(rnorm(n_pools * n_rec, 0, 0.05), n_pools, n_rec))
+# pools x records, as in the k-selection fixture; the CSV is records x pools
+af <- p0 + matrix(rnorm(n_pools * n_rec, 0, 0.05), n_pools, n_rec)
 af <- pmin(pmax(af, 0.001), 0.999)
-af[1, 45:46] <- NA          # rows 41-100 are smallindel, so these are inside the model
+af[1, 45:46] <- NA          # records 41-100 are smallindel, so these are inside the model
 
 trays <- as.data.table(t(af)); setnames(trays, pool_names)
 seedmix <- data.table(class = groups, X0_0_0 = p0)
