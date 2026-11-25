@@ -137,8 +137,14 @@ set.seed(20261124)                     # recorded, so the windows are reproducib
 start_i <- sample(seq_len(nloci - need + 1L), 1L)
 wmax <- start_i:(start_i + need - 1L)  # all three windows are nested in this one
 
+res_file <- file.path(out_dir, "vw_panel_compare.csv")
+prev <- if (file.exists(res_file)) tryCatch(fread(res_file), error = function(e) NULL) else NULL
+skip_compute <- !is.null(prev) && nrow(prev) == 4L * length(sizes) &&
+                all(prev$chrom == chrom)
+if (skip_compute) ts("reusing existing results: ", res_file)
+
 res <- list(); diag_bands <- NULL
-for (nm in names(sizes)) {
+for (nm in if (skip_compute) character(0) else names(sizes)) {
   idx <- wmax[seq_len(sizes[[nm]])]
   Hi  <- H[, idx, drop = FALSE]
   pi_ <- pos[idx]
@@ -157,11 +163,17 @@ for (nm in names(sizes)) {
   }
 }
 
-res <- rbindlist(res)
-res[, va_scale := 1 / s]                # Va is proportional to 1/s
+if (skip_compute) {
+  res <- as.data.table(prev)
+} else {
+  res <- rbindlist(res)
+  res[, va_scale := 1 / s]              # Va is proportional to 1/s
+}
+# the s values are the product, so they are written before the guard runs
+fwrite(res, file.path(out_dir, "vw_panel_compare.csv"))
 
 # ---------------------------------------------------------------------------
-# validation: full-matrix averageLD on the 10k window must match s_banded
+# validation: full-matrix averageLD on the 10k window must match the blockwise s
 # ---------------------------------------------------------------------------
 ts("validating against Vw::averageLD on the 10k window")
 Hv <- H[, wmax[seq_len(sizes[["w10k"]])], drop = FALSE]
@@ -171,25 +183,26 @@ L  <- cov(Hc) * (nh - 1) / nh          # cov of the loci (columns)
 pos10 <- pos[wmax[seq_len(sizes[["w10k"]])]]
 nR_false <- form_nR(pos10, rrate, hap_len, FALSE)
 nR_true  <- form_nR(pos10, rrate, hap_len, TRUE)
-chk <- data.table(
-  atleast = c(FALSE, FALSE, TRUE),
-  ngen    = c(1L, 5L, 1L),
-  s_full  = c(averageLD(L, nR_false, 1, ngen = 1L),
-              averageLD(L, nR_false, 1, ngen = 5L),
-              averageLD(L, nR_true,  1, ngen = 1L))
+
+v_atleast <- c(FALSE, FALSE, TRUE)
+v_ngen    <- c(1L, 5L, 1L)
+v_full <- c(
+  as.numeric(averageLD(L, nR_false, 1, ngen = 1L)),
+  as.numeric(averageLD(L, nR_false, 1, ngen = 5L)),
+  as.numeric(averageLD(L, nR_true,  1, ngen = 1L))
 )
-chk[, s_banded := res[window == "w10k"][match(paste(atleast, ngen),
-                                              paste(atleast_one_recomb, ngen))]$s]
-chk[, rel_err := abs(s_banded - s_full) / abs(s_full)]
+w10 <- res[res$window == "w10k", ]
+v_banded <- w10$s[match(paste(v_atleast, v_ngen),
+                        paste(w10$atleast_one_recomb, w10$ngen))]
+chk <- data.frame(atleast = v_atleast, ngen = v_ngen,
+                  s_full = v_full, s_banded = v_banded)
+chk$rel_err <- abs(chk$s_banded - chk$s_full) / abs(chk$s_full)
 rm(L, nR_false, nR_true); invisible(gc())
 print(chk)
+fwrite(chk, file.path(out_dir, "vw_panel_validation.csv"))
 if (any(chk$rel_err > 1e-8)) {
   stop("banded s does not match averageLD: max rel err ", max(chk$rel_err))
 }
 
-fwrite(res,       file.path(out_dir, "vw_panel_compare.csv"))
-fwrite(diag_bands, file.path(out_dir, "vw_panel_pair_distances.csv"))
-fwrite(chk,       file.path(out_dir, "vw_panel_validation.csv"))
 print(res[, .(window, atleast_one_recomb, ngen, s, mean_cor2, va_scale)])
-
 ts("DONE elapsed ", round((proc.time() - t0)["elapsed"] / 60, 1), " min")
