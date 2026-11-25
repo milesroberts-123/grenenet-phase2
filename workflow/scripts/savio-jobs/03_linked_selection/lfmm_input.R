@@ -90,12 +90,14 @@ build_lfmm_stem <- function(trays_csv, seedmix_csv, climate_rda, gen, workdir,
      n_imp, " imputed cells (", round(100 * n_imp / length(dp), 2), "%)")
 
   stem <- file.path(workdir, sprintf("lfmm_nonsnp_gen%d", gen))
-  Yt <- t(dp)                                  # records x pools
-  np <- ncol(Yt); nr <- nrow(Yt)
+  Yt <- t(dp)                                  # pools x records
+  # dims are "n_pools n_records", and Yt is pools x records, so pools is the ROW
+  # count; the column-major write of Yt is then pools x records row-major
+  np <- nrow(Yt); nr <- ncol(Yt)
   writeBin(as.numeric(Yt), paste0(stem, "_Y.f64"), size = 8L, endian = "little")
   writeLines(paste(np, nr), paste0(stem, "_dims.txt"))
   fwrite(data.table(X = X), paste0(stem, "_env.csv"))
-  ts("wrote ", stem, "_{Y.f64,dims.txt,env.csv}  Y = ", np, " x ", nr, " (",
+  ts("wrote ", stem, "_{Y.f64,dims.txt,env.csv}  Y = ", np, " pools x ", nr, " records (",
      round(file.size(paste0(stem, "_Y.f64")) / 2^30, 2), " GB)")
 
   list(stem = stem, np = np, nr = nr, rec = rec, n_imputed = n_imp,
