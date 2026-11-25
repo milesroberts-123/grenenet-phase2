@@ -80,7 +80,10 @@ for (win in c("first", "last")) {
   # and if() errors), so loci incomplete in either the seed mix or this site's
   # pools are dropped before the call. Frequencies of exactly 0/1 are handled
   # inside Q() itself and are left alone.
-  ok <- stats::complete.cases(pbar2) & !is.na(seed)
+  # completeness per locus (columns), not per row: complete.cases() on a matrix
+  # reports per-row completeness and would be recycled against seed, silently
+  # keeping the wrong loci
+  ok <- colSums(is.na(pbar2)) == 0L & !is.na(seed)
   if (sum(ok) < 100L) {
     ts("site ", this_site, " ", win, ": only ", sum(ok),
        " complete loci -- skipping")
