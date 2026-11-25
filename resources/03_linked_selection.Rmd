@@ -9519,3 +9519,109 @@ for(i in seq_along(chroms)){
 
 head(lfmm_ft_only)
 ```
+
+# Vw: additive genetic variance for fitness
+
+```{r vw_va_bio1}
+# Per-site Va comes from the Vw jobs (28_vw_site_va.R); the locus-permutation
+# null (29_vw_perm_null.R) says which windows are distinguishable from zero.
+# Only one-generation windows are used: the base-to-gen-1 window and every
+# adjacent pair of measured generations, both at ngen = 1 where the LD multiplier
+# is exact.
+
+vw_results_dir <- local({
+  # the newest date folder that actually holds per-site Va tables, so a run that
+  # straddled midnight is still found
+  cand <- list.dirs("../results/by-date", recursive = FALSE)
+  cand <- cand[file.exists(file.path(cand, "vw_site01.csv")) |
+                 length(list.files(cand, pattern = "^vw_site[0-9]+\\.csv$")) > 0]
+  if (!length(cand)) NA_character_ else cand[which.max(as.Date(basename(cand)))]
+})
+stopifnot(!is.na(vw_results_dir))
+print(vw_results_dir)
+
+vw_files <- list.files(vw_results_dir, pattern = "^vw_site[0-9]+\\.csv$", full.names = TRUE)
+vw_va <- vw_files %>%
+  lapply(read.csv) %>%
+  bind_rows() %>%
+  mutate(window_type = ifelse(grepl("^base", window), "base to gen 1", "consecutive"),
+         site = as.integer(site))
+
+vw_perm_files <- list.files(vw_results_dir, pattern = "^vw_perm_site[0-9]+\\.csv$", full.names = TRUE)
+vw_perm <- if (length(vw_perm_files)) {
+  vw_perm_files %>%
+    lapply(read.csv) %>%
+    bind_rows() %>%
+    mutate(window_type = ifelse(grepl("^base", window), "base to gen 1", "consecutive"),
+           site = as.integer(site)) %>%
+    group_by(site, window_type) %>%
+    summarise(frac_sig = mean(p_perm < 0.05), n_tested = n(), .groups = "drop")
+} else {
+  tibble(site = integer(), window_type = character(), frac_sig = numeric(), n_tested = integer())
+}
+
+# equal weight per site: each site contributes its mean Va, and the fraction of
+# its windows that separated from the permutation null
+vw_site_summary <- vw_va %>%
+  group_by(site, window_type) %>%
+  summarise(Va = mean(Va, na.rm = TRUE),
+            Va_sd = sd(Va, na.rm = TRUE),
+            n_windows = n(),
+            n_plots = mean(n_plots),
+            .groups = "drop") %>%
+  left_join(vw_perm, by = c("site", "window_type")) %>%
+  left_join(worldclim_sitesdata %>%
+              dplyr::transmute(site = as.integer(site), bio1 = as.numeric(bio1)),
+            by = "site")
+
+cat(sprintf("sites with Va: %d, windows: %d\n",
+            length(unique(vw_site_summary$site)), nrow(vw_site_summary)))
+
+# climate relationship, reported rather than assumed
+vw_climate_test <- vw_site_summary %>%
+  group_by(window_type) %>%
+  summarise(
+    n = sum(!is.na(bio1) & !is.na(Va)),
+    spearman_rho = if (n >= 3) cor(bio1, Va, method = "spearman", use = "complete.obs") else NA_real_,
+    lm_slope = if (n >= 3) unname(coef(lm(Va ~ bio1))[2]) else NA_real_,
+    lm_p = if (n >= 3) summary(lm(Va ~ bio1))$coefficients[2, 4] else NA_real_,
+    .groups = "drop")
+print(vw_climate_test)
+
+ggplot(vw_site_summary, aes(x = bio1, y = Va)) +
+  geom_hline(yintercept = 0, linetype = 2, colour = "grey60") +
+  geom_smooth(method = "lm", formula = y ~ x, colour = "firebrick", fill = "firebrick", alpha = 0.15) +
+  geom_point(aes(alpha = frac_sig), size = 2.6) +
+  facet_wrap(~window_type, scales = "free_y") +
+  scale_alpha_continuous(range = c(0.35, 1), limits = c(0, 1), na.value = 0.35,
+                         name = "fraction of windows\nvs null (p<0.05)") +
+  labs(x = "bio1 (mean annual temperature, degC)",
+       y = "Va (additive genetic variance for relative fitness)",
+       title = "Additive genetic variance for fitness across sites",
+       subtitle = "One point per site; line is a linear fit") +
+  theme(legend.position = "right")
+
+ggsave(paste0("../results/by-date/", today, "/vw_va_vs_bio1.pdf"),
+       height = 5.5, width = 9, device = cairo_pdf)
+```
+
+```{r vw_va_vs_bio1_by_window}
+# the same relationship, one point per window rather than per site, to show how
+# much of the scatter is between sites and how much is between windows
+vw_va %>%
+  left_join(worldclim_sitesdata %>%
+              dplyr::transmute(site = as.integer(site), bio1 = as.numeric(bio1)),
+            by = "site") %>%
+  mutate(pair = ifelse(grepl("^base", window), "base to gen 1", window)) %>%
+  ggplot(aes(x = bio1, y = Va)) +
+  geom_hline(yintercept = 0, linetype = 2, colour = "grey60") +
+  geom_point(alpha = 0.55, size = 1.9) +
+  geom_smooth(method = "lm", formula = y ~ x, colour = "firebrick", fill = "firebrick", alpha = 0.15) +
+  facet_wrap(~pair, scales = "free_y", ncol = 4) +
+  labs(x = "bio1 (degC)", y = "Va",
+       title = "Va by window, versus site temperature") +
+  theme(legend.position = "none")
+
+ggsave(paste0("../results/by-date/", today, "/vw_va_vs_bio1_by_window.pdf"),
+       height = 6, width = 11, device = cairo_pdf)
+```
