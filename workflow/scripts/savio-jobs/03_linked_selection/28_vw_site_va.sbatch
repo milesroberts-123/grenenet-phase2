@@ -5,9 +5,11 @@
 #SBATCH --qos=moilab_htc4_normal
 #SBATCH --nodes=1
 #SBATCH --ntasks=1
-#SBATCH --array=0-29%1
-# One task per site. Throttled to one task at a time: library(Vw) attaches asreml
-# and the trial has a single seat, so parallel tasks would fail at load.
+#SBATCH --array=0-29
+# One task per site, all at once. These tasks never fit an ASReml model -- they
+# use Q(), averageLD() and lm() only -- so they need no licence seat; library(Vw)
+# merely attaches asreml without checking anything out for a fit. Throttling the
+# array would also split outputs across date folders if it straddled midnight.
 #SBATCH --cpus-per-task=4
 #SBATCH --mem=32G
 #SBATCH --time=2:00:00
