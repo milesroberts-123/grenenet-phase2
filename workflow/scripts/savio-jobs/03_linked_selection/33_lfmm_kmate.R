@@ -32,19 +32,27 @@ t0 <- proc.time()
 
 stem_info <- build_lfmm_stem(trays_csv, seedmix_csv, climate_rda, gen, workdir)
 
-# K: this generation's broken-stick value, unless overridden. Cross-check the
-# record count against the K table: if the two stages built different matrices,
-# K would describe something other than what is fitted.
+# K resolution order: an explicit numeric argument, then a hand-chosen table
+# written beside the broken-stick one (35_lfmm_choose_k.R), then broken stick.
+# Whichever supplies K, if the table also records the record count it must match
+# the matrix just built -- otherwise K describes a different matrix.
 K <- k_override
 if (is.na(K)) {
-  kt <- fread(k_csv)
-  hit <- unique(kt[generation == gen, K_broken_stick])
-  if (length(hit) != 1L) stop("no single K for generation ", gen, " in ", k_csv)
+  chosen_csv <- file.path(dirname(k_csv), "lfmm_k_chosen.csv")
+  src <- if (file.exists(chosen_csv)) chosen_csv else k_csv
+  col <- if (src == chosen_csv) "K_chosen" else "K_broken_stick"
+  kt <- fread(src)
+  hit <- unique(kt[generation == gen, get(col)])
+  if (length(hit) != 1L || is.na(hit)) {
+    stop("no single ", col, " for generation ", gen, " in ", src)
+  }
   K <- as.integer(hit)
-  n_k <- unique(kt[generation == gen, n_records])
-  if (length(n_k) == 1L && n_k != stem_info$nr) {
-    stop("the K table was built on ", n_k, " records but this matrix holds ",
-         stem_info$nr, " -- rebuild the K table before fitting")
+  if ("n_records" %in% names(kt)) {
+    n_k <- unique(kt[generation == gen, n_records])
+    if (length(n_k) == 1L && !is.na(n_k) && n_k != stem_info$nr) {
+      stop("the K table was built on ", n_k, " records but this matrix holds ",
+           stem_info$nr, " -- rebuild the K table before fitting")
+    }
   }
 }
 if (K < 1L) stop("K resolved to ", K, "; refusing to fit")

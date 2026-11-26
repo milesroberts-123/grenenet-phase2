@@ -28,11 +28,18 @@ lfmm_load_seedmix <- function(seedmix_csv) {
 lfmm_extract_nonsnp <- function(trays_csv, keep_rec, workdir) {
   sub_csv <- file.path(workdir, "lfmm_nonsnp_rows.csv")
   if (!file.exists(sub_csv)) {
+    # The array tasks of 33 share this path, so a plain write could have several
+    # processes filling the same 7 GB file at once. Each writes its own temp name
+    # and renames, which is atomic on the same filesystem; the payload is identical
+    # either way, so the last writer winning is harmless.
     tmp_idx <- tempfile(fileext = ".txt")
     fwrite(data.table(keep_rec + 1L), tmp_idx, col.names = FALSE)
+    tmp_out <- paste0(sub_csv, ".", Sys.getpid(), ".tmp")
+    on.exit(unlink(tmp_out), add = TRUE)
     awk <- sprintf("awk -F, 'NR==FNR{k[$1]=1; next} FNR==1{print; next} (FNR in k){print}' %s %s > %s",
-                   shQuote(tmp_idx), shQuote(trays_csv), shQuote(sub_csv))
+                   shQuote(tmp_idx), shQuote(trays_csv), shQuote(tmp_out))
     if (system(awk) != 0L) stop("awk extraction failed")
+    if (!file.rename(tmp_out, sub_csv)) stop("could not publish ", sub_csv)
   }
   D <- fread(sub_csv, showProgress = FALSE)
   if (nrow(D) != length(keep_rec)) {
